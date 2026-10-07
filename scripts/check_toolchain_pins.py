@@ -188,6 +188,7 @@ UNLOCKED_INSTALL_EXEMPT: dict[str, str] = {
 # still enforced by `check_esbuild_overrides`; only the attribution was wrong.
 EXPECTED_ESBUILD: dict[str, str] = {
     "0.28.1": "the version the scoped tsup/vite/bundle-require overrides ask for",
+    "0.28.2": "declared outright by storybook@10.6.1 (the provenance 0.25.12 had under 9.1.20); Web — Build is green with both in the tree",
 }
 
 # `apps/mobile` and `services/realtime` resolve esbuild too, and neither is
@@ -2081,7 +2082,12 @@ def _fixture(root: Path) -> None:
         ),
         encoding="utf-8",
     )
-    (root / "pnpm-lock.yaml").write_text("lockfileVersion: '6.0'\n  /esbuild@0.28.1:\n  /image-size@2.0.4:\n", encoding="utf-8")
+    # Both expected esbuild versions, because EXPECTED_ESBUILD is checked in
+    # both directions: a fixture resolving only one of them fails the clean
+    # pass with "the expectation is stale" for the other.
+    (root / "pnpm-lock.yaml").write_text(
+        "lockfileVersion: '6.0'\n  /esbuild@0.28.1:\n  /esbuild@0.28.2:\n  /image-size@2.0.4:\n", encoding="utf-8"
+    )
 
     # A second install root, shaped like `apps/mobile`: its own manifest and
     # its own lockfile, outside the workspace the root one describes. The
