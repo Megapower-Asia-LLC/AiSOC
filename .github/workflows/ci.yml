@@ -649,6 +649,16 @@ jobs:
         run: python3 scripts/check_connector_profiles.py --self-test
       - name: Connector profile drift gate
         run: python3 scripts/check_connector_profiles.py
+      # One layer in from the name: the profile gate asks whether a connector
+      # reaches a normalization path, this asks which OCSF class it reaches
+      # when it gets there. The class uid divided by a thousand is the
+      # category, and fusion promotes category 2 unconditionally — so 78 of
+      # the 84 connectors landing on the 2001 default meant every permitted
+      # DNS lookup and every routine Windows event became an alert.
+      - name: OCSF class coverage gate — self-test
+        run: python3 scripts/check_ocsf_class_coverage.py --self-test
+      - name: OCSF class coverage gate
+        run: python3 scripts/check_ocsf_class_coverage.py --check
       # One layer in again: a connector's events reach a profile, and the
       # catalogue says what each of its event types *means*. Grown from the
       # fixtures, so adding a fixture that carries a new event type fails
