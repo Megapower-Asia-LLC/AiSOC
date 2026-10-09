@@ -366,6 +366,7 @@ than absent.
   refused with a reason. `MAX_UNREACHABLE` 119 → 45.
 - [x] **3.2** Ordered sequences and Sigma correlations — the windowed engine
   stages ordered and unordered sequences; all four translatable Sigma
+  correlation types compile. Windowed corpus 68 → 72. See D7 and D8.
   correlation types compile. See D7 and D8.
 - [x] **3.3** Enrichment inputs (parity 5.5) — identity privilege and a
   per-tenant first-seen store built; 18 rules retired with a reason.
