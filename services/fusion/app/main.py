@@ -25,6 +25,7 @@ from app.services.first_seen import FirstSeenStore
 from app.services.fusion_engine import FusionEngine
 from app.services.ioc_match import TenantIocMatcher
 from app.services.lake_writer import LakeWriter
+from app.services.sessions import SessionStore
 from app.services.tenant_overlay import OverlayCache
 from app.services.ueba_signal import UebaSignalCache
 from app.services.windowed_detection import WindowedDetectionEngine
@@ -148,7 +149,12 @@ async def lifespan(app: FastAPI):
         # with hot reload. Without it the engine evaluated the shared
         # corpus and nothing else, so a tenant who disabled a noisy rule
         # in the console kept receiving its alerts.
-        overlays=OverlayCache(_overlay_pool()),
+        overlays=OverlayCache(_fusion_pool()),
+        # Depth plan 2.4. Sessions per principal: the stateful half of the
+        # projection `session.go` derives per event. Disabled by the same
+        # switch as the alert sink, because a session row nothing can join
+        # an alert to is a row nobody reads.
+        sessions=SessionStore(_fusion_pool()) if settings.alert_sink_enabled else None,
         ueba_cache=ueba_cache,
     )
     set_worker(worker)
@@ -222,13 +228,21 @@ app.include_router(router)
 _OVERLAY_POOL: Any = None
 
 
-def _overlay_pool() -> Any:
-    """A lazy pool for the tenant-tuning overlay.
+def _fusion_pool() -> Any:
+    """One lazy Postgres pool, shared by the consumer's side readers.
 
     Built on first use rather than at import, because `main` runs before
-    an event loop exists and `asyncpg.create_pool` needs one. The cache
-    tolerates `None` and returns the empty overlay, so a deployment with
-    no database reachable detects exactly as it did before 5.4.
+    an event loop exists and `asyncpg.create_pool` needs one. The overlay
+    cache tolerates `None` and returns the empty overlay, so a deployment
+    with no database reachable detects exactly as it did before 5.4, and
+    the session store logs and returns None for the same reason.
+
+    Shared rather than one pool each: both sit on the consumer's hot path
+    against the same database, and two pools is two connection budgets to
+    size instead of one. Renamed from `_overlay_pool` when the session
+    store (depth plan 2.4) became the second reader, because a name that
+    says "overlay" while two things use it is how the next contributor
+    opens a third.
     """
     global _OVERLAY_POOL  # noqa: PLW0603
     if _OVERLAY_POOL is None:

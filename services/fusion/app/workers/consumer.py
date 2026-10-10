@@ -22,6 +22,7 @@ from app.services.event_schema import validate_event
 from app.services.fusion_engine import FusionEngine
 from app.services.lake_writer import LakeWriter
 from app.services.promoter import promote_normalized_event
+from app.services.sessions import SessionRef, SessionStore
 from app.services.tenant_overlay import OverlayCache
 from app.services.ueba_signal import UebaSignalCache
 from app.services.windowed_detection import WindowedDetectionEngine
@@ -39,6 +40,10 @@ _METRICS = {
     "persist_unavailable": 0,
     "persist_failed": 0,
     "laked": 0,
+    # Events recorded against a session (depth plan 2.4). Counted separately
+    # from `laked` so a deployment can see that the session store is working
+    # rather than inferring it from alerts that happen to carry an id.
+    "sessions": 0,
     "detected": 0,
     "dead_lettered": 0,
     "errors": 0,
@@ -59,6 +64,7 @@ class FusionWorker:
         first_seen: Any | None = None,
         ueba_cache: UebaSignalCache | None = None,
         overlays: OverlayCache | None = None,
+        sessions: SessionStore | None = None,
     ) -> None:
         self._engine = engine
         self._sink = sink
@@ -70,6 +76,10 @@ class FusionWorker:
         #: Per-tenant detection tuning (parity 5.4). Optional, so a
         #: deployment that passes nothing behaves exactly as before.
         self._overlays = overlays
+        #: Depth plan 2.4. Optional so a deployment without the migration
+        #: behaves exactly as before: alerts carry no session context
+        #: rather than carrying an invented one.
+        self._sessions = sessions
         # A poison message must never vanish silently; default to a structured
         # logging DLQ so persistence-free deployments still get the signal.
         self._dlq: DeadLetterQueue = dlq or LoggingDLQ()
@@ -284,7 +294,30 @@ class FusionWorker:
             )
             return
 
+        # Declared ahead of the branch because the tail call below is shared.
+        # A vendor-asserted finding on the alerts topic is not a normalized
+        # event and has no session: None reaches the sink, which renders no
+        # session context rather than attaching the previous event's.
+        session: SessionRef | None = None
+
         if topic == settings.kafka_topic_raw_events:
+            # Depth plan 2.4 — record the session this event belongs to before
+            # anything else reads the event, so the lake row, the alert and the
+            # graph node all carry the same session id. `session.go` derived
+            # the key; this is the stateful half that counts the events and
+            # walks the assumed-role chain. It returns None, not an error, for
+            # an event whose source names no session — and that stays None all
+            # the way to the console rather than becoming a session of one.
+            if self._sessions is not None and validation.tenant_id:
+                session = await self._sessions.record_event(str(validation.tenant_id), payload)
+                if session is not None:
+                    _METRICS["sessions"] += 1
+                    # Stamped onto the event so the lake row carries the same
+                    # id as the Postgres row and the graph node, which is what
+                    # lets a hunt join the three without any of them having
+                    # agreed on anything at write time.
+                    payload["activity"]["session"]["id"] = str(session.id)
+
             # Phase A1 — archive EVERY normalized event into the ClickHouse lake
             # first, independent of the promotion decision below. A non-promoted
             # Medium event still has to be queryable via /lake/sql.
@@ -320,7 +353,7 @@ class FusionWorker:
                     det_alert = self._detector.build_alert(payload, hit)
                     if det_alert is not None:
                         _METRICS["detected"] += 1
-                        await self._fuse_and_persist(det_alert, source_event_id=validation.source_event_id)
+                        await self._fuse_and_persist(det_alert, source_event_id=validation.source_event_id, session=session)
 
             # Wave 2 — stateful/windowed detections (brute force, spray, scans)
             # count this event into its sliding window and fire once on threshold.
@@ -329,7 +362,7 @@ class FusionWorker:
                     win_alert = self._windowed.build_alert(payload, hit)
                     if win_alert is not None:
                         _METRICS["detected"] += 1
-                        await self._fuse_and_persist(win_alert, source_event_id=validation.source_event_id)
+                        await self._fuse_and_persist(win_alert, source_event_id=validation.source_event_id, session=session)
 
             # Ingest-normalized OCSF event — run the deterministic promotion
             # policy (see app/services/promoter.py). Non-promoted events are
@@ -357,9 +390,11 @@ class FusionWorker:
                 )
                 return
 
-        await self._fuse_and_persist(alert, source_event_id=validation.source_event_id)
+        await self._fuse_and_persist(alert, source_event_id=validation.source_event_id, session=session)
 
-    async def _fuse_and_persist(self, alert: RawAlert, *, source_event_id: str | None = None) -> None:
+    async def _fuse_and_persist(
+        self, alert: RawAlert, *, source_event_id: str | None = None, session: SessionRef | None = None
+    ) -> None:
         """Run one RawAlert through fusion, persist it, then publish it.
 
         Issue #568: the canonical, replay-stable alert id and source-event
@@ -375,6 +410,15 @@ class FusionWorker:
 
         fused = await self._engine.process(alert)
         _METRICS["processed"] += 1
+
+        # Depth plan 2.4. Attached after fusion rather than before, because
+        # fusion builds the FusedAlert and anything set on the RawAlert first
+        # would have to survive that construction — which is the kind of
+        # assumption that holds until someone adds a field.
+        if session is not None:
+            fused.session_id = session.id
+            fused.session_key_kind = session.key_kind
+            fused.originating_human = session.originating_human
 
         if fused.fusion_decision == FusionDecision.DUPLICATE:
             _METRICS["duplicates"] += 1

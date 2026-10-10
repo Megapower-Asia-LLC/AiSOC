@@ -134,6 +134,19 @@ const (
 	// These are the global reference labels. They are deliberately not
 	// tenant-scoped, and tenant_deletion.py exempts them from an
 	// offboarding purge.
+	// ── v1.2: session depth (depth plan 2.4) ─────────────────────────
+	// One session as the vendor understands it, or the closest the vendor
+	// lets us get. The node exists so a traversal can ask what else one
+	// session touched; the authoritative row is in Postgres, because
+	// ADR-0010 measured Neo4j at 42.2% of the CORE profile's remaining
+	// memory and kept the graph in `full`.
+	//
+	// `key_kind` is a property and not four labels: a query that has to
+	// name every kind it wants would silently miss one when a fifth is
+	// added, and the kinds are a strength ordering rather than four
+	// different things.
+	NodeSession NodeLabel = "Session"
+
 	NodeIOC         NodeLabel = "IOC"
 	NodeMalware     NodeLabel = "Malware"
 	NodeCampaign    NodeLabel = "Campaign"
@@ -169,6 +182,7 @@ var AllNodeLabels = []NodeLabel{
 	NodeApplication,
 	NodeCloudAccount,
 	NodeSecret,
+	NodeSession,
 	NodeIOC,
 	NodeMalware,
 	NodeCampaign,
@@ -240,6 +254,18 @@ const (
 	RelOwnedBy RelType = "OWNED_BY"
 
 	// ── v1.1: threat depth ────────────────────────────────────────────
+	// ── v1.2: session depth (depth plan 2.4) ─────────────────────────
+	// Identity|User -> Session. "What else did this principal do" without
+	// scanning every event the principal ever produced.
+	RelOpenedSession RelType = "OPENED_SESSION"
+	// Session -> Session. The assumed-role chain. This edge exists on the
+	// issuing STS call and nowhere else: a chained session's own events
+	// name only the role, so without it the person behind the second hop
+	// is unrecoverable once the issuing record ages out of the lake.
+	RelIssuedSession RelType = "ISSUED_SESSION"
+	// Session -> Alert. What the session is accused of.
+	RelSessionRaised RelType = "SESSION_RAISED"
+
 	RelObservedIOC   RelType = "OBSERVED_IOC"   // Alert -> IOC
 	RelIndicates     RelType = "INDICATES"      // IOC -> Malware
 	RelPartOf        RelType = "PART_OF"        // Malware -> Campaign
@@ -274,6 +300,9 @@ var AllRelTypes = []RelType{
 	RelInAccount,
 	RelStores,
 	RelOwnedBy,
+	RelOpenedSession,
+	RelIssuedSession,
+	RelSessionRaised,
 	RelObservedIOC,
 	RelIndicates,
 	RelPartOf,
