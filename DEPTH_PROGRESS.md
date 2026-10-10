@@ -55,7 +55,12 @@ is written. Next free at capture: migration `095`, ADR `0010`
 
 | Number | Claimed by | Status |
 |---|---|---|
-| (none yet) | | |
+| migration `102` | 5.4 stateful user/manager verification (verification requests, answers, tenant opt-in) | claimed |
+| migration `103` | 5.6 plain-language playbook drafts (draft, preview, approval) | claimed |
+
+The highest migration on `main` at the time of claiming is
+`101_audit_immutable_nullify.sql`; the plan's "next free `095`" is stale
+because six landed between capture and now. No ADR is claimed by Lane C.
 
 ## Phase 0: Kickoff
 
