@@ -16,6 +16,7 @@ from app.api.hunts import router as hunts_router
 from app.api.investigate import router as investigate_router
 from app.api.metrics import router as metrics_router
 from app.api.playbooks import router as playbook_router
+from app.api.playbooks import verifications_router as playbook_verifications_router
 from app.api.playbooks import waits_router as playbook_waits_router
 from app.api.replay_router import router as replay_router
 from app.api.router import router
@@ -240,6 +241,7 @@ app.include_router(investigate_router)  # prefix already set in investigate.py
 app.include_router(triage_router)  # prefix: /api/v1  (POST /cases/{id}/triage — router topology, T2.2)
 app.include_router(playbook_router)
 app.include_router(playbook_waits_router)  # prefix: /api/v1/playbook-waits
+app.include_router(playbook_verifications_router)  # prefix: /api/v1/playbook-verifications
 app.include_router(contextual_router)  # prefix: /api/v1/contextual
 app.include_router(hunts_router)  # prefix: /api/v1/hunts
 app.include_router(hunt_search_router)  # prefix: /api/v1/hunt  (search + saved)
