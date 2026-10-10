@@ -393,8 +393,7 @@ async def may_auto_send(*, tenant_id: str, step_params: dict[str, Any], context:
     if pool is None:
         return SendDecision(
             False,
-            "the verification policy could not be read, so the prompt was not sent. Unreadable permission is not "
-            "permission.",
+            "the verification policy could not be read, so the prompt was not sent. Unreadable permission is not permission.",
         )
 
     try:

@@ -1120,11 +1120,16 @@ async def _time_out_verification(pause: Any) -> PlaybookRun | None:
 async def _escalate_verification(pause: Any) -> PlaybookRun | None:
     """Ask the manager. Returns a run only when there was nobody to ask."""
     subject = pause.verification_subject or ""
+    context = pause.run_context or {}
+    # The step's own params travelled with the pause, so an author who
+    # named a manager is honoured on the sweeper too. Reading `{}` here was
+    # the first version and it silently ignored the author.
+    step_params = dict(context.get("_verification_step_params") or {})
     lookup = await verification.resolve_manager(
         tenant_id=pause.tenant_id,
         subject=subject,
-        step_params={},
-        context=pause.run_context or {},
+        step_params=step_params,
+        context=context,
     )
     if lookup.manager is None:
         if lookup.source == "error":
@@ -1169,11 +1174,11 @@ async def _escalate_verification(pause: Any) -> PlaybookRun | None:
         id=pause.step_id,
         name="verification escalation",
         type=StepType.VERIFY_USER,
-        params=dict((pause.run_context or {}).get("_verification_step_params") or {}),
+        params=step_params,
     )
     delivery = await _deliver_verification_prompt(
         step=step,
-        context=pause.run_context or {},
+        context=context,
         tenant_id=pause.tenant_id,
         recipient=lookup.manager,
         stage=verification.STAGE_MANAGER,
@@ -1540,6 +1545,25 @@ async def _control_loop(
     return StepStatus.SUCCESS, payload
 
 
+#: Where the person being asked is found, params first then the run
+#: context. Deliberately *not* an entry in ``_TARGET_KEYS``:
+#: ``RESPONSE_STEP_TYPES`` is derived from that table, and a verb listed
+#: there is dispatched through the action registry and graded on
+#: ``executed``. A verification is a question, not an action on an estate,
+#: and adding it to the table would make the engine fail every unanswered
+#: prompt as an action that did not run.
+_VERIFY_SUBJECT_KEYS: tuple[str, ...] = ("subject", "user", "username", "user_id", "upn", "email")
+
+
+def _first_present(keys: tuple[str, ...], *sources: dict[str, Any]) -> str:
+    for key in keys:
+        for source in sources:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
 async def _control_verify_user(
     step: PlaybookStep,
     pr: PlaybookRun,
@@ -1572,7 +1596,7 @@ async def _control_verify_user(
        question nobody can answer; a pause written with no prompt expires
        with a recorded outcome. Only one of those two orders is recoverable.
     """
-    subject = _resolve_target(step, pr.context)
+    subject = _first_present(_VERIFY_SUBJECT_KEYS, step.params, pr.context)
     if not subject:
         return StepStatus.FAILED, {
             "executed": False,
@@ -1630,9 +1654,7 @@ async def _control_verify_user(
             "subject": subject,
             "answers": [link["answer"] for link in links],
             "reason": (
-                "verify_user previews unless AISOC_PLAYBOOK_VERIFY_EXECUTE is set; nobody was messaged"
-                if not dry_run
-                else "dry run"
+                "verify_user previews unless AISOC_PLAYBOOK_VERIFY_EXECUTE is set; nobody was messaged" if not dry_run else "dry run"
             ),
         }
 

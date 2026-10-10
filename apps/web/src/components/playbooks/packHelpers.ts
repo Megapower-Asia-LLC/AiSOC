@@ -263,6 +263,9 @@ const STEP_TYPE_TO_INTEGRATION: Record<StepType, IntegrationType | null> = {
   loop:                null,
   // Not runnable at all — see `STEP_SCHEMAS.approval`.
   approval:            null,
+  // Depth 5.4. The prompt goes out through the same governed `notify`
+  // arms, so the integration a verification needs is the destination.
+  verify_user:         'Notification',
 };
 
 /**

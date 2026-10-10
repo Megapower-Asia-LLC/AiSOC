@@ -27,10 +27,10 @@ from app.playbook import (
     PlaybookRun,
     PlaybookStore,
     draft_from_nl,
+    verification,
 )
 from app.playbook import engine as engine_module
 from app.playbook import pause as playbook_pause
-from app.playbook import verification
 from app.security.tenant_scope import require_console_or_service_auth
 
 logger = logging.getLogger("aisoc.api.playbooks")
