@@ -687,6 +687,21 @@ jobs:
         run: python3 scripts/check_syslog_listener.py --self-test
       - name: Syslog listener gate
         run: python3 scripts/check_syslog_listener.py
+      # Asking a person whether they recognise their own activity is a
+      # workflow, not a message, and every property that makes it one can be
+      # removed without a test failing — the prompt would still arrive and
+      # the run would quietly stop branching. This asserts the answer is
+      # signed and bound to its stage, that an unanswered prompt escalates
+      # to a manager and then ends with a `timed_out` outcome, that a
+      # confirmed true positive is never asked and that the refusal is
+      # checked before the opt-in, and that the opt-in table has a writer —
+      # a control that fails closed with no way to switch it on is a feature
+      # that reads as broken. Self-test first, on the same tree: eleven
+      # injected violations, one per rule.
+      - name: Stateful verification gate — self-test
+        run: python3 scripts/check_stateful_verification.py --self-test
+      - name: Stateful verification gate
+        run: python3 scripts/check_stateful_verification.py
       # Every connector above reads an API that answers a time window, so the
       # window bounds what a poll can return. The three cloud-native
       # collection paths do not: an SQS queue after an outage, a Pub/Sub
