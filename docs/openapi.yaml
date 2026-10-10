@@ -610,6 +610,23 @@ paths:
         confidence should only see alerts that actually carry the signal.
 
 
+        `sort` is `newest` (created_at descending) or `priority` (severity
+
+        descending, then created_at descending). It defaults to `newest`: this
+
+        endpoint has generated SDK clients and "page one is the newest rows" is
+
+        part of what they were built against, so changing the order silently
+
+        would alter what every existing caller reads *without* altering the
+
+        schema — which `openapi-breaking.yml` cannot detect. The console asks for
+
+        `priority`, because a noisy low-severity source emitting faster than an
+
+        analyst pages pushes a critical off page one and keeps it there.
+
+
         `limit` is an accepted spelling of `page_size`. Supplying both with
 
         different values is a 400.'
@@ -705,6 +722,16 @@ paths:
           - type: string
           - type: 'null'
           title: Confidence Label
+      - name: sort
+        in: query
+        required: false
+        schema:
+          enum:
+          - newest
+          - priority
+          type: string
+          default: newest
+          title: Sort
       responses:
         '200':
           description: Successful Response
@@ -20396,6 +20423,39 @@ components:
         \ from the case timeline and the audit log.\n* ``recommended_actions`` — normalised\
         \ structured actions from\n  the ResponderAgent (or the legacy list-of-strings\
         \ shape)."
+    AlertFacetCounts:
+      properties:
+        by_severity:
+          additionalProperties:
+            type: integer
+          type: object
+          title: By Severity
+        by_status:
+          additionalProperties:
+            type: integer
+          type: object
+          title: By Status
+        unresolved:
+          type: integer
+          title: Unresolved
+          default: 0
+      type: object
+      title: AlertFacetCounts
+      description: 'Counts over the whole filtered result set, not the returned page.
+
+
+        The console''s Critical / High / Unresolved tiles used to be
+
+        `alerts.filter(...)` over the 25 rows it had loaded, rendered beside a
+
+        server-side `total` in the hundreds — so the tiles were arithmetically
+
+        capped at the page size and changed when the analyst paged.
+
+
+        Computed from the same `WHERE` clause as `total` rather than over the
+
+        whole tenant, so all four numbers on that strip describe one set of rows.'
     AlertLinkCreate:
       properties:
         alert_id:
@@ -20475,6 +20535,8 @@ components:
         pages:
           type: integer
           title: Pages
+        facets:
+          $ref: '#/components/schemas/AlertFacetCounts'
       type: object
       required:
       - items

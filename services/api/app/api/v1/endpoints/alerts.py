@@ -28,6 +28,7 @@ from app.services.alert_queue import (
     QueueResponse,
     build_queue,
     claim_alert,
+    severity_rank_expr,
 )
 from app.services.alert_rail import (
     MiniTimelineEvent,
@@ -35,6 +36,7 @@ from app.services.alert_rail import (
     RelatedEntity,
     build_rail_envelope,
 )
+from app.services.alert_status import is_unresolved
 from app.services.audit import emit_audit
 from app.services.event_sanitiser import (
     SubmitPayloadTooLarge,
@@ -202,12 +204,32 @@ class AlertSnoozeRequest(BaseModel):
     reason: str | None = None
 
 
+class AlertFacetCounts(BaseModel):
+    """Counts over the whole filtered result set, not the returned page.
+
+    The console's Critical / High / Unresolved tiles used to be
+    `alerts.filter(...)` over the 25 rows it had loaded, rendered beside a
+    server-side `total` in the hundreds — so the tiles were arithmetically
+    capped at the page size and changed when the analyst paged.
+
+    Computed from the same `WHERE` clause as `total` rather than over the
+    whole tenant, so all four numbers on that strip describe one set of rows.
+    """
+
+    by_severity: dict[str, int] = Field(default_factory=dict)
+    by_status: dict[str, int] = Field(default_factory=dict)
+    #: Resolved through `app.services.alert_status`, not by counting `new` —
+    #: `triaging` and `in_progress` are outstanding work too.
+    unresolved: int = 0
+
+
 class AlertListResponse(BaseModel):
     items: list[AlertResponse]
     total: int
     page: int
     page_size: int
     pages: int
+    facets: AlertFacetCounts = Field(default_factory=AlertFacetCounts)
 
 
 class AlertUpdateRequest(BaseModel):
@@ -685,6 +707,36 @@ async def submit_alert(
     return AlertResponse.model_validate(alert)
 
 
+async def _alert_facets(db: Any, tenant_id: Any, filters: list[Any]) -> AlertFacetCounts:
+    """Severity / status breakdown of every row the filters select.
+
+    Two `GROUP BY`s rather than one query per tile: the console renders four
+    numbers off this and a per-tile round-trip would make them individually
+    stale. `unresolved` is derived from the status breakdown through the
+    shared `alert_status` vocabulary so it cannot drift from the four other
+    sites that already carry the rule.
+
+    The tenant is a parameter of its own and is applied here rather than
+    being left to whatever `filters` happens to contain. The caller does
+    pass it, but a predicate reached through a list cannot be seen at the
+    statement — not by `check_tenant_query_predicates.py` and not by the
+    next reader — and a second caller that forgot it would read every
+    tenant's counts while still looking correct.
+    """
+    scoped = [Alert.tenant_id == tenant_id, *filters]
+    sev_rows = (await db.execute(select(Alert.severity, func.count()).where(and_(*scoped)).group_by(Alert.severity))).all()
+    status_rows = (await db.execute(select(Alert.status, func.count()).where(and_(*scoped)).group_by(Alert.status))).all()
+
+    by_severity = {row[0]: row[1] for row in sev_rows if row[0]}
+    by_status = {row[0]: row[1] for row in status_rows if row[0]}
+
+    return AlertFacetCounts(
+        by_severity=by_severity,
+        by_status=by_status,
+        unresolved=sum(count for state, count in by_status.items() if is_unresolved(state)),
+    )
+
+
 @router.get("", response_model=AlertListResponse)
 async def list_alerts(
     current_user: Annotated[AuthUser, Depends(require_permission("alerts:read"))],
@@ -705,6 +757,7 @@ async def list_alerts(
     search: str | None = Query(default=None),
     min_confidence: int | None = Query(default=None, ge=0, le=100),
     confidence_label: str | None = Query(default=None),
+    sort: Literal["newest", "priority"] = Query(default="newest"),
 ) -> AlertListResponse:
     """List alerts for the current tenant with filtering and pagination.
 
@@ -713,6 +766,15 @@ async def list_alerts(
     that pre-date the confidence column will have NULL and therefore won't
     match either filter — that's intentional; analysts who care about
     confidence should only see alerts that actually carry the signal.
+
+    `sort` is `newest` (created_at descending) or `priority` (severity
+    descending, then created_at descending). It defaults to `newest`: this
+    endpoint has generated SDK clients and "page one is the newest rows" is
+    part of what they were built against, so changing the order silently
+    would alter what every existing caller reads *without* altering the
+    schema — which `openapi-breaking.yml` cannot detect. The console asks for
+    `priority`, because a noisy low-severity source emitting faster than an
+    analyst pages pushes a critical off page one and keeps it there.
 
     `limit` is an accepted spelling of `page_size`. Supplying both with
     different values is a 400.
@@ -763,13 +825,35 @@ async def list_alerts(
             )
         filters.append(Alert.confidence_label == confidence_label)
 
+    if sort not in ("newest", "priority"):
+        # `Literal` makes FastAPI answer 422 before the handler runs, and
+        # publishes the enum so an SDK generator knows the allowed values.
+        # This guard covers the direct-call path, where `Literal` is not
+        # enforced: the branch below treats anything that is not "priority"
+        # as "newest", and silently serving an order the caller did not ask
+        # for is how a typo becomes a buried critical.
+        #
+        # Literal 400 because the local `status` parameter shadows
+        # `fastapi.status`, same as above.
+        raise HTTPException(status_code=400, detail="sort must be one of: newest, priority")
+
     # Count
     count_result = await db.execute(select(func.count()).select_from(Alert).where(and_(*filters)))
     total = count_result.scalar_one()
 
-    # Fetch
+    # Facets over the *same* filters as `total`, so the console's stat strip
+    # describes one set of rows. It used to derive those tiles from the loaded
+    # page, which capped them at `page_size`.
+    facets = await _alert_facets(db, current_user.tenant_id, filters)
+
+    # Fetch. `created_at` is always the final key so the order is total and
+    # paging cannot repeat or skip a row.
+    order_by = [Alert.created_at.desc()]
+    if sort == "priority":
+        order_by.insert(0, severity_rank_expr().asc())
+
     offset = (page - 1) * page_size
-    result = await db.execute(select(Alert).where(and_(*filters)).order_by(Alert.created_at.desc()).offset(offset).limit(page_size))
+    result = await db.execute(select(Alert).where(and_(*filters)).order_by(*order_by).offset(offset).limit(page_size))
     alerts = result.scalars().all()
 
     return AlertListResponse(
@@ -778,6 +862,7 @@ async def list_alerts(
         page=page,
         page_size=page_size,
         pages=(total + page_size - 1) // page_size,
+        facets=facets,
     )
 
 
