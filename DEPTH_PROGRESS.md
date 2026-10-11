@@ -407,7 +407,7 @@ invented fields on the first run of the gate.
 
 - [ ] **7.1** Intake to purge (gap-closure Phase 10 / parity 6.4)
 - [ ] **7.2** Header, URL and attachment analysis
-- [ ] **7.3** Adversary-in-the-middle session reuse
+- [x] **7.3** Adversary-in-the-middle session reuse
 
 ## Phase 8: Enterprise gates
 
@@ -442,3 +442,51 @@ invented fields on the first run of the gate.
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |
+| 2026-10-11 | 7.3 | Reproduced: `OktaConnector.normalize()` returned `None` for `session_id`, `src_asn`, `user_agent`, `client_browser` and `mfa_satisfied` on a System Log row carrying all five, so the family had nothing to group by and could not have been written. Same shape as the `outcome` hoist in #1279 -- the engine flattens `raw_event` one level and `authenticationContext` arrives as a dict. Hoisted the session, network and client fields on Okta and Entra, then wrote four rules grouping by **session** rather than by user: three distinct-value rules at threshold 2 and one ordered sequence at critical. Fixtures hand-authored from an Okta System Log row and a Graph `signIn` resource; the negative twin inverts only the clause each rule is about. Windowed 72 -> 76; executable detections unchanged at 2,511, because a windowed rule is not in that corpus. Negative controls: removing the `session_id` hoist reds 4 connector tests; switching one rule's `group_by` to `actor_email` reds 2 engine tests. Two findings recorded as D-7.3a (the threshold engine windows by arrival and only sequences window by event time) and D-7.3b (the reported-message link is deferred with a reason). |
+
+### D-7.3a -- The threshold engine windows by arrival, not by event time
+
+Found by a test that failed. An earlier version of
+`test_a_replay_outside_the_sequence_window_does_not_fire` fed two events whose
+`event_time` fields were two hours apart and expected the threshold rules to
+stay quiet. They fired, because `_evaluate_thresholds` scores each Redis
+member with `time.time()` while `_evaluate_sequences` reads
+`parse_event_time`. Both events arrived in the same second, so the window
+never moved.
+
+This is recorded rather than patched. Arrival-time scoring is what makes a
+threshold cheap, and a connector polling a vendor every five minutes delivers
+a burst whose arrival order is the only clock fusion has for it. The
+consequence is specific and worth knowing: **the one-hour figure on the three
+`wd-aitm-*` threshold rules is a budget on ingestion, not on the vendor's
+timestamps.** A replay that happened an hour ago and is polled now lands in
+the same window as the sign-in. For this family that direction is the safe
+one -- it widens rather than narrows -- but a future rule whose correctness
+depends on the vendor's clock needs a sequence, not a threshold.
+
+### D-7.3b -- The reported-message half of 7.3 is deferred, with the reason
+
+The plan's 7.3 asks for the session-reuse family "plus the link from a
+reported message whose URL precedes that sign-in". The session half is
+implemented and gated. The link is not, and inventing it would have been
+worse than deferring it.
+
+The obstacle is not effort, it is that nothing can feed it today. The
+reported-message URLs live in `aisoc_phishing_submissions` in `services/api`
+(depth 7.1), and the windowed engine consumes Kafka events in
+`services/fusion`; fusion has no read of the API's tables and should not grow
+one for a detection. The alternative -- staging a *gateway's* phishing
+verdict instead of AiSOC's own reported-message corpus -- was examined and
+refused: the one secure-email-gateway connector in the tree, `proofpoint`,
+fetches `/v2/siem/messages/blocked` only, so it never sees a click, and its
+`normalize()` emits neither the recipient nor the URL. Hoisting fields for an
+event the connector does not fetch is a rule that cannot fire wearing a rule
+that can.
+
+What would close it, in the order it has to happen: `proofpoint` (or a
+`netskope` / `zscaler` web arm) fetching click events and emitting
+`recipient`, `url` and the gateway's classification; then a sequence rule
+staging that click and the MFA-satisfied sign-in by the same principal. The
+AiSOC-authored half -- joining a tenant's *own* reported-message URLs to a
+sign-in -- belongs in the API beside the campaign store rather than in
+fusion, as an enrichment on the alert the session rules raise.

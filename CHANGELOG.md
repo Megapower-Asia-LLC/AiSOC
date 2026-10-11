@@ -231,6 +231,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An adversary-in-the-middle detection family, on sessions (depth 7.3).**
+  The attack is invisible to every rule the corpus had, and the reason is
+  structural rather than a coverage gap: an AiTM proxy relays the victim's
+  credentials *and* their MFA response, so the sign-in is legitimate by every
+  check the identity provider makes. There is no failed authentication to
+  count and often no impossible travel to measure, because the proxy sits in
+  the victim's own country. What gives it away is the stolen session being
+  used from somewhere it was never established — so the entity these rules
+  group by is the **session**, not the user. That is why the connector work
+  had to land first: `OktaConnector.normalize()` returned `None` for
+  `session_id`, `src_asn`, `user_agent`, `client_browser` and
+  `mfa_satisfied` on a System Log row carrying all five, because the engine
+  flattens `raw_event` exactly one level and `authenticationContext` arrives
+  as a dict — the same shape as the `outcome` hoist in #1279. Four rules:
+  three distinct-value rules at threshold two (a second network, a second
+  client family, a second country for one session) and one ordered sequence
+  at `critical` — an MFA-satisfied sign-in, then the same session from
+  another network within half an hour, which a threshold cannot express.
+  `mfa_satisfied` is three-valued, because treating "this event says nothing
+  about MFA" as `False` would fire on every directory read, and a denied push
+  is an MFA event and emphatically not a satisfied one. On Entra,
+  `correlationId` is deliberately **not** a fallback for `sessionId`: one
+  identifies a request and the other a session, and substituting would make
+  every sign-in its own session so the reuse detection could never fire while
+  looking like it worked. The clause "this event carries a session" is spelled
+  `session_id_neq: null`, using an operator that exists — inventing `_exists`
+  would have been read as a field literally named `session_id_exists`, which
+  is the `approver_role_neq` defect one release later. Fixtures are
+  hand-authored from an Okta System Log row and a Microsoft Graph `signIn`
+  resource rather than synthesised from the rules, and the negative twin
+  inverts only the clause each rule is about — same session, same user, same
+  event type, same outcome, same network. Windowed rules 72 → 76.
+
 - `services/api/app/models/detection_rule.py` maps the `author` column, which
   has existed since `001_init.sql` and was mapped by nothing — while fusion's
   tenant overlay reads it on every reload to say *who* silenced a rule when it
