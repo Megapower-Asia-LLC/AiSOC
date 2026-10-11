@@ -465,8 +465,8 @@ def test_phase_4_1_providers_now_report_full_coverage(
     assert resolver_cls.coverage == "full"
 
 
-def test_supported_providers_contains_all_five() -> None:
-    assert set(SUPPORTED_PROVIDERS) == {"aws", "azure", "gcp", "okta", "gws"}
+def test_supported_providers_contains_every_resolver() -> None:
+    assert set(SUPPORTED_PROVIDERS) == {"aws", "azure", "gcp", "okta", "gws", "github"}
 
 
 def test_resolver_result_serialises_to_dict(snapshot: dict[str, Any]) -> None:
@@ -578,11 +578,7 @@ def test_a_capped_action_is_reported_rather_than_silently_absent(
     frank = AwsIamResolver(snapshot=snapshot).resolve("u-frank")
     assert "s3:PutObject" in _denies_for(frank, "res-bucket-reports")
 
-    kinds = {
-        step.kind
-        for decision in frank.decisions
-        for step in decision.policy_chain
-    }
+    kinds = {step.kind for decision in frank.decisions for step in decision.policy_chain}
     assert "permissions-boundary" in kinds
 
 

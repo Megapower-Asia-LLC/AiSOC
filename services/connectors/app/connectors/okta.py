@@ -184,7 +184,7 @@ class OktaConnector(BaseConnector):
     # ``resource_id`` is the Okta entity id; we infer the entity type from
     # the prefix (the audit log uses canonical id prefixes:
     # ``00g*`` group, ``0oa*`` app, ``00p*`` policy, ``00u*`` user).
-    async def get_resource_config(self, resource_id: str, ts: str) -> dict[str, Any]:
+    async def get_resource_config(self, resource_id: str, at_ts: str | None = None) -> dict[str, Any]:
         if not resource_id:
             return {}
         prefix = resource_id[:3]
@@ -234,6 +234,6 @@ class OktaConnector(BaseConnector):
             "version": payload.get("version"),
             "last_updated": payload.get("lastUpdated"),
             "snapshot_freshness": "live",
-            "snapshot_taken_at": ts,
+            "snapshot_taken_at": at_ts,
             "raw": payload,
         }

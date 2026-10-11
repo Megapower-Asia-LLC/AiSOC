@@ -26,6 +26,8 @@ import httpx
 import structlog
 
 from app.connectors.base import BaseConnector, Capability, ConnectorSchema, Field, OAuthHints
+from app.connectors.posture import POSTURE_SNAPSHOT_ID
+from app.connectors.posture import azure as azure_posture
 
 logger = structlog.get_logger()
 
@@ -196,6 +198,26 @@ class AzureEntraConnector(BaseConnector):
                 )
 
         return [self.normalize(e) for e in events]
+
+    # ------------------------- posture --------------------------
+
+    async def get_resource_config(self, resource_id: str, at_ts: str | None = None) -> dict[str, Any]:
+        """Return the directory posture snapshot for the sentinel id.
+
+        This connector models the identity plane, so the only resource it can
+        describe is the directory itself. Any other id raises rather than
+        returning ``{}``, because a caller asking for a resource that was
+        never collectable should see that, not an empty config that reads as
+        "this resource has no settings".
+        """
+        if resource_id != POSTURE_SNAPSHOT_ID:
+            raise NotImplementedError(
+                f"{self.connector_id} describes the directory, not individual resources; the only id it answers is {POSTURE_SNAPSHOT_ID!r}"
+            )
+        await self._authenticate()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            collected = await azure_posture.collect(client, self._headers(), tenant_id=self._tenant_id)
+        return collected.to_resource_config()
 
     # ----------------------- normalize --------------------------
 
