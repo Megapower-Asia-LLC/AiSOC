@@ -425,30 +425,26 @@ const BenignMarkerPrefix = "aisoc-load-benign"
 // path and *under*-measures detection, which is the stage parity 6.9 is
 // about.
 //
-// Deliberately shaped like real cloud/identity telemetry rather than as a
-// near-miss of the alerting event: a benign event built by mutating the
-// malicious one shares its field namespace, so it exercises the same
-// handful of rules and tells you nothing about the corpus. These carry the
-// fields a CloudTrail or Okta event carries, so the rule index resolves
-// them the way production traffic would.
+// Deliberately shaped like real telemetry rather than as a near-miss of
+// the alerting event: a benign event built by mutating the malicious one
+// shares its field namespace, so it exercises the same handful of rules
+// and tells you nothing about the corpus.
 //
-// `severity: info` and an ordinary event type keep it below the promoter's
-// bar as well as the detection corpus's, so an alert from one of these is
-// a real finding about the pipeline rather than an artefact of the fixture.
+// Identity telemetry specifically, and that is a finding rather than a
+// preference. The first run of this mix reported a benign alert rate of
+// **1.00**: every "benign" event became an alert, because the load path
+// sends an undeclared connector type, the ingest normalizer's generic
+// fallback files it as class 2001 Security Finding, and the promoter
+// promotes OCSF category 2 unconditionally. Eight of the twelve declared
+// profiles are category 2, so on those connectors *no event can be
+// benign* whatever it contains. `okta_system_log` is class 3002
+// (Authentication), where promotion depends on `severity_id >= 4` — on
+// the event rather than on the connector — so a routine sign-in is
+// routine. `severity: info` keeps these below that bar and below the
+// detection corpus's, which is what makes an alert from one of them a
+// real finding about the pipeline rather than an artefact of the fixture.
 func benignLoadEvent(runID string, seq int64, sentNanos int64) map[string]interface{} {
 	shapes := []map[string]interface{}{
-		{
-			"event_type":  "s3.GetObject",
-			"description": "GetObject succeeded",
-			"user":        fmt.Sprintf("svc-reporting%03d", seq%50),
-			"src_ip":      fmt.Sprintf("10.%d.%d.%d", seq%250, (seq/250)%250, (seq/60000)%250),
-			"action":      "allow",
-			"outcome":     "success",
-			"region":      "us-east-1",
-			"account_id":  "123456789012",
-			"user_agent":  "aws-sdk-go/1.44",
-			"resource":    "arn:aws:s3:::reports",
-		},
 		{
 			"event_type":  "user.session.start",
 			"description": "sign-in succeeded",
@@ -461,14 +457,24 @@ func benignLoadEvent(runID string, seq int64, sentNanos int64) map[string]interf
 			"user_agent":  "Mozilla/5.0",
 		},
 		{
-			"event_type":  "http.request",
-			"description": "200 GET /healthz",
-			"src_ip":      fmt.Sprintf("10.20.%d.%d", seq%250, (seq/250)%250),
-			"status_code": 200,
-			"method":      "GET",
-			"path":        "/healthz",
-			"bytes_out":   128,
+			"event_type":  "user.authentication.auth_via_mfa",
+			"description": "MFA challenge satisfied",
+			"user":        fmt.Sprintf("analyst%03d", seq%200),
+			"src_ip":      fmt.Sprintf("198.51.100.%d", seq%250),
+			"action":      "allow",
 			"outcome":     "success",
+			"factor":      "webauthn",
+			"app":         "okta",
+		},
+		{
+			"event_type":  "user.session.access_admin_app",
+			"description": "read-only console view",
+			"user":        fmt.Sprintf("analyst%03d", seq%200),
+			"src_ip":      fmt.Sprintf("198.51.100.%d", seq%250),
+			"action":      "allow",
+			"outcome":     "success",
+			"app":         "okta",
+			"target":      "reporting",
 		},
 	}
 	event := map[string]interface{}{}
@@ -498,6 +504,55 @@ func loadEventFor(runID string, seq int64, sentNanos int64, alertEvery int64) (m
 		return loadEvent(runID, seq, sentNanos), true
 	}
 	return benignLoadEvent(runID, seq, sentNanos), false
+}
+
+// BenignConnectorType is the connector the benign population is sent as.
+//
+// Class 3002 (Authentication) in the ingest normalizer, where the promoter
+// requires `severity_id >= 4`. That makes promotion a property of the
+// event rather than of the connector, which is the only way a benign
+// event can stay benign: eight of the twelve declared profiles are
+// category 2 and are promoted unconditionally.
+const BenignConnectorType = "okta_system_log"
+
+// AlertingConnectorType is the historical load connector.
+const AlertingConnectorType = "crowdstrike"
+
+// postPopulations sends each population under its own connector type.
+//
+// Both halves are counted into the same stats, because the harness's
+// ingest throughput figure is about the whole mix. An empty half is
+// skipped rather than sent as an empty batch: an empty request is a
+// round trip that measures the network.
+func postPopulations(
+	ctx context.Context,
+	client *http.Client,
+	opts options,
+	alerting []map[string]interface{},
+	benign []map[string]interface{},
+	st *stats,
+) error {
+	for _, population := range []struct {
+		events        []map[string]interface{}
+		connectorType string
+	}{
+		{alerting, AlertingConnectorType},
+		{benign, BenignConnectorType},
+	} {
+		if len(population.events) == 0 {
+			continue
+		}
+		err := postBatch(ctx, client, opts, ingestRequest{
+			ConnectorID:   "load-" + opts.runID,
+			ConnectorType: population.connectorType,
+			SourceFormat:  "json",
+			Events:        population.events,
+		}, st)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type loadSummary struct {
@@ -588,23 +643,26 @@ func runLoad(ctx context.Context, opts options) loadSummary {
 					}
 				}
 				batch := make([]map[string]interface{}, 0, size)
+				benignBatch := make([]map[string]interface{}, 0, size)
 				now := time.Now().UnixNano()
 				for i := 0; i < size; i++ {
 					next := seq.Add(1) - 1
 					event, alerting := loadEventFor(opts.runID, next, now, opts.alertEvery)
 					if alerting {
 						alertingSent.Add(1)
+						batch = append(batch, event)
 					} else {
 						benignSent.Add(1)
+						benignBatch = append(benignBatch, event)
 					}
-					batch = append(batch, event)
 				}
-				err := postBatch(ctx, client, opts, ingestRequest{
-					ConnectorID:   "load-" + opts.runID,
-					ConnectorType: "crowdstrike",
-					SourceFormat:  "json",
-					Events:        batch,
-				}, st)
+				// Two requests, not one, when the mix is on. The
+				// connector type is a property of the request and the
+				// ingest normalizer picks the OCSF class from it, so a
+				// single batch would force both populations through one
+				// profile — which is how the first run of this mix
+				// reported every benign event as an alert.
+				err := postPopulations(ctx, client, opts, batch, benignBatch, st)
 				if err != nil && ctx.Err() == nil {
 					fmt.Fprintf(os.Stderr, "[load] %v\n", err)
 					if isFatalRequest(err) {

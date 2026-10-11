@@ -588,7 +588,13 @@ def build_report(
     for row in alerts:
         seen[row.seq] = seen.get(row.seq, 0) + 1
     duplicates = sum(count - 1 for count in seen.values() if count > 1)
-    missing = accepted - len(seen)
+    # Against the population that was supposed to alert, not against every
+    # accepted event. With a realistic mix the benign majority raises
+    # nothing by design, and counting it as missing would report a perfect
+    # run as having lost 99% of its events — and `--assert-no-loss` would
+    # fail every mix run for the thing the mix exists to do.
+    alerting_population = summary.alerting_sent if summary.alerting_sent is not None else accepted
+    missing = max(0, alerting_population - len(seen))
 
     latencies_ms: list[float] = sorted(((row.created_epoch + clock_offset) - row.sent_epoch) * 1000.0 for row in alerts)
 
