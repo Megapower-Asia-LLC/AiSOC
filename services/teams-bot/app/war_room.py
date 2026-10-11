@@ -270,8 +270,8 @@ async def post_to_war_room(
         # suppression sits on the reported line and nowhere else. Any
         # *other* URL built from a request in this file still fails the
         # query.
-        res = await http.post(  # codeql[py/partial-ssrf]
-            f"{GRAPH}/teams/{team_id}/channels/{quote(channel_id, safe='')}/messages",
+        res = await http.post(
+            f"{GRAPH}/teams/{team_id}/channels/{quote(channel_id, safe='')}/messages",  # codeql[py/partial-ssrf]
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={"body": {"content": body.text}},
         )

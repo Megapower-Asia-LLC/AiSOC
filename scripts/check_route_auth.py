@@ -171,6 +171,29 @@ IN_BAND_CREDENTIAL_ROUTES: dict[str, tuple[str, str]] = {
         "_authorized",
         "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
     ),
+    # Depth 9.4. The four war-room routes carry the same credential as the
+    # notify routes above and for the same reason: the caller is an AiSOC
+    # service, not the chat vendor, so there is no vendor signature to
+    # verify. `_authorized` is the identical constant-time comparison that
+    # fails closed when the token is unset, with no dev-mode exemption —
+    # a route that creates channels in somebody's workspace must not be
+    # open to whatever can reach the pod.
+    "services/slack-bot/app/war_room.py::open_war_room": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
+    "services/slack-bot/app/war_room.py::post_to_war_room": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
+    "services/teams-bot/app/war_room.py::open_war_room": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
+    "services/teams-bot/app/war_room.py::post_to_war_room": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
     "services/teams-bot/app/notify.py::post_approval_card": (
         "_authorized",
         "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset — the "
@@ -267,6 +290,15 @@ IN_BAND_CREDENTIAL_ROUTES: dict[str, tuple[str, str]] = {
         "the agents service reads directory context for the principals an alert names here and holds no session; the shared "
         "X-AiSOC-Service-Token is compared in constant time and fails closed when unset. An analyst reaches the same data through "
         "GET /graph/incident-context/{alert_id}, which authenticates by session and traverses from the alert",
+    ),
+    "services/api/app/api/v1/endpoints/war_rooms.py::channel_decision": (
+        "service_token_valid",
+        "the chat bot delivers a decision taken in the channel here and holds no session; the shared X-AiSOC-Service-Token is "
+        "compared in constant time and fails closed when unset. Deliberately no session fallback: the bot has already verified "
+        "the vendor's signature on the interaction and this service cannot re-verify it, holding no workspace secret — so the "
+        "token is the whole trust relationship and CHANNEL_DECISIONS is its blast radius, four verbs none of which closes a case. "
+        "The tenant comes from the war-room row the bot named, never from the request body, so there is no tenant field to get "
+        "wrong",
     ),
     "services/api/app/api/v1/endpoints/knowledge_base.py::retrieve_runbooks_for_triage": (
         "service_token_valid",
