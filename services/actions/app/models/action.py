@@ -92,7 +92,11 @@ class ActionType(str, Enum):
     # property of the dispatch rather than of the verb, so the entry in
     # ACTION_BLAST_RADIUS below is its single-mailbox floor and
     # `capability_contracts.scaled_impact` raises it per campaign.
-    SEARCH_MAILBOXES = "search_mailboxes"
+    #
+    # `search_mailboxes` is deliberately absent: it is read-only, declares no
+    # verification probe, and so needs nothing this enum provides. Adding it
+    # anyway would put a read on the ungoverned `POST /actions` surface for
+    # no gain. Its arms are native read executors in `investigation_reads`.
     PURGE_EMAIL = "purge_email"
     RESTORE_EMAIL = "restore_email"
     BLOCK_SENDER = "block_sender"
@@ -163,7 +167,6 @@ ACTION_BLAST_RADIUS: dict[ActionType, BlastRadius] = {
     # contract where the parameters are in scope. MEDIUM is already above
     # `_AUTO_EXECUTE_LIMIT`'s sibling tiers for the legacy door's purposes
     # and `APPROVAL_REQUIRED_ACTIONS` below makes the point unconditional.
-    ActionType.SEARCH_MAILBOXES: BlastRadius.MINIMAL,
     ActionType.PURGE_EMAIL: BlastRadius.MEDIUM,
     ActionType.RESTORE_EMAIL: BlastRadius.LOW,
     ActionType.BLOCK_SENDER: BlastRadius.LOW,

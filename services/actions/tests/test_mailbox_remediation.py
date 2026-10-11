@@ -41,7 +41,6 @@ from app.executors import mailbox
 from app.executors.mailbox import (
     BlockSenderExecutor,
     PurgeEmailExecutor,
-    SearchMailboxesExecutor,
     choose_vendor,
 )
 from app.live_actions import builtins, dispatcher, registry
@@ -51,11 +50,16 @@ from app.live_actions.capability_contracts import (
     scaled_impact,
 )
 from app.live_actions.contract import ActionImpact, ApprovalRequirement, Reversal
+from app.live_actions.investigation_reads import M365SearchMailboxes
 from app.live_actions.models import LiveActionRequest, LiveActionStatus
 from app.models.action import ActionRequest, ActionStatus, ActionType
 from app.services.verification import PostActionVerifier, VerificationOutcome
 
 MAILBOX_VERBS = ("search_mailboxes", "purge_email", "restore_email", "block_sender", "unblock_sender")
+#: The four that change state. `search_mailboxes` is a native read in
+#: `investigation_reads` with no ActionType and no legacy executor behind
+#: it, so the adapter-shaped assertions below do not apply to it.
+STATE_CHANGING_VERBS = ("purge_email", "restore_email", "block_sender", "unblock_sender")
 VENDORS = ("m365", "google_workspace")
 
 #: RFC 5737 documentation addresses and RFC 2606 names throughout. Nothing
@@ -164,16 +168,29 @@ class TestOffByDefault:
         assert ActionsSettings.model_fields["AISOC_FEATURE_MAILBOX_REMEDIATION"].default is False
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("action_type", [ActionType.SEARCH_MAILBOXES, ActionType.PURGE_EMAIL, ActionType.BLOCK_SENDER])
+    @pytest.mark.parametrize("action_type", [ActionType.PURGE_EMAIL, ActionType.BLOCK_SENDER])
     async def test_disabled_fails_and_says_why_rather_than_simulating(self, action_type: ActionType) -> None:
         executor = {
-            ActionType.SEARCH_MAILBOXES: SearchMailboxesExecutor(),
             ActionType.PURGE_EMAIL: PurgeEmailExecutor(),
             ActionType.BLOCK_SENDER: BlockSenderExecutor(),
         }[action_type]
         result = await executor.execute(_request(action_type, sender=SENDER, **M365_CREDENTIALS))
         assert result.status is ActionStatus.FAILED
         assert result.output["executed"] is False
+        assert "AISOC_FEATURE_MAILBOX_REMEDIATION" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_the_read_is_gated_too(self) -> None:
+        """Enumerating a tenant's mail is not a neutral act, so the read is gated with the writes."""
+        result = await M365SearchMailboxes().execute(
+            LiveActionRequest(
+                capability="search_mailboxes",
+                vendor_id="m365",
+                target=MAILBOX,
+                params={"internet_message_id": INTERNET_ID, **M365_CREDENTIALS},
+            )
+        )
+        assert result.status is LiveActionStatus.FAILED
         assert "AISOC_FEATURE_MAILBOX_REMEDIATION" in (result.error or "")
 
     @pytest.mark.asyncio
@@ -244,11 +261,16 @@ class TestTheRequestShapeIsWhatTheVendorDocuments:
         route = respx.get(url__regex=r"https://graph\.microsoft\.com/v1\.0/users/.*/messages").mock(
             return_value=httpx.Response(200, json={"value": [GRAPH_MESSAGE]})
         )
-        result = await SearchMailboxesExecutor().execute(
-            _request(ActionType.SEARCH_MAILBOXES, internet_message_id=INTERNET_ID.strip("<>"), **M365_CREDENTIALS)
+        result = await M365SearchMailboxes().execute(
+            LiveActionRequest(
+                capability="search_mailboxes",
+                vendor_id="m365",
+                target=MAILBOX,
+                params={"internet_message_id": INTERNET_ID.strip("<>"), **M365_CREDENTIALS},
+            )
         )
-        assert result.status is ActionStatus.COMPLETED
-        assert result.output["match_count"] == 1
+        assert result.status is LiveActionStatus.SUCCEEDED
+        assert result.details["match_count"] == 1
         # Read the decoded parameters, not the raw URL: percent-encoding
         # would hide both of these assertions behind `%27%3C`.
         params = route.calls.last.request.url.params
@@ -509,7 +531,7 @@ class TestVendorSelection:
 
     def test_the_adapter_pins_its_own_vendor(self) -> None:
         for vendor in VENDORS:
-            for capability in MAILBOX_VERBS:
+            for capability in STATE_CHANGING_VERBS:
                 executor = registry.get_executor(vendor, capability)
                 assert executor._vendor_pin == vendor  # noqa: SLF001
 
@@ -520,7 +542,7 @@ class TestVendorSelection:
             "google_workspace": set(mailbox.GMAIL_CLIENT_PARAM_KEYS),
         }
         for vendor in VENDORS:
-            for capability in MAILBOX_VERBS:
+            for capability in STATE_CHANGING_VERBS:
                 executor = registry.get_executor(vendor, capability)
                 assert set(executor._credential_keys) == expected[vendor]  # noqa: SLF001
 

@@ -64,7 +64,6 @@ from app.executors.mailbox import (
     BlockSenderExecutor,
     PurgeEmailExecutor,
     RestoreEmailExecutor,
-    SearchMailboxesExecutor,
     UnblockSenderExecutor,
 )
 from app.executors.network import (
@@ -101,7 +100,9 @@ from .investigation_reads import (
     DefenderLookupEndpointTelemetry,
     DefenderUnisolateHost,
     EntraGetUserActivity,
+    GmailSearchMailboxes,
     GoogleWorkspaceGetUserActivity,
+    M365SearchMailboxes,
     OktaGetUserActivity,
     SentinelOneGetDetections,
     SentinelOneGetHost,
@@ -1034,18 +1035,6 @@ class _MailboxAdapter(_LegacyExecutorAdapter):
 
 
 @apply_contract
-class M365SearchMailboxes(_MailboxAdapter):
-    vendor_id = M365
-    capability = "search_mailboxes"
-    description = "Find copies of a reported message in a Microsoft 365 mailbox."
-    requires_credentials = True
-    _legacy_executor = SearchMailboxesExecutor()
-    _legacy_action_type = ActionType.SEARCH_MAILBOXES
-    _credential_keys = M365_CLIENT_PARAM_KEYS
-    _vendor_pin = M365
-
-
-@apply_contract
 class M365PurgeEmail(_MailboxAdapter):
     vendor_id = M365
     capability = "purge_email"
@@ -1091,18 +1080,6 @@ class M365UnblockSender(_MailboxAdapter):
     _legacy_action_type = ActionType.UNBLOCK_SENDER
     _credential_keys = M365_CLIENT_PARAM_KEYS
     _vendor_pin = M365
-
-
-@apply_contract
-class GmailSearchMailboxes(_MailboxAdapter):
-    vendor_id = GOOGLE_WORKSPACE
-    capability = "search_mailboxes"
-    description = "Find copies of a reported message in a Gmail mailbox."
-    requires_credentials = True
-    _legacy_executor = SearchMailboxesExecutor()
-    _legacy_action_type = ActionType.SEARCH_MAILBOXES
-    _credential_keys = GMAIL_CLIENT_PARAM_KEYS
-    _vendor_pin = GOOGLE_WORKSPACE
 
 
 @apply_contract
@@ -1177,6 +1154,11 @@ _BUILTIN_ADAPTERS: tuple[type[LiveActionExecutor], ...] = (
     GoogleWorkspaceGetUserActivity,
     AWSLookupCloudAudit,
     DefenderLookupEndpointTelemetry,
+    # Depth 7.1. The read every mailbox-remediation verb depends on: a
+    # purge takes a per-mailbox message id, and only a search maps one
+    # internet message id onto the mailboxes holding a copy.
+    M365SearchMailboxes,
+    GmailSearchMailboxes,
     # Rollback for the most disruptive action, which had no executor.
     CrowdStrikeUnisolateHost,
     DefenderUnisolateHost,
@@ -1253,12 +1235,10 @@ _BUILTIN_ADAPTERS: tuple[type[LiveActionExecutor], ...] = (
     # AISOC_FEATURE_MAILBOX_REMEDIATION is set. Gating registration instead
     # would make a disabled deployment answer executor_not_found, which
     # reads as a missing integration rather than as a deliberate setting.
-    M365SearchMailboxes,
     M365PurgeEmail,
     M365RestoreEmail,
     M365BlockSender,
     M365UnblockSender,
-    GmailSearchMailboxes,
     GmailPurgeEmail,
     GmailRestoreEmail,
     GmailBlockSender,

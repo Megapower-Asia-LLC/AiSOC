@@ -25,7 +25,6 @@ from app.executors.mailbox import (
     BlockSenderExecutor,
     PurgeEmailExecutor,
     RestoreEmailExecutor,
-    SearchMailboxesExecutor,
     UnblockSenderExecutor,
 )
 from app.executors.network import AllowIPExecutor, BlockDomainExecutor, BlockIPExecutor
@@ -77,7 +76,6 @@ EXECUTOR_REGISTRY = {
     # message" and both doors reach it. They are here because the post-action
     # verifier is keyed by ActionType: a capability that declares a probe and
     # has no ActionType declares a probe nothing can call.
-    ActionType.SEARCH_MAILBOXES: SearchMailboxesExecutor(),
     ActionType.PURGE_EMAIL: PurgeEmailExecutor(),
     ActionType.RESTORE_EMAIL: RestoreEmailExecutor(),
     ActionType.BLOCK_SENDER: BlockSenderExecutor(),

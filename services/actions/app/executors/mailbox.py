@@ -168,48 +168,6 @@ class _MailboxExecutor(BaseExecutor):
         return vendor, client, None
 
 
-class SearchMailboxesExecutor(_MailboxExecutor):
-    """Find the copies of one reported message. The read the others depend on."""
-
-    action_type = ActionType.SEARCH_MAILBOXES
-
-    async def execute(self, request: ActionRequest) -> ActionResult:
-        vendor, client, early = self._preamble(request)
-        if early is not None:
-            return early
-        params = dict(request.parameters or {})
-        try:
-            if vendor == M365:
-                matches = await client.search_messages(
-                    request.target,
-                    internet_message_id=str(params.get("internet_message_id") or ""),
-                    sender=str(params.get("sender") or ""),
-                    subject=str(params.get("subject") or ""),
-                    received_after=str(params.get("received_after") or ""),
-                    limit=int(params.get("limit") or 25),
-                )
-            else:
-                matches = await client.search_messages(
-                    request.target,
-                    internet_message_id=str(params.get("internet_message_id") or ""),
-                    sender=str(params.get("sender") or ""),
-                    limit=int(params.get("limit") or 25),
-                )
-        except ValueError as exc:
-            # The Gmail sanitiser refuses rather than escapes, and a refusal
-            # is a failure rather than an empty result: an escaped value that
-            # reaches the API and matches nothing reports a clean mailbox
-            # from a search that never ran.
-            return self._refused(request, f"{vendor} search refused the query: {exc}", vendor=vendor)
-        except Exception as exc:  # noqa: BLE001 - a vendor error is FAILED, never silent
-            return self._failed(request, vendor, exc)
-        return self._ok(
-            request,
-            vendor,
-            {"mailbox": request.target, "matches": matches, "match_count": len(matches)},
-        )
-
-
 class PurgeEmailExecutor(_MailboxExecutor):
     """Soft-delete one copy of a message. Reversible by ``RestoreEmailExecutor``."""
 
@@ -436,7 +394,6 @@ __all__ = [
     "PurgeEmailExecutor",
     "RECOVERABLE_ITEMS",
     "RestoreEmailExecutor",
-    "SearchMailboxesExecutor",
     "UnblockSenderExecutor",
     "choose_vendor",
 ]
