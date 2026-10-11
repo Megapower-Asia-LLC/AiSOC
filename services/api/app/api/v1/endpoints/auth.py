@@ -186,14 +186,14 @@ async def mfa_challenge_for(
     """
     from app.api.v1.endpoints.mfa import has_confirmed_factor, has_webauthn_factor, mfa_required_for, mint_challenge
 
-    if await has_confirmed_factor(db, user_id):
+    if await has_confirmed_factor(db, user_id, tenant_id):
         # Only the methods this account can actually use. Offering
         # `webauthn` to somebody with no authenticator sends them to a
         # browser prompt that cannot succeed, and offering `totp` to
         # somebody whose only factor is a security key asks for a code
         # from an app they never set up.
         methods = ["totp", "recovery_code"] if await _has_totp(db, user_id) else []
-        if await has_webauthn_factor(db, user_id):
+        if await has_webauthn_factor(db, user_id, tenant_id):
             methods.append("webauthn")
         return {
             "mfa_required": True,

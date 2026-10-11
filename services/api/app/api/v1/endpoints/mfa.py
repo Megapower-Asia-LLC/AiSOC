@@ -147,7 +147,7 @@ async def enrolment_row(db: Any, user_id: uuid.UUID) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-async def has_webauthn_factor(db: Any, user_id: uuid.UUID) -> bool:
+async def has_webauthn_factor(db: Any, user_id: uuid.UUID, tenant_id: uuid.UUID) -> bool:
     """Whether this user holds an unrevoked WebAuthn credential.
 
     Any credential counts, not only one enrolled from the console. Both
@@ -158,14 +158,24 @@ async def has_webauthn_factor(db: Any, user_id: uuid.UUID) -> bool:
     user who already carries a verified authenticator enrol the same
     device twice, and leave two sign-count high-water marks for one
     authenticator, splitting the clone-detection control in half.
+
+    Scoped to the tenant as well as the user. `passkey_credentials` is
+    tenant-scoped and a user id alone addresses a row in any tenant; that
+    the ids happen to come from a signed challenge today is a property of
+    the callers, not of this query, and the next caller inherits none of
+    it. `scripts/check_tenant_query_predicates.py` is the gate.
     """
     count = (
-        await db.execute(text("SELECT count(*) FROM passkey_credentials WHERE user_id = :u AND revoked_at IS NULL").bindparams(u=user_id))
+        await db.execute(
+            text("SELECT count(*) FROM passkey_credentials WHERE user_id = :u AND tenant_id = :t AND revoked_at IS NULL").bindparams(
+                u=user_id, t=tenant_id
+            )
+        )
     ).scalar()
     return bool(count)
 
 
-async def has_confirmed_factor(db: Any, user_id: uuid.UUID) -> bool:
+async def has_confirmed_factor(db: Any, user_id: uuid.UUID, tenant_id: uuid.UUID) -> bool:
     """Whether this account can satisfy a challenge with anything at all.
 
     TOTP **or** WebAuthn. Before depth 8.1 this read the TOTP table alone,
@@ -176,7 +186,7 @@ async def has_confirmed_factor(db: Any, user_id: uuid.UUID) -> bool:
     row = await enrolment_row(db, user_id)
     if row and row["confirmed_at"]:
         return True
-    return await has_webauthn_factor(db, user_id)
+    return await has_webauthn_factor(db, user_id, tenant_id)
 
 
 async def tenant_requires_totp(db: Any, tenant_id: uuid.UUID) -> bool:
@@ -418,11 +428,11 @@ async def mfa_status(current_user: AuthUser, db: DBSession) -> MfaStatus:
     enrolment = await enrolment_row(db, current_user.user_id)
     role = getattr(current_user, "role", None)
     return MfaStatus(
-        enrolled=await has_confirmed_factor(db, current_user.user_id),
+        enrolled=await has_confirmed_factor(db, current_user.user_id, current_user.tenant_id),
         tenant_requires_totp=await tenant_requires_totp(db, current_user.tenant_id),
         recovery_codes_remaining=int(remaining),
         has_totp=bool(enrolment and enrolment["confirmed_at"]),
-        has_webauthn=await has_webauthn_factor(db, current_user.user_id),
+        has_webauthn=await has_webauthn_factor(db, current_user.user_id, current_user.tenant_id),
         require_for_roles=sorted(await roles_requiring_mfa(db, current_user.tenant_id)),
         required_for_me=await mfa_required_for(db, current_user.tenant_id, role),
     )
@@ -597,6 +607,7 @@ async def webauthn_verify(body: WebAuthnVerifyRequest, db: DBSession, request: R
     device = await verify_second_factor_assertion(
         db,
         user_id=user_id,
+        tenant_id=tenant_id,
         challenge=body.challenge,
         credential=body.credential,
     )

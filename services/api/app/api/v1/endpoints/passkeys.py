@@ -373,6 +373,7 @@ async def webauthn_second_factor_options(db: Any, *, user_id: uuid.UUID, tenant_
             await db.execute(
                 select(PasskeyCredential).where(
                     PasskeyCredential.user_id == user_id,
+                    PasskeyCredential.tenant_id == tenant_id,
                     PasskeyCredential.revoked_at.is_(None),
                 )
             )
@@ -406,6 +407,7 @@ async def verify_second_factor_assertion(
     db: Any,
     *,
     user_id: uuid.UUID,
+    tenant_id: uuid.UUID,
     challenge: str,
     credential: dict[str, Any],
 ) -> str | None:
@@ -418,6 +420,10 @@ async def verify_second_factor_assertion(
     Without it, an attacker who has verified a password for one account
     could discharge its challenge with their own enrolled authenticator —
     the signature would be perfectly valid and belong to somebody else.
+
+    `tenant_id` is predicated alongside it because `passkey_credentials`
+    is tenant-scoped: the row is addressed, not merely found, and a user
+    id on its own addresses a row in any tenant.
     """
     webauthn, _ = _import_webauthn()
 
@@ -432,6 +438,7 @@ async def verify_second_factor_assertion(
             select(PasskeyCredential).where(
                 PasskeyCredential.credential_id == raw_credential_id,
                 PasskeyCredential.user_id == user_id,
+                PasskeyCredential.tenant_id == tenant_id,
                 PasskeyCredential.revoked_at.is_(None),
             )
         )
