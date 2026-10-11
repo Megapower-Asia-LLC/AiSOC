@@ -123,19 +123,30 @@ jobs:
         run: |
           cp app/api/v1/endpoints/auth.py /tmp/auth.bak
           python - <<'PY'
-          import pathlib, sys
+          import pathlib, re, sys
           p = pathlib.Path("app/api/v1/endpoints/auth.py")
           s = p.read_text()
-          needle = (
-              "    challenge = await mfa_challenge_for(db, user_id=user.id, tenant_id=user.tenant_id)\n"
-              "    if challenge is not None:\n"
-              "        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=challenge)\n"
+          # The three lines that turn a correct password into a challenge
+          # instead of a session. Matched by shape rather than by their exact
+          # text: this was a literal, and the first honest edit to the call --
+          # adding `role=` so enforcement can be per role -- stopped it
+          # matching, so the control refused to run. That refusal was correct
+          # behaviour and is why this is a regex now rather than a looser
+          # literal. The argument list is the only part allowed to vary; the
+          # assignment, the guard and the 202 are all still pinned, and
+          # exactly one such integration must exist, which the literal never
+          # checked.
+          pattern = re.compile(
+              r"[ ]{4}challenge = await mfa_challenge_for\([^\n]*\)\n"
+              r"[ ]{4}if challenge is not None:\n"
+              r"[ ]{8}return JSONResponse\(status_code=status\.HTTP_202_ACCEPTED, content=challenge\)\n"
           )
-          if needle not in s:
-              print("negative control could not find the login integration to remove; it has "
-                    "been reshaped and this control is no longer proving anything")
+          found = pattern.findall(s)
+          if len(found) != 1:
+              print(f"negative control found {len(found)} login integrations to remove, wanted exactly 1; "
+                    "it has been reshaped and this control is no longer proving anything")
               sys.exit(1)
-          p.write_text(s.replace(needle, "", 1))
+          p.write_text(pattern.sub("", s, count=1))
           PY
           if python -m pytest ../../tests/isolation/test_console_mfa_live.py -q >/dev/null 2>&1; then
             cp /tmp/auth.bak app/api/v1/endpoints/auth.py
