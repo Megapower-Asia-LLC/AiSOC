@@ -11,11 +11,13 @@ on:
     paths:
       - 'apps/mobile/**'
       - 'packages/sdk-ts/**'
+      - 'scripts/check_no_audio_egress.py'
       - '.github/workflows/mobile.yml'
   pull_request:
     paths:
       - 'apps/mobile/**'
       - 'packages/sdk-ts/**'
+      - 'scripts/check_no_audio_egress.py'
       - '.github/workflows/mobile.yml'
 
 concurrency:
@@ -60,16 +62,140 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      # The README claims what is and is not verified. This keeps it honest:
-      # if somebody later adds an Expo build or a device test, the claim has
-      # to move at the same time.
-      - name: The README must not claim a device build happened
+      # Depth 9.6. The guard this replaces required the README to say no
+      # device build had been performed. A device build is now performed, in
+      # the two jobs below, so the guard inverts: the README must not claim
+      # more than those jobs prove. Specifically it must still say that an
+      # **iPhone** build and a **real-handset push** have not happened,
+      # because neither has — both need developer accounts nobody has
+      # provisioned.
+      #
+      # Inverting rather than deleting is the point. A claim with no gate is
+      # the state this file existed to prevent, and "we added a build so the
+      # honesty check is no longer needed" is how that state returns.
+      - name: The README must not claim more than CI proves
         run: |
           set -euo pipefail
-          if grep -qiE '^\| Built for a device \| \*\*No\.\*\*' README.md; then
-            echo "OK: README states no device build has been performed."
-          else
-            echo "::error::apps/mobile/README.md no longer states that no device build has been performed."
-            echo "Either restore the statement, or update it because a device build is now actually gated here."
+          fail=0
+          if ! grep -qiE '^\| Built for an iPhone \| \*\*No\.\*\*' README.md; then
+            echo "::error::apps/mobile/README.md no longer states that no iPhone *device* build has happened."
+            echo "The iOS job below builds for the simulator only; a device build needs an Apple developer account."
+            fail=1
+          fi
+          if ! grep -qiE '^\| Push delivered to a real handset \| \*\*No\.\*\*' README.md; then
+            echo "::error::apps/mobile/README.md no longer states that push has not reached a real handset."
+            echo "No APNs key and no FCM service account exist, so nothing has been delivered to a device."
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] && echo "OK: the README claims exactly what these jobs prove."
+          exit "$fail"
+
+      - name: No audio may leave the responder app
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/check_no_audio_egress.py --self-test && python3 scripts/check_no_audio_egress.py
+
+  # ── A build that produces something you can install ──────────────────────
+  #
+  # The plan asks for `apps/mobile` built "for a device through a CI
+  # pipeline". Android can be: `expo prebuild` generates the native project
+  # and Gradle assembles a release APK, signed with a throwaway debug
+  # keystore. That APK installs on a handset. It is not store-signable —
+  # that needs a Google Play account, which is a maintainer item — and the
+  # README says so rather than implying a shippable artefact.
+  android-apk:
+    name: Mobile — Android APK (installable, not store-signed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install
+        run: pnpm install
+
+      # Generates `android/` from app.json. Not committed, deliberately: a
+      # checked-in native project drifts from the Expo config and the drift
+      # is invisible until a build fails for a reason nobody changed.
+      - name: Generate the native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      # A debug keystore, generated here and thrown away. The APK installs
+      # and runs; it cannot be uploaded to Play, which is correct — a
+      # release key in CI would be a release key in a log.
+      - name: Assemble a release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon -x lint
+
+      - name: The APK must exist and be a real archive
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$apk" ]; then
+            echo "::error::Gradle reported success and produced no APK."
             exit 1
           fi
+          # `unzip -l` on an APK lists its entries; an empty or truncated
+          # artefact fails here rather than being uploaded as a build nobody
+          # checked. A green build that produced nothing is the exact shape
+          # this repository has shipped before.
+          unzip -l "$apk" | grep -q 'classes.dex'
+          echo "OK: $apk ($(wc -c <"$apk") bytes) contains classes.dex"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: aisoc-responder-android
+          path: apps/mobile/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  # iOS compiles for the **simulator**. A device build needs an Apple
+  # developer account and a provisioning profile, which is a maintainer item
+  # — so this proves the native project configures and compiles, and the
+  # README does not claim more.
+  ios-simulator:
+    name: Mobile — iOS simulator build (no signing)
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22'
+
+      - name: Install
+        run: pnpm install
+
+      - name: Generate the native iOS project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install pods
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Build for the simulator, unsigned
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          scheme=$(xcodebuild -list -json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace"]["schemes"][0])')
+          xcodebuild \
+            -workspace "$(ls -d *.xcworkspace | head -1)" \
+            -scheme "$scheme" \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

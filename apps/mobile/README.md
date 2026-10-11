@@ -34,8 +34,10 @@ app up:
 |---|---|
 | `src/lib/**` unit tests | **Run in CI.** Session handling, push registration, approval presentation. |
 | `tsc --noEmit` | **Run in CI.** |
-| Built for a device | **No.** No Expo build, no simulator, no store submission has been performed. |
-| Push delivered to a real handset | **No.** APNs and FCM credentials are an account action, the same class of blocker as the npm and PyPI publish. |
+| Built for a device | **Android, yes — in CI.** `expo prebuild` plus a Gradle `assembleRelease` produces an installable APK on every change, signed with a throwaway debug keystore. It installs on a handset; it is not store-signable, which needs a Google Play account. |
+| Built for an iPhone | **No.** The iOS job compiles the app for the **simulator** on a macOS runner, which proves the native project configures and builds. A device build needs an Apple developer account and a provisioning profile. |
+| Push delivered to a real handset | **No.** The delivery path exists and is tested — `services/realtime/src/native-push.ts` speaks APNs and FCM HTTP v1, with eleven tests over the request shapes and the three outcomes. What is missing is credentials: an APNs `.p8` with its key and team ids, and an FCM service account. Until they exist the sender returns `not_configured` naming each missing variable, and **nothing reports a delivery**. |
+| Voice input | **Transcription is on-device by construction.** `src/lib/voice.ts` takes a recogniser that returns a *string*; no audio type appears anywhere in it, a device with no offline model is refused rather than silently using the cloud recogniser, and `scripts/check_no_audio_egress.py` fails the build if any module here touches a capture API or sends a binary body. Not exercised against a real microphone. |
 
 The logic that could be tested without a device was written so that it could
 be: storage, the device-token provider and the API client are all injected,
