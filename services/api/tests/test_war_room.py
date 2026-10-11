@@ -75,8 +75,13 @@ class TestDecisions:
 
         with pytest.raises(WarRoomError, match="decision must be one of"):
             await apply_channel_decision(
-                db=None,  # never reached: the refusal happens before any SQL
-                tenant_id=None,
+                # Never reached: the refusal happens before any SQL, which
+                # is the property under test. `type: ignore` rather than a
+                # stub session, because a stub capable of answering would
+                # be a double more capable than the real thing and would
+                # hide a regression that started issuing the query.
+                db=None,  # type: ignore[arg-type]
+                tenant_id=None,  # type: ignore[arg-type]
                 war_room={},
                 decision="delete_everything",
                 actor="someone",

@@ -76,6 +76,31 @@ class PostRequest(BaseModel):
     case_id: str = ""
 
 
+#: Slack's machine-readable reason codes. The API answers with one of a
+#: closed set (`name_taken`, `restricted_action`, `channel_not_found`, …),
+#: and that token is both the whole actionable content of the failure and
+#: safe to return — unlike `str(exc)`, which carries the full API response.
+_REASON_RE = re.compile(r"\b([a-z][a-z0-9_]{3,48})\b")
+
+#: Bounded so an unrecognised error cannot smuggle a response body out
+#: through the reason slot.
+_MAX_REASON = 48
+
+
+def slack_reason(exc: BaseException) -> str:
+    """The reason code from a Slack SDK error, or a fixed fallback.
+
+    A `fullmatch`-shaped allowlist rather than a redaction pass: anything
+    that is not a lower-case reason token is replaced, not escaped, because
+    an escaped response body returned to a caller is still the response
+    body.
+    """
+    for candidate in _REASON_RE.findall(str(exc))[:20]:
+        if candidate not in ("the", "error", "response", "slack", "api", "data"):
+            return candidate[:_MAX_REASON]
+    return "no reason code"
+
+
 def _authorized(supplied: str | None) -> bool:
     """Constant-time internal-token check, failing closed when unset.
 
@@ -86,7 +111,11 @@ def _authorized(supplied: str | None) -> bool:
     expected = get_settings().AISOC_INTERNAL_TOKEN.strip()
     if not expected:
         return False
-    return bool(supplied) and hmac.compare_digest(supplied.strip(), expected)
+    # `is not None`, not `bool(...)`: the two are equivalent at runtime and
+    # only the first narrows the Optional, which is why the baseline gate
+    # reported a `union-attr` here. Narrowing is the fix; a `type: ignore`
+    # would hide the one thing that makes the next edit safe.
+    return supplied is not None and hmac.compare_digest(supplied.strip(), expected)
 
 
 async def _find_channel_by_name(bolt: Any, name: str) -> dict[str, Any] | None:
@@ -140,10 +169,16 @@ async def open_war_room(
         channel = created.get("channel") or {}
     except Exception as exc:  # noqa: BLE001 — the SDK raises a vendor error type this service need not import
         if "name_taken" not in str(exc):
+            # The vendor's own words go to the log, not to the response.
+            # Slack's SDK raises an object whose `str()` carries the whole
+            # API response, and returning that to a caller is an
+            # information-exposure finding (`py/stack-trace-exposure`) as
+            # well as being more than the caller can act on. The *reason*
+            # code is what they can act on, so that is what travels.
             logger.warning("slack_bot.war_room_create_failed", case_id=body.case_id, name=name, error=str(exc))
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Slack refused to create #{name}: {exc}",
+                detail=f"Slack refused to create #{name} ({slack_reason(exc)}).",
             ) from exc
         # Re-opening a war room whose channel already exists should find it.
         channel = await _find_channel_by_name(bolt, name)
@@ -216,8 +251,9 @@ async def post_to_war_room(
     try:
         await bolt.client.chat_postMessage(channel=body.channel_id, text=body.text)
     except Exception as exc:  # noqa: BLE001
+        logger.warning("slack_bot.war_room_post_failed", channel_id=body.channel_id, error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Slack refused the message: {exc}",
+            detail=f"Slack refused the message ({slack_reason(exc)}).",
         ) from exc
     return {"posted": True}

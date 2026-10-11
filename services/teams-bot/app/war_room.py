@@ -32,6 +32,7 @@ import hmac
 import os
 import re
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import structlog
@@ -73,11 +74,33 @@ def channel_name_for(case_number: str, title: str) -> str:
     return cleaned[:50]
 
 
+#: The shape Graph issues for a channel id: `19:<base64ish>@thread.tacv2`.
+#: A `fullmatch` on it, not an escape. An escaped value that reaches Graph
+#: and matches nothing reports a clean failure for a request that never ran;
+#: refusing names the problem. This is also what stops `channel_id` — which
+#: arrives over HTTP — from steering the URL path (`py/partial-ssrf`).
+_CHANNEL_ID_RE = re.compile(r"^19:[A-Za-z0-9_+=/\-]{8,200}@thread\.(tacv2|skype)$")
+
+
+def require_channel_id(candidate: str) -> str:
+    """Return ``candidate`` when it is a Graph channel id, or refuse."""
+    if not _CHANNEL_ID_RE.fullmatch(candidate or ""):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="channel_id is not a Microsoft Graph channel id (19:...@thread.tacv2).",
+        )
+    return candidate
+
+
 def _authorized(supplied: str | None) -> bool:
     expected = os.environ.get("AISOC_INTERNAL_TOKEN", "").strip()
     if not expected:
         return False
-    return bool(supplied) and hmac.compare_digest(supplied.strip(), expected)
+    # `is not None`, not `bool(...)`: the two are equivalent at runtime and
+    # only the first narrows the Optional, which is why the baseline gate
+    # reported a `union-attr` here. Narrowing is the fix; a `type: ignore`
+    # would hide the one thing that makes the next edit safe.
+    return supplied is not None and hmac.compare_digest(supplied.strip(), expected)
 
 
 def graph_config() -> tuple[str, str, str, str] | list[str]:
@@ -235,11 +258,12 @@ async def post_to_war_room(
             detail=f"Microsoft Graph is not configured; missing {', '.join(config)}.",
         )
     tenant, client_id, secret, team_id = config
+    channel_id = require_channel_id(body.channel_id)
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as http:
         token = await _graph_token(tenant, client_id, secret, http)
         res = await http.post(
-            f"{GRAPH}/teams/{team_id}/channels/{body.channel_id}/messages",
+            f"{GRAPH}/teams/{team_id}/channels/{quote(channel_id, safe='')}/messages",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={"body": {"content": body.text}},
         )

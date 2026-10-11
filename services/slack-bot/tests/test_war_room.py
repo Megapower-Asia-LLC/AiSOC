@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from app.war_room import channel_name_for, router
+from app.war_room import channel_name_for, router, slack_reason
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -125,6 +125,33 @@ class TestChannelName:
         """It is what an analyst searches for; a long title is not."""
         name = channel_name_for("CASE-2026-0431", "y" * 200)
         assert name.startswith("aisoc-case-2026-0431")
+
+
+class TestErrorText:
+    """The vendor's own words go to the log; the reason code goes to the caller."""
+
+    def test_a_reason_code_is_extracted(self) -> None:
+        assert slack_reason(Exception("The request to the Slack API failed. name_taken")) == "request"
+        assert slack_reason(FakeSlackError("restricted_action")) == "restricted_action"
+
+    def test_an_unrecognisable_error_yields_a_fixed_string(self) -> None:
+        assert slack_reason(Exception("!!! 500 !!!")) == "no reason code"
+
+    def test_the_reason_is_bounded_so_a_body_cannot_ride_out_in_it(self) -> None:
+        assert len(slack_reason(Exception("a" * 500))) <= 48
+
+    def test_a_create_failure_does_not_return_the_api_response(self, monkeypatch) -> None:
+        secret = "xoxb-this-would-be-a-leaked-token"
+        fake = FakeClient(create_raises=f"restricted_action: full response with {secret}")
+        client = make_client(fake, monkeypatch)
+        res = _open(client)
+        assert res.status_code == 502
+        detail = res.json()["detail"]
+        assert "restricted_action" in detail
+        # The whole API response is what `str(exc)` carries, and returning
+        # it is both more than the caller can act on and an
+        # information-exposure finding.
+        assert secret not in detail
 
 
 class TestOpen:

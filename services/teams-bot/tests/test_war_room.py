@@ -16,7 +16,7 @@ exactly what is missing". Asserted below:
 from __future__ import annotations
 
 import pytest
-from app.war_room import channel_name_for, graph_config, router
+from app.war_room import channel_name_for, graph_config, require_channel_id, router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -102,3 +102,31 @@ def test_the_channel_name_drops_characters_teams_forbids(number: str, title: str
 def test_the_internal_token_is_required(client) -> None:
     assert _open(client, token=None).status_code == 401
     assert _open(client, token="wrong").status_code == 401
+
+
+class TestChannelIdShape:
+    """`channel_id` arrives over HTTP and ends up in a Graph URL path."""
+
+    def test_a_real_graph_channel_id_passes(self) -> None:
+        good = "19:AbCd_12-34=xyzAbCd12@thread.tacv2"
+        assert require_channel_id(good) == good
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "",
+            "19:short@thread.tacv2",
+            "../../../v1.0/users",
+            "19:abcdefgh@thread.evil",
+            "https://attacker.example/19:abcdefgh@thread.tacv2",
+        ],
+    )
+    def test_anything_else_is_refused_rather_than_escaped(self, bad: str) -> None:
+        # Refused, not escaped: an escaped value that reaches Graph and
+        # matches nothing reports a clean failure for a request that never
+        # ran, which on a forensic surface is the worst possible answer.
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc:
+            require_channel_id(bad)
+        assert exc.value.status_code == 422
