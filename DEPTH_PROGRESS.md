@@ -405,7 +405,34 @@ invented fields on the first run of the gate.
 
 ## Phase 9: Analyst surfaces
 
-- [ ] **9.1** MCP over streamable HTTP (parity 6.6)
+- [x] **9.1** MCP over streamable HTTP (parity 6.6). All six bullets of
+  parity 6.6 closed. `services/mcp/src/http.ts` serves the SDK's
+  `StreamableHTTPServerTransport` at `POST /mcp` with an unauthenticated
+  `GET /healthz`; `docker-compose.yml` gains an `mcp` service under its own
+  profile and `infra/helm/aisoc` an `mcp` component, both off unless an
+  operator asks for them. The credential is per request and there is no
+  environment fallback — the transport is **stateless with a fresh server
+  per request**, so revoking a key ends the conversations it opened rather
+  than leaving a session id that outlives it. Every call goes through
+  `POST /api/v1/mcp/tool-calls/authorize`, which resolves the tool's
+  required permission from a catalogue generated from the TypeScript
+  registry, checks it through the principal's **own** `require_permission`
+  (not a second copy of the logic), consults the tenant's grant, and writes
+  an `mcp:tool_call` audit row **before** the tool runs — reads included,
+  which was the whole gap. The outcome is a second `mcp:tool_result` row
+  because `audit_log` refuses UPDATE by trigger. A tool whose registry entry
+  says `readOnlyHint: false` cannot run on a bearer token: it queues an
+  approval fingerprinted over its exact arguments, the requester cannot
+  approve it, and the approval is spent by the call it authorised. Gated by
+  `scripts/check_mcp_over_http.py` (self-test: one injected violation per
+  rule across all seven, plus the empty-tree refusal) wired into
+  `ci.yml :: python-lint`. 32 new tests — 16 API, 16 over a real socket
+  against a real API stub. Live end-to-end against a real Postgres 16 and
+  the real API recorded in the PR: 19 tools advertised, a read allowed, an
+  out-of-scope tool denied, the write tool refused at the tenant switch and
+  then at the approval, approved by a second principal, allowed, and spent.
+  18 of 18 audit rows hash-chained, and `DELETE FROM audit_log` refused by
+  the trigger while the run was in progress.
 - [ ] **9.2** Semantic memory (parity 6.5)
 - [ ] **9.3** Case depth (parity 5.6 remainder)
 - [ ] **9.4** War rooms
@@ -421,6 +448,7 @@ invented fields on the first run of the gate.
 
 | Date | Item | What happened |
 |---|---|---|
+| 2026-10-11 | 9.1 | Reproduced: on `origin/main` the greps for `StreamableHTTP` in `services/mcp/src/`, for `aisoc-mcp` in `docker-compose.yml` and `infra/helm/`, for a per-tenant tool grant in `services/api/app/`, and for an `mcp:` audit action all counted **zero**, and `check_mcp_over_http.py` reported seven problems. Built the HTTP transport, the authorize/complete pair, the tenant grant table, the approval queue bound to a call's arguments, and the generated tool catalogue held in parity with the TypeScript registry. Four negative controls recorded in the PR; one of them found a hole in the new gate itself, which reported `http.ts` for reading the process-wide API key when the only mention was a comment saying it deliberately does not — the detector now strips comments before matching, and refuses a `{...cfg}` spread as well, because a spread is correct today and a credential fallback the day somebody reorders the literal. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |
 | 2026-10-09 | 4.3 | Reproduced: `check_retention_window.py` on the unmodified tree reported six problems — the lake deleting at 90 days against a 3,650-day cap, no `MODIFY TTL` migration, tiering deleting at 90, and the purge worker calling neither `alerts_under_legal_hold` nor `may_purge` and reporting nothing withheld. Fixed all but the cold-query bullet. Four negative controls recorded in the PR, including the positive control: a purge stuck closed withholds every tenant and fails four of the eight hold tests, which is the only thing that separates a working control from commendable caution. One pre-existing test (`test_storage_tiering.py`) pinned the 90-day tiering DELETE and now reads the shared constant; `test_retention_worker.py`'s session double could not answer the new holds query, so the worker failed closed and five of its cases failed — the double was taught the query rather than the fail-closed behaviour relaxed. |
