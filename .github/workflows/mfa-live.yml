@@ -114,7 +114,9 @@ jobs:
       # code" would pass equally well against a login route that had never
       # asked for one — it would simply hand out a session first.
       #
-      # Measured on the fix commit: eight tests fail.
+      # Measured by deleting it and running the suite: 14 of 23 fail. It was
+      # eight before depth 8.1; the WebAuthn and per-role cases rest on the
+      # same 202, so they fail with it.
       - name: The suite fails when a password alone issues a session again
         working-directory: services/api
         env:
