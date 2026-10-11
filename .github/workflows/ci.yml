@@ -701,7 +701,6 @@ jobs:
         run: python3 scripts/check_cloud_native_collection.py --self-test
       - name: Cloud-native collection gate
         run: python3 scripts/check_cloud_native_collection.py
-<<<<<<< HEAD
       # Depth 9.6. Voice input transcribes on the device and sends text, and
       # "no audio leaves the device" is a claim a comment cannot carry. This
       # refuses any capture API or binary request body under
@@ -712,7 +711,6 @@ jobs:
         run: python3 scripts/check_no_audio_egress.py --self-test
       - name: No audio egress gate
         run: python3 scripts/check_no_audio_egress.py
-=======
       # Depth 9.2. The probe set behind the recall measurement has to stay
       # usable: every probe must name an item that is in the corpus, the
       # probes must stay low-overlap with their answers (a probe written in
@@ -725,7 +723,6 @@ jobs:
         run: python3 scripts/score_memory_recall.py --self-test
       - name: Memory recall scorer
         run: python3 scripts/score_memory_recall.py
->>>>>>> origin/main
       # One layer in from the name: the profile gate asks whether a connector
       # reaches a normalization path, this asks which OCSF class it reaches
       # when it gets there. The class uid divided by a thousand is the
