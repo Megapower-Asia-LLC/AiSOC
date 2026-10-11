@@ -36,6 +36,8 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -114,7 +116,7 @@ async def pool() -> AsyncIterator[object]:
 
 
 @pytest_asyncio.fixture(loop_scope="module")
-async def wired(pool: object, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[tuple[object, str]]:
+async def wired(pool: Any, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[tuple[ModuleType, str]]:
     """Point `app.playbook.pause` at the live pool and seed one tenant."""
     import sys
 
@@ -127,13 +129,13 @@ async def wired(pool: object, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
     monkeypatch.setattr(playbook_pause, "_pool", _pool)
 
     tenant_id = str(uuid.uuid4())
-    async with pool.acquire() as conn:  # type: ignore[attr-defined]
+    async with pool.acquire() as conn:
         await conn.execute("INSERT INTO tenants (id, name) VALUES ($1::uuid, 'live')", tenant_id)
     yield playbook_pause, tenant_id
 
 
-async def _suspend(playbook_pause: object, tenant_id: str, token: str) -> object:
-    return await playbook_pause.suspend(  # type: ignore[attr-defined]
+async def _suspend(playbook_pause: ModuleType, tenant_id: str, token: str) -> Any:
+    return await playbook_pause.suspend(
         kind="verification",
         resume_at=datetime.now(UTC) + timedelta(minutes=30),
         resume_token=token,
@@ -150,7 +152,7 @@ async def _suspend(playbook_pause: object, tenant_id: str, token: str) -> object
     )
 
 
-async def test_the_migration_accepts_a_verification_pause(wired: tuple[object, str]) -> None:
+async def test_the_migration_accepts_a_verification_pause(wired: tuple[ModuleType, str]) -> None:
     """`kind = 'verification'` and a stage both pass the real CHECKs."""
     playbook_pause, tenant_id = wired
     pause = await _suspend(playbook_pause, tenant_id, uuid.uuid4().hex)
@@ -162,7 +164,7 @@ async def test_the_migration_accepts_a_verification_pause(wired: tuple[object, s
 
 
 @pytest.mark.parametrize("outcome", ["acknowledged", "denied", "unsure", "timed_out", "no_manager"])
-async def test_every_outcome_the_code_writes_passes_the_check(wired: tuple[object, str], outcome: str) -> None:
+async def test_every_outcome_the_code_writes_passes_the_check(wired: tuple[ModuleType, str], outcome: str) -> None:
     """The constraint and the vocabulary must agree.
 
     They are written in two files — the migration's ``CHECK`` and
@@ -178,7 +180,7 @@ async def test_every_outcome_the_code_writes_passes_the_check(wired: tuple[objec
     )
 
 
-async def test_an_outcome_is_written_once(wired: tuple[object, str]) -> None:
+async def test_an_outcome_is_written_once(wired: tuple[ModuleType, str]) -> None:
     """Postgres refuses the second answer, not the double.
 
     ``verification_outcome IS NULL`` in the predicate is what makes a
@@ -195,7 +197,7 @@ async def test_an_outcome_is_written_once(wired: tuple[object, str]) -> None:
     )
 
 
-async def test_a_pause_escalates_once_and_keeps_its_token(wired: tuple[object, str]) -> None:
+async def test_a_pause_escalates_once_and_keeps_its_token(wired: tuple[ModuleType, str]) -> None:
     """Two sweeper replicas racing the same row escalate it once."""
     playbook_pause, tenant_id = wired
     token = uuid.uuid4().hex
@@ -216,7 +218,7 @@ async def test_a_pause_escalates_once_and_keeps_its_token(wired: tuple[object, s
     assert found.verification_manager == "bob@corp.test"
 
 
-async def test_a_wait_token_does_not_resolve_as_a_verification(wired: tuple[object, str]) -> None:
+async def test_a_wait_token_does_not_resolve_as_a_verification(wired: tuple[ModuleType, str]) -> None:
     """``kind`` is in the predicate, so the two callbacks cannot cross."""
     playbook_pause, tenant_id = wired
     token = uuid.uuid4().hex
@@ -238,7 +240,7 @@ async def test_a_wait_token_does_not_resolve_as_a_verification(wired: tuple[obje
     assert await playbook_pause.find_wait_by_token(resume_token=token) is not None  # type: ignore[attr-defined]
 
 
-async def test_due_verifications_sees_only_waiting_verification_rows(wired: tuple[object, str]) -> None:
+async def test_due_verifications_sees_only_waiting_verification_rows(wired: tuple[ModuleType, str]) -> None:
     """The sweep's predicate, against the real partial index."""
     playbook_pause, tenant_id = wired
     pause = await _suspend(playbook_pause, tenant_id, uuid.uuid4().hex)
@@ -302,7 +304,7 @@ async def test_the_policy_table_is_tenant_scoped_and_default_deny(pool: object) 
         await reader.close()
 
 
-async def test_the_stored_context_survives_a_round_trip(wired: tuple[object, str]) -> None:
+async def test_the_stored_context_survives_a_round_trip(wired: tuple[ModuleType, str]) -> None:
     """The escalation reads the step's params back off the pause.
 
     They go in as JSON and come back as a string from asyncpg, which
