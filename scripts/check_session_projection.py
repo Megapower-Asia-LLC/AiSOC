@@ -45,7 +45,17 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# `scripts/` is on sys.path when this file runs as a program, but not when a
+# test loads it by path with importlib. gate_toolkit sits beside it either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from gate_toolkit import repo_root  # noqa: E402
+
+# Resolved through `git rev-parse`, not from `__file__`. Two levels above this
+# script is whatever happens to be there -- and `scripts/` copied into an
+# empty repository is exactly that, which is how a gate reports a tree clean
+# without ever seeing the product. `check_gate_contract.py` refuses it.
+ROOT = repo_root()
 
 #: The one file allowed to read a vendor's session-identifying field.
 PRODUCER = Path("services/ingest/internal/activity/session.go")
