@@ -26,12 +26,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
-import {
-  missingCredentials,
-  nativePlatformOf,
-  sendNative,
-  type NativeOutcome,
-} from '../src/native-push';
+import { missingCredentials, nativePlatformOf, sendNative } from '../src/native-push';
 
 /** A real P-256 key pair, so the "not native" case uses a real p256dh. */
 const { publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -61,13 +56,16 @@ const FCM_ENV = {
 
 interface Captured {
   url: string;
-  init: RequestInit;
+  /** Narrowed to what every assertion below reads. `RequestInit['body']` is
+   *  a union wide enough that `String(...)` on it is a lint error, and the
+   *  only bodies this module sends are JSON strings. */
+  init: Omit<RequestInit, 'body'> & { body?: string };
 }
 
 function capturing(status: number, body = ''): { fetchImpl: typeof fetch; calls: Captured[] } {
   const calls: Captured[] = [];
   const fetchImpl = (async (url: unknown, init?: RequestInit) => {
-    calls.push({ url: String(url), init: init ?? {} });
+    calls.push({ url: String(url), init: (init ?? {}) as Captured['init'] });
     return new Response(body, { status });
   }) as unknown as typeof fetch;
   return { fetchImpl, calls };
@@ -85,13 +83,13 @@ test('the mobile app’s convention is recognised, case-insensitively', () => {
 });
 
 test('missing credentials are named, one by one', () => {
-  assert.deepEqual(missingCredentials('ios', {} as NodeJS.ProcessEnv), [
+  assert.deepEqual(missingCredentials('ios', {}), [
     'APNS_KEY_ID',
     'APNS_TEAM_ID',
     'APNS_PRIVATE_KEY',
     'APNS_BUNDLE_ID',
   ]);
-  assert.deepEqual(missingCredentials('android', {} as NodeJS.ProcessEnv), [
+  assert.deepEqual(missingCredentials('android', {}), [
     'FCM_PROJECT_ID',
     'FCM_SERVICE_ACCOUNT_JSON',
   ]);
@@ -103,10 +101,10 @@ test('an unconfigured deployment refuses rather than reporting a delivery', asyn
   const outcome = await sendNative(
     { endpoint: 'token', platform: 'ios' },
     { title: 't', body: 'b' },
-    { env: {} as NodeJS.ProcessEnv, fetchImpl },
+    { env: {}, fetchImpl },
   );
   assert.equal(outcome.kind, 'not_configured');
-  assert.deepEqual((outcome as Extract<NativeOutcome, { kind: 'not_configured' }>).missing.length, 4);
+  assert.deepEqual((outcome).missing.length, 4);
   // Nothing was sent, and nothing was pruned either: the token is fine, the
   // deployment is not.
   assert.equal(calls.length, 0);
@@ -184,7 +182,7 @@ test('an FCM message stringifies its data, because FCM rejects anything else', a
   );
   assert.equal(outcome.kind, 'delivered');
   assert.equal(calls[0].url, 'https://fcm.example/v1/projects/aisoc-test/messages:send');
-  const body = JSON.parse(String(calls[0].init.body));
+  const body = JSON.parse(calls[0].init.body ?? '{}');
   assert.equal(body.message.token, 'fcm-token');
   // Numbers would be a 400 the caller cannot act on.
   assert.deepEqual(body.message.data, { alert_id: '42', url: '/alerts/42' });
@@ -220,5 +218,5 @@ test('an unreachable provider is a transient failure, not a dead token', async (
   assert.equal(outcome.kind, 'failed');
   // Dropping the subscription because the network blipped would silently
   // unsubscribe a responder.
-  assert.match((outcome as Extract<NativeOutcome, { kind: 'failed' }>).reason, /unreachable/);
+  assert.match((outcome).reason, /unreachable/);
 });
