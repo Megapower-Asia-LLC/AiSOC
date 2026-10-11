@@ -492,10 +492,16 @@ invented fields on the first run of the gate.
 - [~] **9.6** Native responder. **Two of three bullets closed; the third is
   maintainer-blocked and the block is in the product, not in this note.**
   *Device build:* `mobile.yml` gains an Android job that runs
-  `expo prebuild` and Gradle `assembleRelease`, asserts the APK really
+  `expo prebuild` and Gradle `assembleDebug`, asserts the APK really
   contains `classes.dex` (a green build that produced nothing is a shape
-  this repository has shipped) and uploads it — an APK that installs on a
-  handset, not store-signable, which needs a Google Play account. iOS
+  this repository has shipped) and uploads it — an APK that installs and
+  runs on a handset. Not store-signable (a Google Play account) and not a
+  *release* build: `:app:createBundleReleaseJsAndAssets` dies inside
+  Metro's asset hashing on the runner, Node 20 fixes it, and
+  `scripts/check_toolchain_pins.py` correctly refuses a second Node version
+  because 20 left security support in April 2026 and no image ships it.
+  Lowering that gate to make this job pass would have been the wrong trade,
+  so the limit is stated instead. iOS
   compiles **and links** for the simulator on a macOS runner — the Expo
   config generates a valid Xcode project, the pods resolve and every native
   module builds. It deliberately does not run Metro's bundle phase, which
