@@ -468,6 +468,19 @@ class Settings(BaseSettings):
     )
     RETENTION_WORKER_INTERVAL_SECONDS: int = 21600  # 6h
 
+    # Depth 7.1 — the reported-phish report-mailbox poller. Off by default
+    # for the same reason the mailbox arms are: reading a tenant's mailbox
+    # on a schedule is a capability an operator opts into, not one an
+    # upgrade acquires. Enabling it alone changes nothing either — the
+    # worker also needs `connector_config.phishing_report_mailbox` on an
+    # enabled Microsoft 365 or Google Workspace connector, and it never
+    # guesses an address.
+    PHISHING_INTAKE_WORKER_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("PHISHING_INTAKE_WORKER_ENABLED", "AISOC_PHISHING_INTAKE_WORKER_ENABLED"),
+    )
+    PHISHING_INTAKE_WORKER_INTERVAL_SECONDS: int = 300  # 5m
+
     # Approval-SLA expiry (deferral 9b). On by default, unlike the retention
     # purge: that one deletes data, this one marks an already-abandoned
     # request as abandoned and dispatches nothing. Leaving it off would keep

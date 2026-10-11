@@ -955,6 +955,14 @@ class GmailSearchMailboxes(LiveActionExecutor):
                 sender=str(params.get("sender") or ""),
                 limit=int(params.get("limit") or 25),
             )
+            if params.get("hydrate", True):
+                # Gmail's list endpoint answers `{id, threadId}` and nothing
+                # else, while Graph's answers a full message resource. A
+                # verb that returns an opaque id on one vendor and a
+                # readable message on the other is one capability with two
+                # meanings, and the caller ends up writing the vendor check
+                # the registry exists to remove. Headers only, never bodies.
+                matches = [await client.get_message(target, str(m.get("id") or "")) for m in matches if m.get("id")]
         except ValueError as exc:
             # The Gmail query sanitiser refuses rather than escapes, and a
             # refusal is a failure rather than an empty result: an escaped
