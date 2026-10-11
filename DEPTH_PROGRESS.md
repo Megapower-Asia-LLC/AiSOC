@@ -43,8 +43,12 @@ requires in its own pull request body.
 | 8.2 | #1206 | `endpoints/access_conditions.py` |
 | 8.3 | #1210 | `docs/security/` |
 
-Not started: phases 3, 4, 6, 7, 9 and the whole of 10, plus 1.4--1.6 and
-2.4--2.7. Those remain `[ ]` and are not claimed here.
+Not started **as at 2026-10-09**: phases 3, 4, 6, 7, 9 and the whole of 10,
+plus 1.4--1.6 and 2.4--2.7. That list was true on the day and is not
+maintained -- lanes have landed items in several of those phases since. The
+per-phase checklists below and the item log at the end are the live answer;
+this paragraph is a dated snapshot and reading it as current is the exact
+failure the reconciliation above was written to fix.
 
 ## Migration and ADR numbers claimed
 
@@ -56,7 +60,7 @@ is written. Next free at capture: migration `095`, ADR `0010`
 | Number | Claimed by | Status |
 |---|---|---|
 | ADR `0010` | 2.7 — entity and session context in CORE | **landed**, `docs/decisions/0010-entity-and-session-context-in-core.md`, accepted |
-| migration `102` | 2.4 — `102_sessions.sql` | claimed |
+| migration `102` | 2.4 — `102_sessions.sql` | **landed**, `sessions` table plus three `alerts` columns |
 | migration `103` | 2.5 — `103_posture_snapshots.sql` | claimed |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
@@ -300,10 +304,13 @@ invented fields on the first run of the gate.
 - [x] **2.1** OCSF classes beyond five
 - [x] **2.2** Activity projection on every event
 - [x] **2.3** Event classification catalogue
-- [ ] **2.4** Sessions per principal
+- [x] **2.4** Sessions per principal — one producer in the activity
+  projection, three consumers (Postgres, ClickHouse, Neo4j), held by
+  `check_session_projection.py`
 - [ ] **2.5** `__posture_snapshot__` collectors (AWS, Azure, GCP, Workspace, GitHub)
 - [ ] **2.6** Use the posture everywhere
-- [ ] **2.7** Entity context in CORE (ADR first)
+- [x] **2.7** Entity context in CORE (ADR first) — ADR-0010 accepted;
+  Postgres in CORE, Neo4j stays in `full`
 
 ## Phase 3: Detection depth for cloud, identity and SaaS
 
@@ -423,6 +430,8 @@ invented fields on the first run of the gate.
 |---|---|---|
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |
+| 2026-10-10 | 2.7 | Reproduced: ADR-0007 closed by naming this decision and declining to make it, so the question was open and nothing in the tree answered it. Measured rather than estimated, on a running CORE stack: 16 services idle at 3,649.8 MiB, and `ollama` measures 2.96 GiB under inference against a 140.6 MiB idle, so CORE's working peak is 6,540 MiB and the headroom under 8 GiB is **1,652 MiB** — which is what either option is spent out of, and is the number the estimate-based version of this decision would have missed. Neo4j 5.15-community with the `full` profile's own settings, loaded with 20,000 sessions, 500 users and 20,000 edges and then read with the aggregation 2.4 needs: **696.8 MiB** resident, 42.2% of the headroom. The same rows in a tenant-scoped Postgres table with the three indexes the store needs: **+10.9 MiB** marginal resident in a container CORE already runs, 8,288 kB of relation, aggregation in 5.148 ms — 0.7% of the headroom and 64× less memory for the same data. Accepted: Postgres in CORE, Neo4j keeps the Session nodes in `full`. The ADR states what it does **not** decide — ClickHouse stays in `full`, so CORE still has no event lake. |
+| 2026-10-10 | 2.4 | Reproduced: `check_session_projection.py` against `origin/main` reports all three declarations missing and exits 1 — there was no session concept in the tree at all, in any of the three stores. Fixed by deriving the key in exactly one place (`services/ingest/internal/activity/session.go`) and reading it in three (`sessions.py` for Postgres, `lake_writer.py` for ClickHouse, `graph/session.go` for Neo4j), on ADR-0010's condition that the arrangement is held by a gate rather than a comment. The id is a deterministic `uuidv5` of tenant, source and key, so the three stores agree without any of them coordinating at write time. Negative controls: reverting the `cloudTrailSession` reordering fails three subtests plus `TestAnAnonymousAssumeRoleNamesNobody`; shrinking the closed set in either the Python tuple or the SQL `CHECK` is caught; a second deriver and an invented fallback key are each caught, performed as the exact edit a contributor would make. Writing the tests found the defect that mattered: the chain edge back to the originating human was being dropped on precisely the two calls that carry it, because `AssumeRoleWithSAML` and `AssumeRoleWithWebIdentity` have no `userIdentity` at all (the caller is not yet an AWS principal) and the early return on a missing identity skipped the issued-session read. Pointing the new gate at the pre-fix tree also found a defect **in the gate**: it died with `FileNotFoundError` instead of naming which declaration was missing, so a fourth self-test case now asserts a missing declaration produces a sentence rather than a traceback. Ingest suite green (12 packages); fusion 677 passed, 2 skipped. |
 | 2026-10-09 | 4.3 | Reproduced: `check_retention_window.py` on the unmodified tree reported six problems — the lake deleting at 90 days against a 3,650-day cap, no `MODIFY TTL` migration, tiering deleting at 90, and the purge worker calling neither `alerts_under_legal_hold` nor `may_purge` and reporting nothing withheld. Fixed all but the cold-query bullet. Four negative controls recorded in the PR, including the positive control: a purge stuck closed withholds every tenant and fails four of the eight hold tests, which is the only thing that separates a working control from commendable caution. One pre-existing test (`test_storage_tiering.py`) pinned the 90-day tiering DELETE and now reads the shared constant; `test_retention_worker.py`'s session double could not answer the new holds query, so the worker failed closed and five of its cases failed — the double was taught the query rather than the fail-closed behaviour relaxed. |
 | 2026-10-09 | 4.2 | Reproduced: `check_syslog_listener.py` against `origin/main` reported "no Go sources under services/ingest/internal/syslog", and the only syslog path was `POST /v1/inbox/cef`, which needs a forwarder that already speaks HTTP. Implemented `services/ingest/internal/syslog` (UDP + TCP, both RFC 6587 framings, four wire formats, token-derived tenant, batched publish, `/readyz` subscription). Five negative controls recorded in the PR; one of them found a hole in the new gate itself, which reported OK while the tenant came from `msg.Hostname` through a struct field — the detector now knows all three Go syntaxes and the self-test exercises each. Writing the tests also found a shutdown deadlock: `Stop` waited on goroutines watching a context the caller had not cancelled yet. Ingest suite green, `internal/syslog` 33 cases. |
 | 2026-10-07 | 0.3 | `make up` and `make smoke` (10/10) pass. Injection suite and load-harness baselines committed. `make up-full` deferred (D2) and hosted model rows blocked (D3). Fixing D1 was a precondition for the load-harness baseline. |

@@ -125,13 +125,33 @@ def check_one_deriver(files: list[Path], root: Path) -> list[str]:
     return findings
 
 
+def _read(root: Path, rel: Path) -> str | None:
+    """The declaration's text, or None when the file is not there.
+
+    A missing declaration is reported as a finding naming the file, never
+    raised. A gate that dies on `FileNotFoundError` tells the reader the
+    name of a path and nothing about which of the three declarations went
+    missing or what that costs, and it does it in a traceback — which is
+    how this one behaved the first time it was pointed at a tree that
+    predates the projection.
+    """
+    try:
+        return (root / rel).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def _go_kinds(root: Path) -> set[str]:
-    text = (root / GO_KINDS).read_text(encoding="utf-8")
+    text = _read(root, GO_KINDS)
+    if text is None:
+        return set()
     return set(re.findall(r'Session\w+\s+SessionKeyKind\s*=\s*"([a-z_]+)"', text))
 
 
 def _py_kinds(root: Path) -> set[str]:
-    text = (root / PY_KINDS).read_text(encoding="utf-8")
+    text = _read(root, PY_KINDS)
+    if text is None:
+        return set()
     match = re.search(r"KEY_KINDS:\s*tuple\[str, \.\.\.\]\s*=\s*\(([^)]*)\)", text)
     if not match:
         return set()
@@ -139,7 +159,9 @@ def _py_kinds(root: Path) -> set[str]:
 
 
 def _sql_kinds(root: Path) -> set[str]:
-    text = (root / SQL_KINDS).read_text(encoding="utf-8")
+    text = _read(root, SQL_KINDS)
+    if text is None:
+        return set()
     match = re.search(r"key_kind IN \(([^)]*)\)", text)
     if not match:
         return set()
@@ -147,6 +169,18 @@ def _sql_kinds(root: Path) -> set[str]:
 
 
 def check_closed_set(root: Path) -> list[str]:
+    # Named before they are compared, so "the file is gone" and "the file
+    # disagrees" are different sentences. They need different fixes.
+    missing = [
+        f"{rel}: missing. The closed set is declared in three places by necessity — Go emits "
+        f"it, Python validates against it and Postgres constrains on it — and the gate cannot "
+        f"compare three declarations when one is absent."
+        for rel in (GO_KINDS, PY_KINDS, SQL_KINDS)
+        if _read(root, rel) is None
+    ]
+    if missing:
+        return missing
+
     go, py, sql = _go_kinds(root), _py_kinds(root), _sql_kinds(root)
     if not go:
         return [f"{GO_KINDS}: no SessionKeyKind constants found; the gate cannot read the closed set"]
@@ -228,6 +262,23 @@ def self_test() -> int:
             if not any("builds a session key" in f for f in run(work)):
                 failures.append("an invented fallback key was not detected")
             consumer.write_text(original)
+
+            # 4. A declaration gone entirely. This is the state of every tree
+            #    that predates the projection, and the first thing this gate
+            #    was pointed at. It has to produce a sentence, not a
+            #    traceback: a reader who gets `FileNotFoundError` learns a
+            #    path and not which of the three declarations is missing.
+            producer = work / GO_KINDS
+            go_original = producer.read_text()
+            producer.unlink()
+            try:
+                findings = run(work)
+            except OSError as exc:  # pragma: no cover - the regression itself
+                failures.append(f"a missing declaration raised instead of reporting: {exc!r}")
+                findings = []
+            if not any("missing" in f and GO_KINDS.name in f for f in findings):
+                failures.append("a missing producer declaration was not reported as a finding")
+            producer.write_text(go_original)
         finally:
             subprocess.run(["git", "worktree", "remove", "--force", str(work)], cwd=ROOT, capture_output=True)
 
@@ -236,7 +287,7 @@ def self_test() -> int:
             print(f"SELF-TEST FAILED: {failure}")
         return 1
     print("self-test OK: the gate detects a second deriver, a drifted closed set in either "
-          "declaration, and an invented fallback key.")
+          "declaration, an invented fallback key, and a declaration that is missing entirely.")
     return 0
 
 
