@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeLogger, resolveConfig, parseArgs } from "../src/config.js";
 import { bearerFrom, handleMcpRequest, resolveHttpOptions, HEALTH_PATH, MCP_PATH } from "../src/http.js";
+import { safeUserAgent } from "../src/gate.js";
 
 interface RecordedCall {
   path: string;
@@ -294,6 +295,26 @@ describe("the HTTP transport", () => {
     expect(body.result.content[0].text).toContain("unrecognised outcome");
   });
 
+  it("refuses an oversized body with the bound, not with the thrown message", async () => {
+    await mcp.start(api.url);
+    const res = await fetch(`${mcp.url}${MCP_PATH}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: "Bearer aisoc_caller_key",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", pad: "x".repeat(2_000_000) }),
+    });
+    expect(res.status).toBe(413);
+    const body = await res.json();
+    // The bound is the actionable fact. A parse failure's message quotes
+    // the offending input back at the sender, which is useless to them and
+    // is an information-exposure finding.
+    expect(body.error.message).toContain("at most 1048576 bytes");
+    expect(body.error.message).not.toContain("JSON.parse");
+  });
+
   it("serves the MCP endpoint only at /mcp", async () => {
     await mcp.start(api.url);
     const res = await fetch(`${mcp.url}/`, {
@@ -303,6 +324,23 @@ describe("the HTTP transport", () => {
     });
     expect(res.status).toBe(404);
     expect((await res.json()).error.message).toContain(MCP_PATH);
+  });
+});
+
+describe("safeUserAgent", () => {
+  it("passes the shape this package produces", () => {
+    expect(safeUserAgent("aisoc-mcp/0.1.0 (+https://github.com/beenuar/AiSOC)")).toBe(
+      "aisoc-mcp/0.1.0 (+https://github.com/beenuar/AiSOC)",
+    );
+    expect(safeUserAgent("aisoc-mcp/0.1.0")).toBe("aisoc-mcp/0.1.0");
+  });
+
+  it("replaces anything else rather than escaping it", () => {
+    // The value is built from a version read off disk. An escaped header
+    // that reaches the server and means nothing is worse than a known one.
+    expect(safeUserAgent("aisoc-mcp/0.1.0\r\nX-Injected: 1")).toBe("aisoc-mcp");
+    expect(safeUserAgent("curl/8")).toBe("aisoc-mcp");
+    expect(safeUserAgent("")).toBe("aisoc-mcp");
   });
 });
 

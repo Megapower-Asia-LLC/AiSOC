@@ -152,7 +152,12 @@ def _read_only_flags(source: str) -> dict[str, bool]:
         match = re.search(r"readOnlyHint:\s*(true|false)", block)
         # An absent annotation is not a claim to be read-only, so the safe
         # reading -- and the one the MCP client already applies -- is False.
-        flags[hit.group(1)] = bool(match) and match.group(1) == "true"
+        # `match is not None`, not `bool(match)`: the two are equivalent at
+        # runtime and only the first narrows the Optional for the type
+        # checker, which is why the baseline gate reported a `union-attr`
+        # here. Narrowing is the right fix; a `type: ignore` would hide the
+        # one thing that makes the next edit safe.
+        flags[hit.group(1)] = match is not None and match.group(1) == "true"
     return flags
 
 

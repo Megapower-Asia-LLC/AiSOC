@@ -7079,7 +7079,31 @@ paths:
       tags:
       - mcp
       summary: Complete Tool Call
-      description: Record how a call that was allowed turned out.
+      description: 'Record how a call that was allowed turned out.
+
+
+        Authorized against the call being reported on, not by a blanket
+
+        permission. There is no single permission every MCP caller holds — a key
+
+        minted for ``alerts:read`` is a legitimate caller — so a blanket
+
+        dependency here would either be wider than the call it describes or
+
+        exclude the callers it exists for.
+
+
+        Instead this resolves the ``mcp:tool_call`` row the authorize step wrote
+
+        for this id in this tenant, and requires the principal to still hold the
+
+        permission *that call* needed. Two consequences, both wanted: a caller
+
+        cannot write an outcome for a call nobody authorized here, and a key
+
+        whose scopes were narrowed between the call and the report is refused
+
+        rather than quietly accepted.'
       operationId: complete_tool_call_api_v1_mcp_tool_calls__call_id__complete_post
       security:
       - HTTPBearer: []

@@ -190,7 +190,18 @@ export async function handleMcpRequest(
   try {
     body = req.method === "POST" ? await readJsonBody(req, options.maxBodyBytes) : undefined;
   } catch (err) {
-    rpcError(res, 413, String(err instanceof Error ? err.message : err));
+    // A fixed sentence, not the thrown message. The only error reachable
+    // here is this module's own size refusal or a JSON parse failure, and
+    // a parse failure's message quotes the offending input back to whoever
+    // sent it — which is both useless to them and an information-exposure
+    // finding (`js/stack-trace-exposure`). The bound is the actionable
+    // fact, so the bound is what is returned; the detail goes to stderr.
+    log.info(`rejected a request body: ${String(err instanceof Error ? err.message : err)}`);
+    rpcError(
+      res,
+      413,
+      `The request body could not be read. It must be JSON and at most ${options.maxBodyBytes} bytes.`,
+    );
     return;
   }
 

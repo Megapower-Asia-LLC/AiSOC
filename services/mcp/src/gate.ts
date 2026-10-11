@@ -57,6 +57,19 @@ export class GateUnavailableError extends Error {
   }
 }
 
+/** The only shape a User-Agent from this module may take. */
+const USER_AGENT_RE = /^aisoc-mcp\/[0-9A-Za-z.+-]{1,32}(?: \(\+https:\/\/[A-Za-z0-9./_-]{1,80}\))?$/;
+
+/**
+ * A User-Agent that cannot carry anything but a version string.
+ *
+ * Exported for the test: a guard whose behaviour is only visible inside a
+ * network call is one nobody can check.
+ */
+export function safeUserAgent(candidate: string): string {
+  return USER_AGENT_RE.test(candidate) ? candidate : "aisoc-mcp";
+}
+
 async function postJson(
   url: string,
   bearer: string,
@@ -73,7 +86,16 @@ async function postJson(
         Authorization: bearer.startsWith("Bearer ") ? bearer : `Bearer ${bearer}`,
         "Content-Type": "application/json",
         Accept: "application/json",
-        "User-Agent": userAgent,
+        // Constrained rather than passed through. `cfg.userAgent` is built
+        // from the version in `package.json`, which `config.ts` reads off
+        // disk — so a header built straight from it is file content
+        // reaching an outbound request, which CodeQL reports as
+        // `js/file-access-to-http` and is right to. A `fullmatch` on the
+        // shape this value is allowed to have is the strongest guard
+        // available here: anything that is not `aisoc-mcp/<version> (...)`
+        // is replaced rather than escaped, because an escaped value that
+        // reaches the server and means nothing is worse than a known one.
+        "User-Agent": safeUserAgent(userAgent),
       },
       body: JSON.stringify(body),
       signal: controller.signal,

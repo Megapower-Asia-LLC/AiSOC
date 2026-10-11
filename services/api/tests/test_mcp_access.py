@@ -188,6 +188,39 @@ async def test_the_outcome_is_a_second_row_because_audit_rows_are_immutable(clie
 
 
 @pytest.mark.asyncio
+async def test_an_outcome_cannot_be_reported_for_a_call_nobody_authorized(client) -> None:
+    """The completion route is authorized against the call it reports on.
+
+    There is no single permission every MCP caller holds, so a blanket
+    dependency would be either wider than the call or exclusive of the
+    callers it exists for. Resolving the authorize row instead means a
+    caller cannot write an outcome for a call that was never decided here.
+    """
+    res = client.post(
+        f"/api/v1/mcp/tool-calls/{uuid.uuid4()}/complete",
+        json={"outcome": "success", "latency_ms": 1},
+    )
+    assert res.status_code == 404
+    assert "No authorize decision was recorded" in res.text
+
+
+@pytest.mark.asyncio
+async def test_a_key_narrowed_after_the_call_cannot_report_its_outcome(client) -> None:
+    """A scope removed between the call and the report is refused, not ignored."""
+    authorized = client.post("/api/v1/mcp/tool-calls/authorize", json={"tool_name": READ_TOOL, "arguments": {}}).json()
+    assert authorized["outcome"] == "allow"
+
+    client.state_holder["user"] = _principal(  # type: ignore[attr-defined]
+        user_id=ANALYST, scopes=["cases:read"], key_prefix="aisoc_analyst"
+    )
+    res = client.post(
+        f"/api/v1/mcp/tool-calls/{authorized['call_id']}/complete",
+        json={"outcome": "success", "latency_ms": 1},
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_an_outcome_outside_the_closed_set_is_refused(client) -> None:
     call_id = uuid.uuid4()
     res = client.post(

@@ -59,6 +59,7 @@ from sqlalchemy import select
 
 from app.api.v1.deps import AuthUser, require_permission
 from app.db.rls import TenantDBSession
+from app.models.audit import AuditLog
 from app.models.mcp_access import McpToolApproval, McpToolGrant
 from app.services.audit import emit_audit
 from app.services.mcp_access import (
@@ -232,12 +233,49 @@ async def complete_tool_call(
     db: TenantDBSession,
     current_user: AuthUser,
 ) -> None:
-    """Record how a call that was allowed turned out."""
+    """Record how a call that was allowed turned out.
+
+    Authorized against the call being reported on, not by a blanket
+    permission. There is no single permission every MCP caller holds — a key
+    minted for ``alerts:read`` is a legitimate caller — so a blanket
+    dependency here would either be wider than the call it describes or
+    exclude the callers it exists for.
+
+    Instead this resolves the ``mcp:tool_call`` row the authorize step wrote
+    for this id in this tenant, and requires the principal to still hold the
+    permission *that call* needed. Two consequences, both wanted: a caller
+    cannot write an outcome for a call nobody authorized here, and a key
+    whose scopes were narrowed between the call and the report is refused
+    rather than quietly accepted.
+    """
     if body.outcome not in COMPLETION_OUTCOMES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unknown outcome: {body.outcome}. Expected one of {sorted(COMPLETION_OUTCOMES)}.",
         )
+
+    decision = (
+        await db.execute(
+            select(AuditLog)
+            .where(
+                AuditLog.tenant_id == current_user.tenant_id,
+                AuditLog.action == "mcp:tool_call",
+                AuditLog.resource_id == str(call_id),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if decision is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No authorize decision was recorded for call {call_id} in this tenant.",
+        )
+    required = str((decision.changes or {}).get("required_permission") or "").strip()
+    if required:
+        # The principal's own path, which is also what `authorize` used. A
+        # second copy of the logic here would be a second authority that can
+        # disagree with the first.
+        current_user.require_permission(required)
     await emit_audit(
         db=db,
         tenant_id=current_user.tenant_id,
