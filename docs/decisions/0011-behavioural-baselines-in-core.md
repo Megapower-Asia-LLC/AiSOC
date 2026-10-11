@@ -138,6 +138,15 @@ members while the total still advances, so the baseline degrades into
 "stopped learning new values for this principal" rather than into a wrong
 denominator or an outage.
 
+**Every subject chain is held against the emitted-field namespace.** A
+baseline over a field nothing emits is a signal that cannot be computed, and
+the field name reads as working, so it is worse than a missing feature. The
+first draft of this module got that wrong: `baseline_client_family_rarity`
+resolved its subject from `client_family`, `user_agent_family` or
+`client_app`, and **no connector emits any of the three**. A test now asserts
+each chain intersects the namespace `scripts/check_detection_fields.py`
+builds, and was proved by reinstating the broken chain and watching it fail.
+
 **Peer groups are only as good as the group key.** The plan names the Phase
 2.5 posture snapshot as the source. Until that lands, the group is taken from
 whatever the identity provider already puts on the event — `department`,

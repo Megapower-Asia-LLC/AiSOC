@@ -15,13 +15,13 @@ from app.services import ioc_match
 from app.services.alert_enricher import AlertEnricher
 from app.services.alert_sink import AlertSink
 from app.services.attack_chain_grouper import AttackChainGrouper
+from app.services.baselines import BaselineStore
 from app.services.confidence import ConfidenceScorer
 from app.services.correlator import Correlator
 from app.services.deduplicator import Deduplicator
 from app.services.detection_engine import DetectionEngine
 from app.services.dlq_sink import PostgresDLQ
 from app.services.entity_risk import EntityRiskEngine
-from app.services.baselines import BaselineStore
 from app.services.first_seen import FirstSeenStore
 from app.services.fusion_engine import FusionEngine
 from app.services.ioc_match import TenantIocMatcher

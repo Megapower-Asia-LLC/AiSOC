@@ -98,11 +98,21 @@ _TOTAL_FIELD = "__total__"
 #:
 #: Rarity is always *of a value, for a principal*, so each entry needs both.
 #: The principal is resolved once per event by :func:`resolve_principal`.
+#:
+#: **Every chain must contain at least one name a connector actually emits**,
+#: and a test asserts it against the same namespace
+#: `scripts/check_detection_fields.py` builds. The first draft of this table
+#: failed that for `baseline_client_family_rarity`: it listed
+#: `client_family`, `user_agent_family` and `client_app`, and **no connector
+#: emits any of the three**, so that rarity could never have been computed on
+#: any deployment. It would have been a published signal that was structurally
+#: incapable of firing — the exact shape this repository keeps finding, and
+#: worse here than a missing feature because the field name reads as working.
 RARITY_FIELDS: dict[str, tuple[str, ...]] = {
-    "baseline_action_rarity": ("event_name", "action", "operation", "event_type"),
-    "baseline_resource_rarity": ("resource", "resource_name", "object_name", "target"),
-    "baseline_client_family_rarity": ("client_family", "user_agent_family", "client_app"),
-    "baseline_location_rarity": ("src_country", "country", "geo_country"),
+    "baseline_action_rarity": ("event_name", "eventName", "action", "event_type"),
+    "baseline_resource_rarity": ("resource", "Resource", "resource_name", "target"),
+    "baseline_client_family_rarity": ("user_agent", "userAgent", "clientAppUsed", "client_family"),
+    "baseline_location_rarity": ("country", "ClientCountry", "countryOrRegion", "src_country"),
 }
 
 #: Event fields naming the principal whose baseline is being read, in trust
@@ -116,7 +126,7 @@ PRINCIPAL_FIELDS: tuple[str, ...] = (
     "actor",
     "principal",
     "user_arn",
-    "actor_uid",
+    "userPrincipalName",
 )
 
 #: Event fields naming the OAuth application acting, for the per-application
@@ -124,11 +134,11 @@ PRINCIPAL_FIELDS: tuple[str, ...] = (
 #: OAuth grant acts *as* a user, so the user's own volume looks normal while
 #: the application's does not.
 OAUTH_APP_FIELDS: tuple[str, ...] = (
-    "oauth_app",
-    "oauth_client_id",
     "application",
-    "app_id",
+    "applicationName",
+    "app_name",
     "client_id",
+    "oauth_app",
 )
 
 #: Event fields naming the peer group a principal belongs to. Depth plan 3.4
@@ -137,12 +147,11 @@ OAUTH_APP_FIELDS: tuple[str, ...] = (
 #: event, which is what Workspace, Entra and Okta all emit. Resolving to
 #: nothing yields no peer signal rather than a group of one.
 PEER_GROUP_FIELDS: tuple[str, ...] = (
-    "department",
-    "user_department",
     "group",
-    "user_group",
-    "job_title",
+    "groups",
     "role",
+    "ROLE_NAME",
+    "department",
 )
 
 #: Every derived field this module can produce. Asserted against the gate's

@@ -30,6 +30,9 @@ from app.services.baselines import (
     DERIVED_FIELDS,
     MIN_PEER_MEMBERS,
     MIN_VOLUME_SAMPLES,
+    OAUTH_APP_FIELDS,
+    PEER_GROUP_FIELDS,
+    PRINCIPAL_FIELDS,
     RARITY_FIELDS,
     BaselineStore,
     resolve_principal,
@@ -297,6 +300,37 @@ def test_the_reachability_gate_mirrors_this_module() -> None:
 
 def test_every_rarity_field_is_declared_as_derived() -> None:
     assert set(RARITY_FIELDS) <= DERIVED_FIELDS
+
+
+def test_every_subject_chain_names_a_field_some_connector_emits() -> None:
+    """A baseline over a field nothing emits is a signal that cannot fire.
+
+    This is the test that earns its place. The first draft of
+    `RARITY_FIELDS` gave `baseline_client_family_rarity` the chain
+    `client_family` / `user_agent_family` / `client_app`, and **no connector
+    emits any of the three** — so that rarity would have been published,
+    counted, and structurally incapable of being computed on any
+    deployment. Worse than a missing feature, because the field name reads
+    as working.
+
+    The namespace comes from the same static analysis
+    `scripts/check_detection_fields.py` performs, so the two cannot
+    disagree about what a connector emits.
+    """
+    spec = importlib.util.spec_from_file_location("cdf_emit", _REPO / "scripts" / "check_detection_fields.py")
+    assert spec and spec.loader
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    emitted = gate._connector_namespace()
+
+    chains: dict[str, tuple[str, ...]] = {
+        **RARITY_FIELDS,
+        "__principal__": PRINCIPAL_FIELDS,
+        "__oauth_app__": OAUTH_APP_FIELDS,
+        "__peer_group__": PEER_GROUP_FIELDS,
+    }
+    unreachable = {name: chain for name, chain in chains.items() if not (set(chain) & emitted)}
+    assert not unreachable, f"no connector emits any candidate for: {sorted(unreachable)}"
 
 
 def test_the_narrowed_family_no_longer_claims_unrelated_fields() -> None:

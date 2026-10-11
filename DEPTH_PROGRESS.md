@@ -471,7 +471,12 @@ phase's own new deviations take D12 and D13.
   locations; peer-group deviation; volume per principal and per OAuth app —
   each a typed `AnomalySignal`, never an alert on its own. Wired into
   `DetectionEngine.evaluate_async` beside the 3.3 first-seen store, so a
-  CORE install computes them with no `full` service running. 21 tests. The
+  CORE install computes them with no `full` service running. 22 tests,
+  one of which caught this work's own worst defect: the first draft
+  resolved client-family rarity from three field names **no connector
+  emits**, so that signal could never have been computed anywhere. Every
+  subject chain is now held against the gate's own emitted-field
+  namespace, proved by reinstating the broken chain. The
   reachability gate's "behavioural baseline" family was **narrowed**: it
   matched `^active_`, which swept in a systemd unit state and an ITSM
   lookup and reported both as blocked on a baseline that would never have
