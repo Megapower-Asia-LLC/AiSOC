@@ -175,6 +175,14 @@ func (r *Receiver) ServeLogs(w http.ResponseWriter, req *http.Request) {
 		r.refuse(w, enc, http.StatusBadRequest, "unreadable_body", err.Error())
 		return
 	}
+	if len(body) == 0 && enc == encodingJSON {
+		// An empty *protobuf* body is a well-formed empty batch — a
+		// message with no fields set encodes to zero bytes — so only the
+		// JSON encoding can say an empty body is wrong. Refusing both
+		// would answer 400 to a request the specification allows.
+		r.refuse(w, enc, http.StatusBadRequest, "unreadable_body", "empty body; OTLP/JSON needs at least {}")
+		return
+	}
 
 	export := &collogs.ExportLogsServiceRequest{}
 	switch enc {
@@ -298,7 +306,21 @@ func (r *Receiver) project(export *collogs.ExportLogsServiceRequest, tok *inbox.
 // the other one.
 func recordPayload(record *logspb.LogRecord, resourceAttrs, scopeAttrs map[string]any, scopeName, scopeVersion string) (map[string]any, error) {
 	if record == nil {
-		return nil, errors.New("a nil log record")
+		return nil, errors.New("a log record carrying no body, attributes, severity or timestamp")
+	}
+	// A record with nothing of its own is the one thing this receiver
+	// refuses, and it is a real shape rather than a theoretical one: a
+	// truncated or garbled batch arrives as empty records. The resource
+	// and scope attributes are deliberately not counted here — they are
+	// identical for every record in the batch and carry no event content,
+	// so an empty record inside a well-described resource would still
+	// project to an OCSF event that says nothing happened.
+	//
+	// Refusing them is also what gives the partial-success contract below
+	// something to report, so it is exercised rather than being a
+	// mechanism with no caller.
+	if isEmptyRecord(record) {
+		return nil, errors.New("a log record carrying no body, attributes, severity or timestamp")
 	}
 	payload := map[string]any{}
 
@@ -352,6 +374,18 @@ func recordPayload(record *logspb.LogRecord, resourceAttrs, scopeAttrs map[strin
 		payload["raw"] = string(raw)
 	}
 	return payload, nil
+}
+
+// isEmptyRecord reports a record that carries nothing of its own.
+func isEmptyRecord(record *logspb.LogRecord) bool {
+	return anyValueToString(record.GetBody()) == "" &&
+		len(record.GetAttributes()) == 0 &&
+		record.GetSeverityNumber() == logspb.SeverityNumber_SEVERITY_NUMBER_UNSPECIFIED &&
+		strings.TrimSpace(record.GetSeverityText()) == "" &&
+		record.GetTimeUnixNano() == 0 &&
+		record.GetObservedTimeUnixNano() == 0 &&
+		len(record.GetTraceId()) == 0 &&
+		len(record.GetSpanId()) == 0
 }
 
 // assign writes a possibly-dotted attribute key into the payload as nested
@@ -515,9 +549,6 @@ func readBody(req *http.Request) ([]byte, error) {
 	body, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("reading the request body: %w", err)
-	}
-	if len(body) == 0 {
-		return nil, errors.New("empty body")
 	}
 	return body, nil
 }
