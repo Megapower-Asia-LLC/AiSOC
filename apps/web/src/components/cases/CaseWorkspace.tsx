@@ -29,6 +29,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { InvestigationLedger } from './InvestigationLedger';
+import { WarRoomPanel } from './WarRoomPanel';
 import { ContextualActions } from '@/components/copilot/ContextualActions';
 import { canUseDemoData } from '@/lib/demoFallback';
 
@@ -985,6 +986,11 @@ export function CaseWorkspace({ caseId }: { caseId: string }) {
           }}
           eyebrow="Ask AiSOC about this case"
         />
+
+      {/* Depth 9.4 — one action opens a Slack or Teams channel for this case
+          and mirrors its timeline into it. Above the three columns because
+          it is an action on the case, not a facet of it. */}
+      <WarRoomPanel caseId={caseId} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* Left: Linked alerts + IOCs */}

@@ -291,14 +291,11 @@ async def sync_war_room(
     if case is None:
         return {"posted": 0, "error": "the case no longer exists"}
 
-    known = {
-        row
-        for row in (
-            await db.execute(text("SELECT event_key FROM aisoc_war_room_posts WHERE war_room_id = :id").bindparams(id=war_room["id"]))
-        )
+    known = set(
+        (await db.execute(text("SELECT event_key FROM aisoc_war_room_posts WHERE war_room_id = :id").bindparams(id=war_room["id"])))
         .scalars()
         .all()
-    }
+    )
     pending = [(key, body) for key, body in case_events(dict(case)) if key not in known]
     if not pending:
         await db.execute(

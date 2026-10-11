@@ -7374,3 +7374,40 @@ export const evaluationsApi = {
     `${API_BASE}/api/v1/evaluations/replay/${id}/export` +
     `?format=${format}&exclude_latency=${excludeLatency ? 'true' : 'false'}`,
 };
+
+// ─── War rooms (depth 9.4) ───────────────────────────────────────────────────
+
+export interface WarRoom {
+  id: string;
+  case_id: string;
+  provider: string;
+  channel_id: string;
+  channel_name: string;
+  channel_url: string;
+  state: string;
+  opened_by: string;
+  /**
+   * `null` means the sweep has never run for this room, which is a different
+   * fact from "ran and had nothing to say". The panel renders them apart.
+   */
+  last_synced_at: string | null;
+  /** Empty on success. A room that has silently stopped mirroring is worse
+   *  than one that was never opened, so this is shown in full. */
+  last_error: string;
+}
+
+export const warRoomApi = {
+  forCase: (caseId: string) => request<WarRoom[]>(`/api/v1/war-rooms/cases/${caseId}`),
+
+  open: (caseId: string, provider: 'slack' | 'teams', invite: string[] = []) =>
+    request<WarRoom>(`/api/v1/war-rooms/cases/${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify({ provider, invite }),
+    }),
+
+  sync: (warRoomId: string) =>
+    request<{ posted: number; error: string | null }>(`/api/v1/war-rooms/${warRoomId}/sync`, { method: 'POST' }),
+
+  close: (warRoomId: string) =>
+    request<WarRoom>(`/api/v1/war-rooms/${warRoomId}/close`, { method: 'POST' }),
+};
