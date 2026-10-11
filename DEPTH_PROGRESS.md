@@ -331,9 +331,24 @@ invented fields on the first run of the gate.
 - [x] **3.1** Translate the 74 windowed `det-*` rules — 50 translated, 24
   refused with a reason. `MAX_UNREACHABLE` 119 → 45.
 - [x] **3.2** Ordered sequences and Sigma correlations — the windowed engine
-  stages ordered and unordered sequences; all four translatable Sigma
-- [ ] **3.2** Ordered sequences and Sigma correlations
-- [ ] **3.3** Enrichment inputs (parity 5.5)
+  stages ordered and unordered sequences (`SequenceRule` in
+  `services/fusion/app/services/windowed_detection.py`, loaded by
+  `load_sequence_rules` from the same artefact the counting rules use); all
+  four translatable Sigma correlation types compile through
+  `scripts/sigma_correlation.py`, held by `scripts/check_sigma_correlations.py`,
+  with seven refusal reasons recorded rather than approximated. No upstream
+  Sigma correlation rule exists in this tree to import (D8), so the corpus is
+  first-party and labelled as such.
+- [x] **3.3** Enrichment inputs (parity 5.5) — identity privilege (18 rules)
+  resolved from the Phase 2.5 posture and SCIM attributes, and a per-tenant
+  first-seen store keyed by principal and attribute
+  (`services/fusion/app/services/first_seen.py`, Redis with a lake backstop)
+  closing 2 more. 5 rules were never unreachable — the gate kept its own copy
+  of the matcher's operator list and had drifted from it (D9) — and 18 were
+  retired with a reason rather than given fields nothing emits (D10).
+  `MAX_UNREACHABLE` 45 → 2, and the two that remain both need the 3.4
+  baseline, so they are named rather than hidden. Two matcher operators that
+  three shipped rules already used were implemented.
 - [ ] **3.4** Behavioural baselines in CORE
 - [ ] **3.5** Threat-and-anomaly condition rules
 - [ ] **3.6** 395 → at least 800 cloud, identity, SaaS and code conditions
