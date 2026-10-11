@@ -160,11 +160,7 @@ async def has_webauthn_factor(db: Any, user_id: uuid.UUID) -> bool:
     authenticator, splitting the clone-detection control in half.
     """
     count = (
-        await db.execute(
-            text(
-                "SELECT count(*) FROM passkey_credentials WHERE user_id = :u AND revoked_at IS NULL"
-            ).bindparams(u=user_id)
-        )
+        await db.execute(text("SELECT count(*) FROM passkey_credentials WHERE user_id = :u AND revoked_at IS NULL").bindparams(u=user_id))
     ).scalar()
     return bool(count)
 
@@ -211,9 +207,7 @@ async def roles_requiring_mfa(db: Any, tenant_id: uuid.UUID) -> set[str]:
     rows = (
         (
             await db.execute(
-                text(
-                    "SELECT role FROM aisoc_tenant_mfa_role_policy WHERE tenant_id = :t AND require_mfa IS TRUE"
-                ).bindparams(t=tenant_id)
+                text("SELECT role FROM aisoc_tenant_mfa_role_policy WHERE tenant_id = :t AND require_mfa IS TRUE").bindparams(t=tenant_id)
             )
         )
         .mappings()
@@ -866,9 +860,7 @@ async def put_policy(
     # role from the console actually clears it. A merge would make the
     # page able to add a requirement and never able to remove one.
     requested = sorted(set(body.require_for_roles))
-    await db.execute(
-        text("DELETE FROM aisoc_tenant_mfa_role_policy WHERE tenant_id = :t").bindparams(t=current_user.tenant_id)
-    )
+    await db.execute(text("DELETE FROM aisoc_tenant_mfa_role_policy WHERE tenant_id = :t").bindparams(t=current_user.tenant_id))
     for role_name in requested:
         await db.execute(
             text("""

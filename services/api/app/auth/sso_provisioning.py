@@ -469,9 +469,7 @@ def idp_asserted_multi_factor(authn_methods: list[str] | None) -> bool:
     return any(str(method).strip() in MULTI_FACTOR_AUTHN_METHODS for method in (authn_methods or []))
 
 
-async def _second_factor_challenge(
-    db: AsyncSession, *, tenant_id: Any, user_id: Any, role: str
-) -> dict[str, Any] | None:
+async def _second_factor_challenge(db: AsyncSession, *, tenant_id: Any, user_id: Any, role: str) -> dict[str, Any] | None:
     """The challenge this SSO sign-in still owes, or `None`.
 
     Delegates to the same two helpers `POST /auth/login` uses, so the
@@ -634,9 +632,7 @@ async def complete_sso_login(
     # mean a user covered by the policy never gets an account, so the
     # administrator enforcing the policy cannot see them to help them.
     if not idp_asserted_multi_factor(authn_methods):
-        challenge = await _second_factor_challenge(
-            db, tenant_id=connection["tenant_id"], user_id=user["id"], role=role
-        )
+        challenge = await _second_factor_challenge(db, tenant_id=connection["tenant_id"], user_id=user["id"], role=role)
         if challenge is not None:
             return {
                 **challenge,

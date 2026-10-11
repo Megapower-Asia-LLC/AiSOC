@@ -353,8 +353,7 @@ async def webauthn_second_factor_options(db: Any, *, user_id: uuid.UUID, tenant_
     options = webauthn.generate_authentication_options(
         rp_id=settings.PASSKEY_RP_ID,
         allow_credentials=[
-            {"id": _b64url_decode(c.credential_id), "type": "public-key", "transports": c.transports or None}
-            for c in cred_rows
+            {"id": _b64url_decode(c.credential_id), "type": "public-key", "transports": c.transports or None} for c in cred_rows
         ],
     )
     encoded_challenge = await _store_challenge(
