@@ -112,9 +112,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      # Node 20, not 22, and only on the jobs that run Metro. Metro's asset
+      # hashing concatenates buffers in a way Node 22.12+ rejects, which
+      # surfaced here as `The "list" argument must be an instance of
+      # SharedArrayBuffer...` while bundling one of expo-router's PNGs and
+      # failed `:app:createBundleReleaseJsAndAssets`. Node 20 is what Expo
+      # SDK 54 is tested against; the type-check and unit-test job above
+      # stays on 22 because it never invokes Metro, and pinning it down
+      # would be testing a runtime nobody uses.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: '22'
+          node-version: '20'
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
         with:
           distribution: temurin
@@ -193,9 +201,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      # Node 20 for the same reason as the Android job: this one runs
+      # `expo prebuild`, which shells into the same Metro toolchain.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: '22'
+          node-version: '20'
 
       - name: Install
         run: pnpm install
