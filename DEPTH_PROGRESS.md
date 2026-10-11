@@ -400,7 +400,7 @@ invented fields on the first run of the gate.
 
 ## Phase 7: Phishing operations
 
-- [ ] **7.1** Intake to purge (gap-closure Phase 10 / parity 6.4)
+- [x] **7.1** Intake to purge (gap-closure Phase 10 / parity 6.4)
 - [ ] **7.2** Header, URL and attachment analysis
 - [ ] **7.3** Adversary-in-the-middle session reuse
 
@@ -437,3 +437,27 @@ invented fields on the first run of the gate.
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |
+| 2026-10-11 | 7.1 | Reproduced: against the unmodified tree, `registry.list_vendors_for_capability` returned `[]` for all five mailbox verbs and `dispatcher.dispatch` answered `executor_not_found` for `purge_email` over 79 registered builtin arms -- a phishing response that could block the sender's domain at the firewall and could not remove the message it arrived in. Added the five verbs to both halves of the vocabulary, two mail clients (Graph, Gmail with per-mailbox domain-wide delegation), ten vendor arms, migration `104`, three intake adapters, campaign grouping, the governed fan-out and a report-mailbox worker. Only documented vendor APIs: purge is a soft delete on both and `restore_email` is a real reverse; there is no tenant-wide sender block because neither vendor exposes one through these APIs, and the per-mailbox scope is in the summary an analyst reads rather than only in a docstring. Everything ships off. Negative controls recorded in the PR: defaulting the feature flag on reds four tests, inverting the verification probe's polarity reds two, reading the envelope sender instead of the preserved headers reds four adapter tests including the one asserting the report mailbox is not proposed for purge, incrementing `recipient_count` instead of recomputing it reds the grouping test, and dropping `recipient_count` from the per-mailbox dispatch reds the fan-out test -- which is the quiet way a SEVERE action becomes a MODERATE one. Gates: `check_action_contract` 86 -> 97 executors, `check_module_reachability` 981 -> 986 of 1014, `check_route_authz` 262 -> 265 authorizing with both ceilings unmoved, matrix 302 -> 303 rows. Actions suite 1158 -> 1228; api 44 new cases, 17 of them against a real Postgres with the full chain. Recorded as **PARTIAL**, not GATED: no Microsoft 365 or Google Workspace tenant was exercised (D-7.1). |
+
+### D-7.1 -- No Microsoft 365 or Google Workspace tenant was exercised
+
+Every mailbox verb in 7.1 is built against the vendors' documented request
+shapes and asserted with a recorded `respx` mock: the Graph `$filter` on a
+bracketed `internetMessageId`, the `move` to `recoverableitemsdeletions`, the
+inbox `messageRules` body, Gmail's `rfc822msgid:` operator, `trash`/`untrash`
+and the settings filter. **Nobody has watched either vendor accept any of
+them.** The maintainer-only list already carries "provide cloud and SaaS test
+tenants"; this is the same block, named here so the claim row's PARTIAL has a
+reason a reader can find.
+
+Two specific consequences, stated rather than implied. A decoder and a fixture
+that share an author share a misreading, so a field Graph spells differently
+from the reference would pass every test here. And the Gmail filter body and
+the Graph inbox-rule body were written from the API reference rather than
+taken from a working call, which is the half of `block_sender` least likely
+to be right first time.
+
+The claim row returns to GATED when a live tenant is available. Nothing was
+weakened to accommodate this: the row says PARTIAL, the operations page says
+"treat the first run against your own tenant as the first run", and the
+CHANGELOG entry says it too.
