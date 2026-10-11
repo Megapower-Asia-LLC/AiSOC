@@ -15,17 +15,17 @@
  * administrator would believe they had turned something off.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MfaView } from './MfaView';
+import { MfaView } from "./MfaView";
 
 const status = vi.fn();
 const setPolicy = vi.fn();
 const registerBegin = vi.fn();
 
-vi.mock('@/lib/api', () => ({
+vi.mock("@/lib/api", () => ({
   mfaApi: {
     status: (...args: unknown[]) => status(...args),
     setPolicy: (...args: unknown[]) => setPolicy(...args),
@@ -39,8 +39,8 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-vi.mock('@/lib/responder/webauthn', () => ({
-  createPasskey: vi.fn(async () => ({ id: 'c' })),
+vi.mock("@/lib/responder/webauthn", () => ({
+  createPasskey: vi.fn(async () => ({ id: "c" })),
   isWebAuthnSupported: () => true,
 }));
 
@@ -57,75 +57,75 @@ function aStatus(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('MfaView', () => {
+describe("MfaView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     status.mockResolvedValue(aStatus());
     setPolicy.mockResolvedValue({ require_totp: false, require_for_roles: [] });
   });
 
-  it('sends a real policy write when a role is selected', async () => {
+  it("sends a real policy write when a role is selected", async () => {
     render(<MfaView />);
     await waitFor(() => expect(status).toHaveBeenCalled());
 
-    await userEvent.click(await screen.findByRole('button', { name: /soc analyst/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /soc analyst/i }));
 
-    await waitFor(() => expect(setPolicy).toHaveBeenCalledWith(false, ['soc_analyst']));
+    await waitFor(() => expect(setPolicy).toHaveBeenCalledWith(false, ["soc_analyst"]));
   });
 
-  it('removes a role rather than merging it back in', async () => {
-    status.mockResolvedValue(aStatus({ require_for_roles: ['soc_analyst', 'viewer'] }));
+  it("removes a role rather than merging it back in", async () => {
+    status.mockResolvedValue(aStatus({ require_for_roles: ["soc_analyst", "viewer"] }));
     render(<MfaView />);
     await waitFor(() => expect(status).toHaveBeenCalled());
 
-    await userEvent.click(await screen.findByRole('button', { name: /soc analyst/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /soc analyst/i }));
 
-    await waitFor(() => expect(setPolicy).toHaveBeenCalledWith(false, ['viewer']));
+    await waitFor(() => expect(setPolicy).toHaveBeenCalledWith(false, ["viewer"]));
   });
 
-  it('keeps the tenant-wide switch when only a role changes', async () => {
+  it("keeps the tenant-wide switch when only a role changes", async () => {
     status.mockResolvedValue(aStatus({ tenant_requires_totp: true }));
     render(<MfaView />);
     await waitFor(() => expect(status).toHaveBeenCalled());
 
-    await userEvent.click(await screen.findByRole('button', { name: /threat hunter/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /threat hunter/i }));
 
     // `true`, not `false`. Sending the toggle's own default here would
     // silently turn tenant-wide enforcement off as a side effect of
     // editing a role.
-    await waitFor(() => expect(setPolicy).toHaveBeenCalledWith(true, ['threat_hunter']));
+    await waitFor(() => expect(setPolicy).toHaveBeenCalledWith(true, ["threat_hunter"]));
   });
 
-  it('reports a selected role to assistive technology', async () => {
-    status.mockResolvedValue(aStatus({ require_for_roles: ['viewer'] }));
+  it("reports a selected role to assistive technology", async () => {
+    status.mockResolvedValue(aStatus({ require_for_roles: ["viewer"] }));
     render(<MfaView />);
 
-    const selected = await screen.findByRole('button', { name: /viewer/i });
-    expect(selected).toHaveAttribute('aria-pressed', 'true');
-    expect(await screen.findByRole('button', { name: /threat hunter/i })).toHaveAttribute(
-      'aria-pressed',
-      'false',
+    const selected = await screen.findByRole("button", { name: /viewer/i });
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: /threat hunter/i })).toHaveAttribute(
+      "aria-pressed",
+      "false"
     );
   });
 
-  it('starts a real registration when a security key is added', async () => {
-    registerBegin.mockResolvedValue({ publicKey: {}, challenge: 'ch', device_name_default: 'k' });
+  it("starts a real registration when a security key is added", async () => {
+    registerBegin.mockResolvedValue({ publicKey: {}, challenge: "ch", device_name_default: "k" });
     render(<MfaView />);
     await waitFor(() => expect(status).toHaveBeenCalled());
 
-    await userEvent.click(await screen.findByRole('button', { name: /add a security key/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /add a security key/i }));
 
     await waitFor(() => expect(registerBegin).toHaveBeenCalled());
   });
 
-  it('offers no role the console cannot assign', async () => {
+  it("offers no role the console cannot assign", async () => {
     render(<MfaView />);
     await waitFor(() => expect(status).toHaveBeenCalled());
 
     // `admin` and `platform_admin` carry the wildcard permission and are
     // unreachable from every tenant-scoped route. Listing either would
     // tell an administrator they can reach something they cannot.
-    expect(screen.queryByRole('button', { name: /^platform admin$/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^admin$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^platform admin$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^admin$/i })).toBeNull();
   });
 });
