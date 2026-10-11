@@ -10,7 +10,6 @@ arguments have to satisfy is asserted against the migration itself.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import re
 import uuid
@@ -354,8 +353,14 @@ async def test_the_idle_sweep_runs_from_the_worker_rather_than_nowhere():
                 break
         worker._running = False
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        # Bound rather than discarded. `return_exceptions=True` hands back
+        # *how* the ticker ended instead of raising it, which is the thing
+        # worth asserting: clearing `_running` can retire the loop before
+        # `cancel()` reaches it, so either ending is correct -- but a sweeper
+        # that died of its own exception is not, and a bare `await task`
+        # cannot tell the three apart.
+        (ended,) = await asyncio.gather(task, return_exceptions=True)
+        assert ended is None or isinstance(ended, asyncio.CancelledError), f"the sweep ticker raised {ended!r} rather than stopping cleanly"
     finally:
         monkeypatch.undo()
 

@@ -422,9 +422,7 @@ class FusionWorker:
 
         await self._fuse_and_persist(alert, source_event_id=validation.source_event_id, session=session)
 
-    async def _fuse_and_persist(
-        self, alert: RawAlert, *, source_event_id: str | None = None, session: SessionRef | None = None
-    ) -> None:
+    async def _fuse_and_persist(self, alert: RawAlert, *, source_event_id: str | None = None, session: SessionRef | None = None) -> None:
         """Run one RawAlert through fusion, persist it, then publish it.
 
         Issue #568: the canonical, replay-stable alert id and source-event

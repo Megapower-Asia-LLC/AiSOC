@@ -213,8 +213,8 @@ def check_no_invented_keys(files: list[Path], root: Path) -> list[str]:
             if INVENTED_KEY.search(line):
                 findings.append(
                     f"{rel}:{line_no}: builds a session key rather than reading one. An absent "
-                    f"session is a real answer; a fabricated grouping makes \"what else did this "
-                    f"session do\" answerable with a number that means nothing."
+                    f'session is a real answer; a fabricated grouping makes "what else did this '
+                    f'session do" answerable with a number that means nothing.'
                 )
     return findings
 
@@ -245,7 +245,12 @@ def self_test() -> int:
             consumer.write_text(original)
 
             # 2. The closed set drifting in one of its three declarations.
-            consumer.write_text(original.replace('("vendor_session", "vendor_credential", "vendor_flow", "derived")', '("vendor_session", "vendor_credential", "derived")'))
+            consumer.write_text(
+                original.replace(
+                    '("vendor_session", "vendor_credential", "vendor_flow", "derived")',
+                    '("vendor_session", "vendor_credential", "derived")',
+                )
+            )
             if not any("KEY_KINDS" in f for f in run(work)):
                 failures.append("a shrunken Python closed set was not detected")
             consumer.write_text(original)
@@ -258,7 +263,9 @@ def self_test() -> int:
             migration.write_text(sql_original)
 
             # 3. A consumer inventing a key when the block is absent.
-            consumer.write_text(original + '\n\ndef _fallback(principal, ip, ua):\n    session_key = f"{principal}|{ip}|{ua}"\n    return session_key\n')
+            consumer.write_text(
+                original + '\n\ndef _fallback(principal, ip, ua):\n    session_key = f"{principal}|{ip}|{ua}"\n    return session_key\n'
+            )
             if not any("builds a session key" in f for f in run(work)):
                 failures.append("an invented fallback key was not detected")
             consumer.write_text(original)
@@ -286,8 +293,10 @@ def self_test() -> int:
         for failure in failures:
             print(f"SELF-TEST FAILED: {failure}")
         return 1
-    print("self-test OK: the gate detects a second deriver, a drifted closed set in either "
-          "declaration, an invented fallback key, and a declaration that is missing entirely.")
+    print(
+        "self-test OK: the gate detects a second deriver, a drifted closed set in either "
+        "declaration, an invented fallback key, and a declaration that is missing entirely."
+    )
     return 0
 
 
