@@ -21,7 +21,9 @@ import (
 	"github.com/beenuar/aisoc/services/ingest/internal/handler"
 	"github.com/beenuar/aisoc/services/ingest/internal/inbox"
 	"github.com/beenuar/aisoc/services/ingest/internal/ingestauth"
+	"github.com/beenuar/aisoc/services/ingest/internal/kafkainput"
 	"github.com/beenuar/aisoc/services/ingest/internal/normalizer"
+	"github.com/beenuar/aisoc/services/ingest/internal/otlp"
 	"github.com/beenuar/aisoc/services/ingest/internal/publisher"
 	"github.com/beenuar/aisoc/services/ingest/internal/server"
 	"github.com/beenuar/aisoc/services/ingest/internal/syslog"
@@ -366,7 +368,93 @@ func main() {
 		log.Info().Msg("syslog: disabled (AISOC_SYSLOG_ENABLED!=true)")
 	}
 
-	srv := server.New(cfg, h, inboxHandler, graphWSServer)
+	// Depth plan 4.2 — the OTLP logs receiver. Off unless the operator asks
+	// for it. It shares the HTTP port rather than binding one of its own,
+	// because an OpenTelemetry exporter is configured with a single
+	// endpoint URL and appends /v1/logs itself.
+	var otlpReceiver *otlp.Receiver
+	if cfg.OTLPEnabled {
+		if tokenStore == nil {
+			log.Error().Msg("otlp: not started — DATABASE_DSN is unset, so an exporter's ingest token cannot be resolved to a tenant")
+		} else {
+			registry := inbox.NewRegistry()
+			if err := registry.LoadEmbedded(); err != nil {
+				log.Error().Err(err).Msg("otlp: not started — embedded templates failed to load")
+			} else {
+				if err := registry.Load(cfg.InboxTemplatesDir); err != nil {
+					log.Warn().Err(err).Str("dir", cfg.InboxTemplatesDir).Msg("otlp: template overrides on disk could not be read")
+				}
+				receiver, err := otlp.New(tokenStore, registry, pub)
+				if err != nil {
+					log.Error().Err(err).Msg("otlp: receiver disabled")
+				} else {
+					otlpReceiver = receiver
+					// /readyz names the receiver. An endpoint nobody is
+					// exporting to and one refusing every request look the
+					// same from outside unless readiness says which.
+					h.RegisterSubscription("otlp_logs", func() handler.SubscriptionStatus {
+						return handler.SubscriptionStatus{
+							Attached:     true,
+							NotResolving: false,
+							Detail:       receiver.Detail(),
+						}
+					})
+					log.Info().Str("path", "/v1/logs").Str("template", otlp.TemplateID).
+						Msg("otlp: logs receiver accepting protobuf and JSON")
+				}
+			}
+		}
+	} else {
+		log.Info().Msg("otlp: disabled (AISOC_OTLP_LOGS_ENABLED!=true)")
+	}
+
+	// Depth plan 4.2 — customer Kafka topics. One source per tenant; the
+	// tenant comes from each source's minted token and from nothing in the
+	// record.
+	var kafkaSources []*kafkainput.Source
+	if sources, err := kafkainput.ParseSources(cfg.KafkaInputSources); err != nil {
+		// Loud and specific. A malformed source list that started the
+		// service with the input silently off is the exact shape of defect
+		// this repository keeps finding.
+		log.Error().Err(err).Msg("kafka_input: no sources started — AISOC_KAFKA_INPUT_SOURCES could not be read")
+	} else if len(sources) > 0 {
+		if tokenStore == nil {
+			log.Error().Int("sources", len(sources)).
+				Msg("kafka_input: no sources started — DATABASE_DSN is unset, so their ingest tokens cannot be resolved to tenants")
+		} else {
+			registry := inbox.NewRegistry()
+			if err := registry.LoadEmbedded(); err != nil {
+				log.Error().Err(err).Msg("kafka_input: no sources started — embedded templates failed to load")
+			} else {
+				if err := registry.Load(cfg.InboxTemplatesDir); err != nil {
+					log.Warn().Err(err).Str("dir", cfg.InboxTemplatesDir).Msg("kafka_input: template overrides on disk could not be read")
+				}
+				for _, sc := range sources {
+					src, err := kafkainput.NewSource(sc, tokenStore, registry, pub)
+					if err != nil {
+						log.Error().Err(err).Str("source", sc.Name).Msg("kafka_input: source disabled")
+						continue
+					}
+					kafkaSources = append(kafkaSources, src)
+					name := sc.Name
+					h.RegisterSubscription("kafka_input:"+name, func() handler.SubscriptionStatus {
+						health := src.Health()
+						return handler.SubscriptionStatus{
+							Attached:     health.Attached,
+							NotResolving: health.NotResolving || health.PermanentFailure,
+							Detail:       health.Detail(),
+						}
+					})
+					log.Info().Str("source", sc.Name).Str("topic", sc.Topic).Str("group", sc.GroupID).
+						Msg("kafka_input: consuming a customer topic")
+				}
+			}
+		}
+	} else {
+		log.Info().Msg("kafka_input: no sources configured (AISOC_KAFKA_INPUT_SOURCES is empty)")
+	}
+
+	srv := server.New(cfg, h, inboxHandler, graphWSServer, otlpReceiver)
 
 	// Graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -375,6 +463,11 @@ func main() {
 	if graphWSBroker != nil {
 		graphWSBroker.Start(ctx)
 		defer graphWSBroker.Stop()
+	}
+
+	for _, src := range kafkaSources {
+		src.Start(ctx)
+		defer src.Stop()
 	}
 
 	if syslogListener != nil {

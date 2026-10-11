@@ -88,6 +88,24 @@ type Config struct {
 	SyslogFlushMs        int
 	SyslogMaxConnections int
 
+	// Depth plan 4.2 — the OTLP logs receiver and the customer Kafka input.
+	//
+	// Both off by default, and both take the tenant from a minted ingest
+	// token for the same reason syslog does: neither OTLP nor a Kafka
+	// record carries an authenticated principal, so a tenant read out of
+	// a resource attribute or a record header would be a cross-tenant
+	// write any instrumented process could perform.
+	//
+	// OTLPEnabled adds POST /v1/logs. There is no address of its own: the
+	// receiver shares the service's HTTP port, which is what an
+	// OpenTelemetry exporter expects to find behind one endpoint URL.
+	OTLPEnabled bool
+	// KafkaInputSources is a JSON array of source objects. An array rather
+	// than numbered variables because a deployment reading three tenants'
+	// topics needs three of everything, and numbered variables are how a
+	// fourth source silently gets the third one's token.
+	KafkaInputSources string
+
 	// Workstream 6 — universal capture push paths.
 	// InboxEnabled toggles the /v1/inbox/* routes. Off by default in
 	// development if no DATABASE_DSN is set, since the inbox store needs
@@ -246,9 +264,12 @@ func Load() (*Config, error) {
 		SyslogBatchSize:      mustGetEnvInt("AISOC_SYSLOG_BATCH_SIZE", 500),
 		SyslogFlushMs:        mustGetEnvInt("AISOC_SYSLOG_FLUSH_MS", 2000),
 		SyslogMaxConnections: mustGetEnvInt("AISOC_SYSLOG_MAX_CONNECTIONS", 256),
-		InboxEnabled:         getEnv("INBOX_ENABLED", "true") == "true",
-		InboxTemplatesDir:    getEnv("INBOX_TEMPLATES_DIR", "/app/templates"),
-		InboxMaxBodyBytes:    int64(mustGetEnvInt("INBOX_MAX_BODY_BYTES", 10*1024*1024)),
+
+		OTLPEnabled:       getEnv("AISOC_OTLP_LOGS_ENABLED", "false") == "true",
+		KafkaInputSources: getEnv("AISOC_KAFKA_INPUT_SOURCES", ""),
+		InboxEnabled:      getEnv("INBOX_ENABLED", "true") == "true",
+		InboxTemplatesDir: getEnv("INBOX_TEMPLATES_DIR", "/app/templates"),
+		InboxMaxBodyBytes: int64(mustGetEnvInt("INBOX_MAX_BODY_BYTES", 10*1024*1024)),
 		// Defaults sized to be invisible to a well-behaved vendor and
 		// firmly bounding to a runaway one: 50 req/s sustained with a
 		// 200 burst, and 5k events/s with a 20k burst (one large batch
