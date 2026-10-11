@@ -210,6 +210,7 @@ const sidebars: SidebarsConfig = {
         "operations/airgap",
         "operations/air-gapped",
         "operations/sandbox-providers",
+        "operations/mailbox-remediation",
         "operations/llm-gateway",
         "operations/llm-cost",
         "operations/mcp-client",

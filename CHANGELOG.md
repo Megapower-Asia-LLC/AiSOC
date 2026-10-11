@@ -191,6 +191,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reported phish now goes from intake to purge (depth 7.1).** The gap was
+  not that phishing was unhandled — `POST /phishing/submit` has triaged
+  artefacts since migration 015 — but that nothing in the product could
+  *remove a message*. The live-action registry held 79 builtin arms and not
+  one could touch a mailbox, so governed dispatch answered
+  `executor_not_found` for `purge_email`: a response that could block the
+  sender's domain at the firewall and could not take back the mail. Five
+  verbs enter both halves of the capability vocabulary (`search_mailboxes`,
+  `purge_email`, `restore_email`, `block_sender`, `unblock_sender`) with ten
+  vendor arms over Microsoft Graph and the Gmail API. Only what the vendors
+  document: purge is a move to `recoverableitemsdeletions` or to Trash, never
+  a hard delete, and `restore_email` is a real reverse rather than a declared
+  one. There is deliberately **no tenant-wide blocked-sender verb**, because
+  neither vendor exposes its organisation-level block list through these
+  APIs; the sender block is per mailbox and says so in the summary an analyst
+  reads, not only in a docstring. Reported-message intake normalises three
+  sources into one record — an M365 report mailbox over Graph, Workspace user
+  reports, and the existing `email_inbox` connector — and the hard case is
+  the common one: a user who reports by forwarding becomes the *sender*, so
+  the adapter reads the original sender and recipients out of the preserved
+  headers and leaves the sender empty rather than naming the victim as the
+  attacker. Campaign grouping is a five-step ladder and `grouping_basis`
+  records which step matched, because four are facts about the message and
+  subject similarity is a judgement. The purge is **one proposal and one
+  dispatch per mailbox**: handing a single executor twenty-five addresses
+  would be one approval covering a list the approver never read.
+  `scaled_impact` turns the recipient count into the tier — MODERATE at one,
+  HIGH at five, SEVERE at twenty-five, where `NEVER_AUTONOMOUS` makes it
+  mandatory-human at any confidence and any autonomy tier — and the proposal
+  and every dispatch under it read the same function, so the approver and the
+  executor cannot see different actions. Verification re-queries the mailbox,
+  and that probe is the one in the service whose confirming answer is an
+  *absence*. Everything ships **off**: `AISOC_FEATURE_MAILBOX_REMEDIATION`
+  and `PHISHING_INTAKE_WORKER_ENABLED` both default false, and a disabled
+  deployment answers FAILED naming the setting rather than simulating a purge
+  — `NotifySlackExecutor` reporting `message_sent: true` for a message it
+  never sent is the precedent. Migration `104`. Gates:
+  `check_action_contract.py` (86 → 97 executors), `check_module_reachability.py`
+  (981 → 986 reachable), `check_vendor_catalog_ids.py`,
+  `test_mailbox_remediation.py` (60 cases through real `respx` HTTP) and
+  `test_phishing_campaign_purge_live.py` (17 cases against a real Postgres
+  with the full chain). **No Microsoft 365 or Google Workspace tenant was
+  exercised**: every vendor claim rests on the documented request shape and a
+  mock.
 - `services/api/app/models/detection_rule.py` maps the `author` column, which
   has existed since `001_init.sql` and was mapped by nothing — while fusion's
   tenant overlay reads it on every reload to say *who* silenced a rule when it
