@@ -333,6 +333,17 @@ class MfaStatus(BaseModel):
     enrolled: bool
     tenant_requires_totp: bool
     recovery_codes_remaining: int
+    # Which factors this account actually holds. `enrolled` is the OR of
+    # the two and says nothing about which, so a console that wants to
+    # offer "add a security key" to somebody who only has TOTP cannot
+    # work it out from `enrolled` alone.
+    has_totp: bool = False
+    has_webauthn: bool = False
+    # The roles this tenant enforces, and whether the caller's own role
+    # is one of them. The second is what a member needs to know; the
+    # first is what an administrator edits.
+    require_for_roles: list[str] = Field(default_factory=list)
+    required_for_me: bool = False
 
 
 class EnrollBegin(BaseModel):
@@ -404,10 +415,16 @@ async def mfa_status(current_user: AuthUser, db: DBSession) -> MfaStatus:
             )
         )
     ).scalar() or 0
+    enrolment = await enrolment_row(db, current_user.user_id)
+    role = getattr(current_user, "role", None)
     return MfaStatus(
         enrolled=await has_confirmed_factor(db, current_user.user_id),
         tenant_requires_totp=await tenant_requires_totp(db, current_user.tenant_id),
         recovery_codes_remaining=int(remaining),
+        has_totp=bool(enrolment and enrolment["confirmed_at"]),
+        has_webauthn=await has_webauthn_factor(db, current_user.user_id),
+        require_for_roles=sorted(await roles_requiring_mfa(db, current_user.tenant_id)),
+        required_for_me=await mfa_required_for(db, current_user.tenant_id, role),
     )
 
 
