@@ -56,6 +56,17 @@ from app.executors.identity import (
     ResetPasswordExecutor,
     SuspendSessionExecutor,
 )
+from app.executors.mailbox import (
+    GMAIL_CLIENT_PARAM_KEYS,
+    GOOGLE_WORKSPACE,
+    M365,
+    M365_CLIENT_PARAM_KEYS,
+    BlockSenderExecutor,
+    PurgeEmailExecutor,
+    RestoreEmailExecutor,
+    SearchMailboxesExecutor,
+    UnblockSenderExecutor,
+)
 from app.executors.network import (
     AllowIPExecutor,
     BlockDomainExecutor,
@@ -969,6 +980,180 @@ class TeamsChatOpsVerify(_ChatOpsVerify):
 
 
 # ---------------------------------------------------------------------------
+# Mailbox remediation (depth 7.1)
+# ---------------------------------------------------------------------------
+#
+# Ten adapters over the five verbs in `app.executors.mailbox`. The legacy
+# executors are vendor-agnostic — `ActionType` is, and the post-action
+# verifier is keyed by it — so each adapter pins its vendor into the request
+# and the executor honours the pin **only when that vendor's credentials are
+# present**. Honouring a pin blindly is the defect that had a dry run call a
+# customer's Splunk; here it would act on the wrong tenant's mail.
+#
+# `_credential_keys` is imported from the executor module rather than
+# retyped, so the dry-run strip and the client factory read one list.
+
+
+class _MailboxAdapter(_LegacyExecutorAdapter):
+    """Pin the vendor, refuse a preview before any client is built.
+
+    The dry-run override is not redundant with `_LegacyExecutorAdapter`'s
+    credential strip. That strip works by making the legacy executor fall
+    through to a simulation branch, and these executors deliberately have no
+    simulation branch: a purge that did not happen must never be reported as
+    one that did. Returning SIMULATED here, before a client exists, says what
+    is true — nothing was read and nothing was changed — and the step grader
+    counts `simulated` as a failure to execute, which is correct.
+    """
+
+    _vendor_pin: str = ""
+
+    async def execute(self, request: LiveActionRequest) -> LiveActionResult:
+        if request.dry_run:
+            return LiveActionResult(
+                request_id=request.request_id,
+                status=LiveActionStatus.SIMULATED,
+                capability=self.capability,
+                vendor_id=self.vendor_id,
+                summary=f"would {self.capability.replace('_', ' ')} for {request.target or 'the named mailbox'}",
+                details={
+                    "would_run": self.capability,
+                    "mailbox": request.target,
+                    "internet_message_id": (request.params or {}).get("internet_message_id", ""),
+                    "executed": False,
+                },
+            )
+        pinned = {**(request.params or {}), "alert_vendor": self._vendor_pin}
+        return await super().execute(request.model_copy(update={"params": pinned}))
+
+    def _summarise(self, output: dict[str, Any], status: LiveActionStatus) -> str:
+        # The executors write a summary that states the scope of what they
+        # did — "per-mailbox rule, not a tenant-wide block" — and the base
+        # class's generic "<verb> <target>" would drop exactly that.
+        return str(output.get("summary") or super()._summarise(output, status))
+
+
+@apply_contract
+class M365SearchMailboxes(_MailboxAdapter):
+    vendor_id = M365
+    capability = "search_mailboxes"
+    description = "Find copies of a reported message in a Microsoft 365 mailbox."
+    requires_credentials = True
+    _legacy_executor = SearchMailboxesExecutor()
+    _legacy_action_type = ActionType.SEARCH_MAILBOXES
+    _credential_keys = M365_CLIENT_PARAM_KEYS
+    _vendor_pin = M365
+
+
+@apply_contract
+class M365PurgeEmail(_MailboxAdapter):
+    vendor_id = M365
+    capability = "purge_email"
+    description = "Soft-delete a message from one Microsoft 365 mailbox (recoverable items)."
+    requires_credentials = True
+    _legacy_executor = PurgeEmailExecutor()
+    _legacy_action_type = ActionType.PURGE_EMAIL
+    _credential_keys = M365_CLIENT_PARAM_KEYS
+    _vendor_pin = M365
+
+
+@apply_contract
+class M365RestoreEmail(_MailboxAdapter):
+    vendor_id = M365
+    capability = "restore_email"
+    description = "Move a soft-deleted message back into a Microsoft 365 mailbox folder."
+    requires_credentials = True
+    _legacy_executor = RestoreEmailExecutor()
+    _legacy_action_type = ActionType.RESTORE_EMAIL
+    _credential_keys = M365_CLIENT_PARAM_KEYS
+    _vendor_pin = M365
+
+
+@apply_contract
+class M365BlockSender(_MailboxAdapter):
+    vendor_id = M365
+    capability = "block_sender"
+    description = "Add an inbox rule deleting future mail from a sender, in one mailbox."
+    requires_credentials = True
+    _legacy_executor = BlockSenderExecutor()
+    _legacy_action_type = ActionType.BLOCK_SENDER
+    _credential_keys = M365_CLIENT_PARAM_KEYS
+    _vendor_pin = M365
+
+
+@apply_contract
+class M365UnblockSender(_MailboxAdapter):
+    vendor_id = M365
+    capability = "unblock_sender"
+    description = "Remove the inbox rule block_sender created."
+    requires_credentials = True
+    _legacy_executor = UnblockSenderExecutor()
+    _legacy_action_type = ActionType.UNBLOCK_SENDER
+    _credential_keys = M365_CLIENT_PARAM_KEYS
+    _vendor_pin = M365
+
+
+@apply_contract
+class GmailSearchMailboxes(_MailboxAdapter):
+    vendor_id = GOOGLE_WORKSPACE
+    capability = "search_mailboxes"
+    description = "Find copies of a reported message in a Gmail mailbox."
+    requires_credentials = True
+    _legacy_executor = SearchMailboxesExecutor()
+    _legacy_action_type = ActionType.SEARCH_MAILBOXES
+    _credential_keys = GMAIL_CLIENT_PARAM_KEYS
+    _vendor_pin = GOOGLE_WORKSPACE
+
+
+@apply_contract
+class GmailPurgeEmail(_MailboxAdapter):
+    vendor_id = GOOGLE_WORKSPACE
+    capability = "purge_email"
+    description = "Move a message to Trash in one Gmail mailbox."
+    requires_credentials = True
+    _legacy_executor = PurgeEmailExecutor()
+    _legacy_action_type = ActionType.PURGE_EMAIL
+    _credential_keys = GMAIL_CLIENT_PARAM_KEYS
+    _vendor_pin = GOOGLE_WORKSPACE
+
+
+@apply_contract
+class GmailRestoreEmail(_MailboxAdapter):
+    vendor_id = GOOGLE_WORKSPACE
+    capability = "restore_email"
+    description = "Take a message back out of Gmail Trash."
+    requires_credentials = True
+    _legacy_executor = RestoreEmailExecutor()
+    _legacy_action_type = ActionType.RESTORE_EMAIL
+    _credential_keys = GMAIL_CLIENT_PARAM_KEYS
+    _vendor_pin = GOOGLE_WORKSPACE
+
+
+@apply_contract
+class GmailBlockSender(_MailboxAdapter):
+    vendor_id = GOOGLE_WORKSPACE
+    capability = "block_sender"
+    description = "Add a Gmail filter trashing future mail from a sender, in one mailbox."
+    requires_credentials = True
+    _legacy_executor = BlockSenderExecutor()
+    _legacy_action_type = ActionType.BLOCK_SENDER
+    _credential_keys = GMAIL_CLIENT_PARAM_KEYS
+    _vendor_pin = GOOGLE_WORKSPACE
+
+
+@apply_contract
+class GmailUnblockSender(_MailboxAdapter):
+    vendor_id = GOOGLE_WORKSPACE
+    capability = "unblock_sender"
+    description = "Remove the Gmail filter block_sender created."
+    requires_credentials = True
+    _legacy_executor = UnblockSenderExecutor()
+    _legacy_action_type = ActionType.UNBLOCK_SENDER
+    _credential_keys = GMAIL_CLIENT_PARAM_KEYS
+    _vendor_pin = GOOGLE_WORKSPACE
+
+
+# ---------------------------------------------------------------------------
 # Registration entry point
 # ---------------------------------------------------------------------------
 
@@ -1061,6 +1246,23 @@ _BUILTIN_ADAPTERS: tuple[type[LiveActionExecutor], ...] = (
     # so it raised in every agents image. Same verb, run where its clients and
     # its credentials are.
     *OSQUERY_ARMS,
+    # Depth 7.1. A phishing response that could block the sender's domain at
+    # the firewall and could not remove the message it arrived in.
+    # Registered like every other arm, so discovery lists them and the
+    # console can say the verb exists, and refused at execute() unless
+    # AISOC_FEATURE_MAILBOX_REMEDIATION is set. Gating registration instead
+    # would make a disabled deployment answer executor_not_found, which
+    # reads as a missing integration rather than as a deliberate setting.
+    M365SearchMailboxes,
+    M365PurgeEmail,
+    M365RestoreEmail,
+    M365BlockSender,
+    M365UnblockSender,
+    GmailSearchMailboxes,
+    GmailPurgeEmail,
+    GmailRestoreEmail,
+    GmailBlockSender,
+    GmailUnblockSender,
 )
 
 

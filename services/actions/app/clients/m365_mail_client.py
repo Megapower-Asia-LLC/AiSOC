@@ -79,10 +79,7 @@ DEFAULT_RESTORE_FOLDER = "inbox"
 #: omits ``internetMessageHeaders`` from the default projection, and a header
 #: analysis cannot recover a field the read never asked for — the same defect
 #: that left hostname and username null on four of five closed-finding readers.
-MESSAGE_SELECT = (
-    "id,internetMessageId,subject,from,sender,toRecipients,ccRecipients,"
-    "receivedDateTime,parentFolderId,hasAttachments,webLink"
-)
+MESSAGE_SELECT = "id,internetMessageId,subject,from,sender,toRecipients,ccRecipients,receivedDateTime,parentFolderId,hasAttachments,webLink"
 
 #: ``internetMessageHeaders`` is only populated on a single-message GET, never
 #: on a collection, so the poller fetches the list and then reads headers per
