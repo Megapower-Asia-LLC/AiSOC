@@ -55,12 +55,18 @@ is written. Next free at capture: migration `095`, ADR `0010`
 
 | Number | Claimed by | Status |
 |---|---|---|
-| migration `102` | 5.4 stateful user/manager verification (verification requests, answers, tenant opt-in) | claimed |
-| migration `103` | 5.6 plain-language playbook drafts (draft, preview, approval) | claimed |
+| ADR `0010` | 2.7 — entity and session context in CORE | **landed**, `docs/decisions/0010-entity-and-session-context-in-core.md`, accepted |
+| migration `102` | 2.4 — `102_sessions.sql` | claimed |
+| migration `103` | 2.5 — `103_posture_snapshots.sql` | claimed |
+| migration `104` | 5.4 stateful user/manager verification (verification requests, answers, tenant opt-in) | claimed |
+| migration `105` | 5.6 plain-language playbook drafts (draft, preview, approval) | claimed |
 
-The highest migration on `main` at the time of claiming is
-`101_audit_immutable_nullify.sql`; the plan's "next free `095`" is stale
-because six landed between capture and now. No ADR is claimed by Lane C.
+Lane B claimed `102`/`103` and landed that claim on `main` first, so Lane C's
+two moved to `104`/`105` and `102_playbook_verification.sql` was renamed with
+it. Both lanes had claimed before writing, as the plan requires -- what the
+rule cannot prevent is two lanes claiming the same free number before either
+merges, so re-read `services/api/migrations/` **and** this table before
+picking one.
 
 ## Phase 0: Kickoff
 

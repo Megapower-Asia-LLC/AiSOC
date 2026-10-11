@@ -12,7 +12,7 @@ name: Stateful user verification (live)
 on:
   pull_request:
     paths:
-      - "services/api/migrations/102_playbook_verification.sql"
+      - "services/api/migrations/104_playbook_verification.sql"
       - "services/agents/app/playbook/pause.py"
       - "services/agents/app/playbook/verification.py"
       - "tests/isolation/test_verification_pause_live.py"

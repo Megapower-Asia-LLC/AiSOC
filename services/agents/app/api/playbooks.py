@@ -337,7 +337,7 @@ def _verification_html(title: str, body: str, *, ok: bool) -> str:
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{html.escape(title)}</title></head>"
-        "<body style=\"font-family:Arial,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem;line-height:1.6\">"
+        '<body style="font-family:Arial,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem;line-height:1.6">'
         f"<h1 style='color:{colour};font-size:1.3rem'>{html.escape(title)}</h1>"
         f"<p>{html.escape(body)}</p></body></html>"
     )

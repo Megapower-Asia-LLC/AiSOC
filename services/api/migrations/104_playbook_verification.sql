@@ -1,4 +1,4 @@
--- 102_playbook_verification.sql — make "ask the user, then their manager" a
+-- 104_playbook_verification.sql — make "ask the user, then their manager" a
 -- state a run can sit in, rather than a message it sends and forgets.
 --
 -- Depth plan 5.4. `chatops_verify` posts an interactive prompt and returns

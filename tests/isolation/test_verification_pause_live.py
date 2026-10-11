@@ -57,7 +57,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _MIGRATIONS = (
     "081_playbook_pauses.sql",
     "096_playbook_wait_pauses.sql",
-    "102_playbook_verification.sql",
+    "104_playbook_verification.sql",
 )
 
 #: Enough of `tenants`, `users` and `aisoc_scim_users` for the foreign keys

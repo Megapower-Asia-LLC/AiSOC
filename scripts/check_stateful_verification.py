@@ -57,7 +57,7 @@ PAUSE_PY = Path("services/agents/app/playbook/pause.py")
 SWEEPER_PY = Path("services/agents/app/playbook/sweeper.py")
 ROUTES_PY = Path("services/agents/app/api/playbooks.py")
 POLICY_ROUTES_PY = Path("services/api/app/api/v1/endpoints/verification_policies.py")
-MIGRATION = Path("services/api/migrations/102_playbook_verification.sql")
+MIGRATION = Path("services/api/migrations/104_playbook_verification.sql")
 
 #: Every outcome a run may branch on. Declared here so the three places that
 #: spell them — the module, the migration's CHECK and the pause writer — are
