@@ -393,7 +393,51 @@ invented fields on the first run of the gate.
 
 ## Phase 6: AI agent security
 
-- [ ] **6.1** AI asset inventory
+- [x] **6.1** AI asset inventory. Reproduced:
+  `scripts/check_ai_asset_inventory.py` on the unmodified tree reported nine
+  problems across five of its eight rules — no migration creates the table,
+  no model maps it, no route reads it, no writer exists, and the graph
+  vocabulary has no label for an AI asset. Implemented `aisoc_ai_assets`
+  (migration `105`, tenant-scoped, `FORCE ROW LEVEL SECURITY`, granted to
+  `aisoc_app`), the ORM model, `GET /ai-assets`, `GET /ai-assets/{id}` and
+  `POST /ai-assets/{id}/sanction` behind a new `ai_estate:read` /
+  `ai_estate:write` pair held by five roles and mintable into an API key,
+  `AiAssetRecorder` in the fusion consumer's raw-events branch, the `AIAsset`
+  graph label with `OPERATES` and `HOSTS` edges emitted at ingest (schema
+  `v1.2 -> v1.3`), and the `/ai-estate` console page. 21 new fusion tests
+  (suite 662 -> 683), 8 new Go tests in `internal/graph`, 5 live-Postgres
+  cases in `tests/isolation/test_ai_estate_live.py`.
+
+  **The writer is the whole item**, and the gate says so rather than the
+  prose: the `WRITER` rule requires the consumer to call the recorder *and*
+  `main.py` to construct it, because an unconstructed recorder is a `None`
+  every call site skips in silence and the page would render "no AI estate"
+  to a tenant that has one — the second half of this repository's recurring
+  defect, the half module reachability cannot see.
+
+  Two negative controls, both re-injecting a real defect rather than an
+  invented one, both run against a real PostgreSQL 16 with every migration
+  applied and the suite connected as the DML-only `aisoc_app` role: reverting
+  the identity constraint from `UNIQUE NULLS NOT DISTINCT` to plain `UNIQUE`
+  turns one provider-key row into **three**, each claiming to be first seen
+  now (measured, not predicted — a provider key has no device, so under the
+  default NULL semantics every sighting inserts); and a tenant policy of
+  `USING (true)` lets tenant A read tenant B's estate. Each fails the suite
+  and each is a step in `ai-estate-live.yml`. The gate's own self-test
+  injects one violation per rule and found two blind spots in the gate while
+  being written — it read its own component's docstring as a fabrication, and
+  a `NodeAIAsset,` substring match would have passed on a commented-out
+  `// NodeAIAsset,`.
+
+  **Two limits, stated rather than left to be found.** Phase 2.5 is open, so
+  `effective_permissions` is a column with a resolver behind it and nothing
+  writing it yet; the risk scorer returns `False` for an absent snapshot
+  rather than treating unknown as privileged, and the console says in words
+  that permissions did not contribute. And the three discovery sources see
+  genuinely different things — runtime telemetry never carries a device, a
+  provider audit log never carries either — so `discovery_source` is stored
+  per row and the page prints what each source can and cannot see, because
+  an unlinked device and an unlinkable one are different facts.
 - [ ] **6.2** Endpoint discovery with no new agent
 - [ ] **6.3** Provider coverage beyond OpenAI and Anthropic
 - [ ] **6.4** Agent identity and baselines (parity 6.7)
@@ -438,4 +482,5 @@ invented fields on the first run of the gate.
 | 2026-10-09 | 3.3 | Identity privilege (18 rules) and a per-tenant first-seen store (2) built; 5 rules were never unreachable (gate operator drift, D9); 18 retired with a reason (D10). `MAX_UNREACHABLE` 45 → 2, the two remaining both needing the 3.4 baseline. Two matcher operators three shipped rules already used were implemented. |
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
+| 2026-10-11 | 6.1 | Reproduced: the new gate reported nine problems across five of eight rules on the unmodified tree. Built `aisoc_ai_assets` (migration 105), its routes behind a new `ai_estate:*` permission pair, the fusion recorder that writes it on the default profile, the `AIAsset` graph label with `OPERATES`/`HOSTS` edges, and the `/ai-estate` page. Two negative controls against a real PostgreSQL: reverting `NULLS NOT DISTINCT` turns one provider-key row into three, and a `USING (true)` policy leaks across tenants. Claim matrix 302 -> 303 rows, 300 GATED. Writing the gate found two blind spots in the gate itself. |
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |

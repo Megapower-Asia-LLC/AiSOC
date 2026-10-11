@@ -191,6 +191,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An AI-estate inventory built from observation rather than registration**
+  (depth plan 6.1). `aisoc_ai_assets` (migration `105`, tenant-scoped with
+  forced row-level security) holds every AI app, coding agent, MCP server,
+  IDE extension, model-provider key and OAuth grant AiSOC has seen, with the
+  person and device behind each. The gap it closes is that `aisoc_mcp_servers`
+  records what an operator *declared*, and the row that matters in an AI
+  governance review is the one present in observation and absent from the
+  declaration.
+
+  Measured the way the recurring defect here demands: the writer is in the
+  fusion consumer's raw-events branch, the one path every normalized event
+  already travels on the default profile, because a recorder behind a flag or
+  in a service CORE does not start is a table nothing writes and a page that
+  renders "no AI estate" to a tenant that has one.
+  `scripts/check_ai_asset_inventory.py` makes that a rule rather than a
+  comment — it requires the consumer to call the recorder *and* the service
+  to construct it, since an unconstructed recorder is a `None` every call
+  site skips in silence. `ai-estate-live.yml` writes a fixture estate of
+  three kinds into a real PostgreSQL as the DML-only `aisoc_app` role, and
+  two negative controls re-inject real defects: reverting `NULLS NOT
+  DISTINCT` on the identity constraint turns one provider-key row into
+  three, and a tenant policy of `USING (true)` lets one tenant read
+  another's estate.
+
+  Also: graph schema `v1.2 → v1.3` adds the `AIAsset` label with
+  `(:User)-[:OPERATES]->(:AIAsset)` and `(:Endpoint)-[:HOSTS]->(:AIAsset)`,
+  emitted by `services/ingest` as a post-pass rather than a connector case —
+  AI telemetry arrives on three connector types and as plain process
+  activity, so keying on the connector would have covered one of them and
+  looked complete. A new `ai_estate:read` / `ai_estate:write` permission
+  pair, held by real roles and mintable into an API key, because the
+  inventory names which agent on which laptop holds which provider key and
+  `hunts:read` already demonstrated what a permission no role holds is worth.
+
 - `services/api/app/models/detection_rule.py` maps the `author` column, which
   has existed since `001_init.sql` and was mapped by nothing — while fusion's
   tenant overlay reads it on every reload to say *who* silenced a rule when it
