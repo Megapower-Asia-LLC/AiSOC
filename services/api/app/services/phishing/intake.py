@@ -240,9 +240,7 @@ def from_graph_message(payload: dict[str, Any], *, reported_by: str = "") -> Rep
 
     return ReportedMessage(
         intake_source="m365_graph",
-        internet_message_id=normalise_message_id(
-            headers.get("message-id") or str(payload.get("internetMessageId") or "")
-        ),
+        internet_message_id=normalise_message_id(headers.get("message-id") or str(payload.get("internetMessageId") or "")),
         sender=sender,
         subject=str(payload.get("subject") or ""),
         recipients=recipients,

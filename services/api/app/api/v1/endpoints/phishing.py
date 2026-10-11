@@ -40,8 +40,12 @@ from sqlalchemy import text
 
 from app.api.v1.deps import AuthUser, DBSession, require_permission
 from app.core.airgap import AirgapViolation, enforce_airgap_for_url
+from app.services.autonomy_effective import resolve_effective_tier
 from app.services.llm_safety import LLMContractViolation, safe_chat_completions_request
 from app.services.model_aliases import chat_completions_url, resolve_api_key, resolve_model_alias
+from app.services.phishing import campaigns as phishing_campaigns
+from app.services.phishing import intake as phishing_intake
+from app.services.phishing import purge as phishing_purge
 from app.services.sandbox.enrichment import enrich_file_hash
 
 logger = logging.getLogger(__name__)
@@ -353,6 +357,229 @@ async def submit(
         raise HTTPException(status_code=503, detail="Database error") from exc
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# Reported-message intake, campaigns and the governed purge (depth 7.1)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+class ReportRequest(BaseModel):
+    source: Literal["m365_graph", "google_workspace", "email_inbox"]
+    payload: dict[str, Any] = Field(
+        description=(
+            "The vendor's own payload, unmodified: a Microsoft Graph message resource, a Gmail "
+            "Message, or the event the email_inbox connector emits. Normalised server-side by "
+            "app.services.phishing.intake, which is the only place that knows the three shapes."
+        )
+    )
+    reported_by: str = Field("", description="Who reported it, when the payload does not say.")
+
+
+class ReportResponse(BaseModel):
+    submission: SubmissionResponse
+    campaign_id: uuid.UUID | None
+    campaign_created: bool
+    #: Which attribute joined this report to its campaign, and whether that
+    #: attribute is a fact about the message or a similarity judgement.
+    #: Published rather than left to the reader to infer from the basis
+    #: name, because the purge proposal this feeds is graded on the
+    #: recipient count it produces.
+    grouping_basis: str = ""
+    grouping_is_factual: bool = False
+    recipient_count: int = 0
+
+
+class PurgeRequest(BaseModel):
+    execute: bool = Field(
+        False,
+        description=(
+            "False previews: every mailbox is graded and reported, nothing is removed, and no row "
+            "reads 'purged'. Preview is the default because this is the most disruptive verb the "
+            "product offers."
+        ),
+    )
+    confidence: float | None = Field(None, ge=0.0, le=1.0)
+
+
+@router.post("/reports", response_model=ReportResponse, status_code=status.HTTP_201_CREATED, summary="Intake a reported phishing message")
+async def report(
+    body: ReportRequest, db: DBSession, user: Annotated[AuthUser, Depends(require_permission("cases:write"))]
+) -> ReportResponse:
+    """Take a reported message from one of the three intake doors.
+
+    Distinct from ``/submit``, which takes an artefact an analyst typed. This
+    takes a *message somebody received*, so it carries the two fields the
+    response turns on and ``/submit`` has never had: the internet message id
+    that finds the copies, and the recipients that bound the purge.
+    """
+    try:
+        message = phishing_intake.normalise(body.source, body.payload, reported_by=body.reported_by)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # The same triage the manual path runs, on the message's own text. The
+    # attachment lookups keep their honest "not analysed" indicator: an
+    # unanalysed attachment must never read as a clean one.
+    try:
+        result = await _triage("email", message.body_text, list(message.urls))
+    except AirgapViolation:
+        result = None
+    if not result:
+        result = _heuristic_triage(message.body_text, list(message.urls))
+    result = _merge_attachment_verdict(result, await _attachment_indicators(list(message.attachment_hashes)))
+
+    now = datetime.now(UTC)
+    sub_id = uuid.uuid4()
+    insert = text("""
+        INSERT INTO aisoc_phishing_submissions (
+            id, tenant_id, submitted_by, artifact_kind, raw_content, sender, subject,
+            urls, verdict, confidence, indicators, mitre_technique,
+            internet_message_id, recipients, reported_by, intake_source,
+            submitted_at, triaged_at, created_at
+        ) VALUES (
+            :id, :tenant_id, :by, 'email', :content, :sender, :subject,
+            CAST(:urls AS text[]), :verdict, :conf, CAST(:iocs AS jsonb), :mitre,
+            :message_id, CAST(:recipients AS text[]), :reported_by, :source,
+            :now, :now, :now
+        ) RETURNING *
+    """).bindparams(
+        id=sub_id,
+        tenant_id=user.tenant_id,
+        by=user.email if user else "system",
+        content=message.body_text,
+        sender=message.sender,
+        subject=message.subject,
+        urls=list(message.urls),
+        verdict=result.verdict,
+        conf=result.confidence,
+        iocs=json.dumps(result.indicators),
+        mitre=result.mitre_technique,
+        message_id=message.internet_message_id or None,
+        recipients=list(message.recipients),
+        reported_by=message.reported_by,
+        source=message.intake_source,
+        now=now,
+    )
+    try:
+        row = (await db.execute(insert)).fetchone()
+        campaign = await phishing_campaigns.record_report(db, tenant_id=user.tenant_id, message=message, submission_id=sub_id)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Database error in phishing report intake")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+
+    return ReportResponse(
+        submission=_row_to_submission(row),
+        campaign_id=campaign.id if campaign else None,
+        campaign_created=bool(campaign and campaign.created),
+        grouping_basis=campaign.grouping_basis if campaign else "",
+        grouping_is_factual=(campaign.grouping_basis in phishing_campaigns.FACTUAL_BASES) if campaign else False,
+        recipient_count=campaign.recipient_count if campaign else 0,
+    )
+
+
+@router.get("/campaigns", summary="List phishing campaigns")
+async def list_campaigns(
+    db: DBSession,
+    user: AuthUser,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
+    try:
+        return await phishing_campaigns.list_campaigns(db, tenant_id=user.tenant_id, limit=limit, offset=offset)
+    except Exception as exc:
+        logger.exception("Database error listing phishing campaigns")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+
+
+@router.get("/campaigns/{campaign_id}", summary="Get a phishing campaign and its recipients")
+async def get_campaign(campaign_id: uuid.UUID, db: DBSession, user: AuthUser) -> dict[str, Any]:
+    try:
+        found = await phishing_campaigns.get_campaign(db, tenant_id=user.tenant_id, campaign_id=campaign_id)
+    except Exception as exc:
+        logger.exception("Database error reading phishing campaign")
+        raise HTTPException(status_code=503, detail="Database error") from exc
+    if found is None:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return found
+
+
+@router.post("/campaigns/{campaign_id}/purge", summary="Propose or run a purge across a campaign's recipients")
+async def purge_campaign(
+    campaign_id: uuid.UUID,
+    body: PurgeRequest,
+    db: DBSession,
+    user: Annotated[AuthUser, Depends(require_permission("actions:execute"))],
+) -> dict[str, Any]:
+    """One proposal, one dispatch per mailbox, each graded on its own.
+
+    ``actions:execute`` rather than ``cases:write``: this reaches out of the
+    platform and removes mail, so it is gated like every other action
+    surface in this service rather than like a case note.
+
+    Deliberately **not** ``actions:contain``, which is what the capability
+    contract declares. That string is held by no role in ``ROLE_PERMISSIONS``
+    except the two wildcards, so gating the route on it would ship a route
+    only an administrator could reach while reading as though analysts
+    could. The contract's permission is enforced at the dispatcher, where a
+    principal exists; here the question is who may *ask*, and
+    ``actions:execute`` is the permission this service already means by
+    that — its own comment says it "gates the dry-run preview only; a live
+    containment goes through the approval path", which is exactly the split
+    between ``execute: false`` and ``execute: true`` below.
+    """
+    # The tenant's own tier, read the way the dispatcher reads it. Grading
+    # the proposal against a different tier than the dispatch would be the
+    # console's "autopilot posture" defect one layer down: the analyst would
+    # be told a purge auto-executes and then watch it queue for approval.
+    effective = await resolve_effective_tier(db, str(user.tenant_id))
+    try:
+        outcome = await phishing_purge.propose_purge(
+            db,
+            tenant_id=user.tenant_id,
+            campaign_id=campaign_id,
+            confidence=body.confidence,
+            tier=effective.tier,
+            execute=body.execute,
+            requested_by=(user.email or "aisoc-phishing") if user else "aisoc-phishing",
+        )
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Error running phishing campaign purge")
+        raise HTTPException(status_code=503, detail="Purge dispatch failed") from exc
+    if outcome is None:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return outcome.as_dict()
+
+
+@router.post("/campaigns/{campaign_id}/restore", summary="Restore a purged campaign's messages")
+async def restore_campaign(
+    campaign_id: uuid.UUID,
+    db: DBSession,
+    user: Annotated[AuthUser, Depends(require_permission("actions:execute"))],
+) -> dict[str, Any]:
+    """The reverse of the purge, over the mailboxes it actually executed on.
+
+    Only rows the purge executed on are restored. Attempting a restore on a
+    mailbox that was previewed, failed, or never held the message would
+    report work that did not happen.
+    """
+    try:
+        outcome = await phishing_purge.restore_campaign(
+            db,
+            tenant_id=user.tenant_id,
+            campaign_id=campaign_id,
+            requested_by=(user.email or "aisoc-phishing") if user else "aisoc-phishing",
+        )
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Error restoring phishing campaign")
+        raise HTTPException(status_code=503, detail="Restore dispatch failed") from exc
+    if outcome is None:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return outcome.as_dict()
+
+
 @router.get("/submissions", response_model=list[SubmissionResponse], summary="List phishing submissions")
 async def list_submissions(
     db: DBSession,
@@ -377,7 +604,14 @@ async def list_submissions(
         raise HTTPException(status_code=503, detail="Database error") from exc
 
 
-@router.get("/{submission_id}", response_model=SubmissionResponse, summary="Get submission")
+# ``:uuid`` is load-bearing, not decoration. A bare ``{submission_id}``
+# compiles to ``[^/]+`` and swallows every sibling literal under this prefix,
+# so ``GET /phishing/campaigns`` would match here and answer 422 for a
+# resource that exists — the shape that 404'd the console's hunt run history.
+# The built-in convertor puts the UUID form in the route's own matching
+# regex, so a literal falls through whatever order the decorators are read
+# in, and a later edit cannot undo it by moving a function.
+@router.get("/{submission_id:uuid}", response_model=SubmissionResponse, summary="Get submission")
 async def get_submission(submission_id: uuid.UUID, db: DBSession, user: AuthUser) -> SubmissionResponse:
     row = (
         await db.execute(
@@ -391,7 +625,7 @@ async def get_submission(submission_id: uuid.UUID, db: DBSession, user: AuthUser
     return _row_to_submission(row)
 
 
-@router.post("/{submission_id}/retriage", response_model=SubmissionResponse, summary="Re-run triage on submission")
+@router.post("/{submission_id:uuid}/retriage", response_model=SubmissionResponse, summary="Re-run triage on submission")
 async def retriage(
     submission_id: uuid.UUID, db: DBSession, user: Annotated[AuthUser, Depends(require_permission("cases:write"))]
 ) -> SubmissionResponse:
