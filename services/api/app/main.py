@@ -42,10 +42,10 @@ from app.workers.hunt_scheduler import run_forever as run_hunt_scheduler
 from app.workers.oauth_refresh import run_forever as run_oauth_refresh
 from app.workers.outbound_webhook_delivery import run_forever as run_outbound_webhook_delivery
 from app.workers.report_scheduler import run_forever as run_report_scheduler
-from app.workers.war_room_sync import run_forever as run_war_room_sync
 from app.workers.retention_purge import run_forever as run_retention_purge
 from app.workers.retro_hunt_consumer import run_forever as run_retro_hunt_consumer
 from app.workers.shadow_reconcile import run_forever as run_shadow_reconcile
+from app.workers.war_room_sync import run_forever as run_war_room_sync
 from app.workers.weekly_digest_task import run_forever as run_weekly_digest
 
 _metrics_bearer = HTTPBearer(auto_error=False)
