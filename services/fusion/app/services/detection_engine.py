@@ -165,22 +165,36 @@ class DetectionEngine:
         return ocsf if isinstance(ocsf, dict) else {}
 
     async def evaluate_async(
-        self, message: dict[str, Any], overlay: Any | None = None, first_seen: Any | None = None
+        self,
+        message: dict[str, Any],
+        overlay: Any | None = None,
+        first_seen: Any | None = None,
+        baselines: Any | None = None,
     ) -> list[DetectionHit]:
-        """`evaluate`, plus the first-seen enrichment, which needs Redis.
+        """`evaluate`, plus the enrichments that need Redis.
 
         A second entry point rather than making `evaluate` async: the
         synchronous one has callers throughout the tests and the replay
         harness, and turning it async would be a wide change for an
-        enrichment two rules read. The two share everything below the
-        extra pass.
+        enrichment a handful of rules read. The two share everything below
+        the extra pass.
+
+        `baselines` is the depth plan 3.4 behavioural store. It is folded in
+        beside first-seen rather than behind it because the two answer
+        different questions about the same event — "have we seen this value
+        before" and "how usual is it for this principal" — and a rule may
+        read one, the other or both.
         """
         extra: dict[str, Any] = {}
-        if first_seen is not None:
-            ocsf = message.get("ocsf_event")
-            tenant = str(message.get("tenant_id") or (ocsf or {}).get("tenant_uid") or "")
-            if tenant and isinstance(ocsf, dict):
-                extra = await first_seen.derived_fields(tenant, self._raw_fields(ocsf))
+        ocsf = message.get("ocsf_event")
+        if (first_seen is not None or baselines is not None) and isinstance(ocsf, dict):
+            tenant = str(message.get("tenant_id") or ocsf.get("tenant_uid") or "")
+            if tenant:
+                fields = self._raw_fields(ocsf)
+                if first_seen is not None:
+                    extra.update(await first_seen.derived_fields(tenant, fields))
+                if baselines is not None:
+                    extra.update(await baselines.derived_fields(tenant, fields))
         return self.evaluate(message, overlay, _extra_fields=extra)
 
     def evaluate(
