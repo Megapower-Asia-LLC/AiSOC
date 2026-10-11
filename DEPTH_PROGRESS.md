@@ -58,10 +58,22 @@ is written. Next free at capture: migration `095`, ADR `0010`
 | ADR `0010` | 2.7 — entity and session context in CORE | **landed**, `docs/decisions/0010-entity-and-session-context-in-core.md`, accepted |
 | migration `102` | 2.4 — `102_sessions.sql` | claimed |
 | migration `103` | 2.5 — `103_posture_snapshots.sql` | claimed |
+| migration `104` | 9.1 — `104_mcp_access.sql` | claimed |
+| migration `105` | 9.2 — `105_semantic_memory.sql` | claimed |
+| migration `106` | 9.3 — `106_case_depth.sql` | claimed |
+| migration `107` | 9.4 — `107_case_war_rooms.sql` | claimed |
+| migration `108` | 9.5 — `108_hunt_reports.sql` | claimed |
+| migration `109` | 9.6 — `109_push_devices.sql` | claimed |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
 so `095`--`101` were taken by sibling lanes between the capture above and this
 claim; re-read `services/api/migrations/` rather than trusting the capture row.
+
+Phase 9 re-read `services/api/migrations/` on 2026-10-11 before claiming:
+`101_audit_immutable_nullify.sql` was still the highest on `main`, and `102`
+and `103` were already spoken for in the table above, so Phase 9 takes `104`
+through `109`, one per item. A number left unused at the end of the phase is
+released by striking its row rather than by silently leaving a gap.
 
 ## Phase 0: Kickoff
 
@@ -257,6 +269,50 @@ the one that finishes it. `test_a_batch_delivered_out_of_arrival_order_still_fir
 is the regression test for that, and reverting the event-time read makes it
 and two others fail.
 
+### D11 -- Semantic recall measured *worse* than the full-text baseline on every embedding backend reachable from here
+
+Parity 6.5 asks for the accuracy delta. It is measured, by
+`scripts/score_memory_recall.py` over 12 hand-authored probes against a
+12-item corpus, and the delta is negative:
+
+| metric | lexical | semantic (`qwen2.5:0.5b`) | delta |
+|---|---|---|---|
+| recall@1 | 0.667 | 0.333 | **-0.333** |
+| recall@3 | 0.750 | 0.417 | **-0.333** |
+| recall@5 | 0.750 | 0.667 | -0.083 |
+| MRR | 0.708 | 0.465 | **-0.243** |
+
+The honest reading is not "semantic recall does not work". It is that
+**no embedding model is reachable from this project without a funded key**.
+The two models served locally are *generative* models used as embedders,
+which is a known-poor substitute; `nomic-embed-text` was attempted and the
+pull did not complete in ten minutes. Hosted embedding rows are blocked by
+the same thing as D3 (maintainer item M2).
+
+Three things follow, and all three are in the tree rather than in this note:
+
+1. **The default did not move.** `POST /kb/query` stays full-text; semantic
+   recall is `recall_memory: false` and strictly additive, so a caller that
+   does not ask for it gets byte-identical behaviour. Putting a measurably
+   worse retriever in front of the ranker would have made analyst search
+   worse on exactly the deployments that cannot pay for an embedding model.
+   The field's docstring carries the number and says to move the default when
+   the measurement does.
+2. **The measurement found a real defect in the first implementation.** The
+   3,072-dimension model initially scored 0.167 at recall@1 — and that was
+   measuring `_fit()` *truncating* the vector to the collection's 1,536, not
+   measuring the model. Padding a short vector is harmless under cosine;
+   truncating a long one discards most of what the model said. Truncation is
+   now refused with a message naming both dimensions, which is a
+   configuration an operator can fix rather than a silently worse retriever
+   they cannot see.
+3. **What is still not measured, stated plainly:** the downstream effect of
+   memory recall on *verdict* quality, which is what the Phase 1 scorecard
+   grades. That needs an agent run per corpus item against a model worth
+   grading, and no such model is funded or locally servable here. The
+   retrieval delta above is the part that can be measured honestly today,
+   and it is the part that is actually about what 9.2 builds.
+
 ### D8 -- No upstream Sigma correlation rule exists in this tree to import
 
 `detections/sigma-imports/` holds 3,132 rule documents and **not one carries
@@ -433,7 +489,30 @@ invented fields on the first run of the gate.
   then at the approval, approved by a second principal, allowed, and spent.
   18 of 18 audit rows hash-chained, and `DELETE FROM audit_log` refused by
   the trigger while the run was in progress.
-- [ ] **9.2** Semantic memory (parity 6.5)
+- [x] **9.2** Semantic memory (parity 6.5). All three bullets of parity 6.5
+  closed, and the third one — "replay shows the accuracy delta" — produced a
+  result that changed the design rather than confirming it. `aisoc_memory_items`
+  (migration `105`) is the store of record for past cases, runbooks and
+  institutional memory; Qdrant is an index over it, reached through its REST
+  API so this service gains no dependency and its lockfile does not move.
+  Every item carries an author, a source, a scope, an expiry and a state, and
+  the author is the **authenticated principal**, never the body — provenance a
+  caller can set is not provenance. Two claims about one subject suspend
+  **both** sides and recall returns neither until an analyst settles it;
+  preferring the newer one silently restores a bad entry the next time the job
+  that wrote it runs, which is the case the feature exists for. Recall is
+  tenant-scoped in the Qdrant filter itself and `search()` **raises** rather
+  than offering an unscoped branch. With no embedding backend recall is 503
+  with the reason, never an empty list. `kind='case'` is written automatically
+  by the case-closure path, so the half of the "exists unwired" family that
+  reachability analysis cannot see — a table every surface reads and nothing
+  writes — does not apply. Measured by
+  `scripts/score_memory_recall.py` (12 hand-authored low-overlap probes,
+  mean lexical overlap 0.166, `is_synthetic: true`); its self-test is wired
+  into `ci.yml :: python-lint`. 17 new tests, api suite +17. Live end to end
+  against real Postgres 16, real Qdrant v1.7.0 and a real embedding backend,
+  recorded in the PR. **The measurement is published as it came out, and it is
+  unflattering:** see D11.
 - [ ] **9.3** Case depth (parity 5.6 remainder)
 - [ ] **9.4** War rooms
 - [ ] **9.5** Hunt to report
@@ -449,6 +528,7 @@ invented fields on the first run of the gate.
 | Date | Item | What happened |
 |---|---|---|
 | 2026-10-11 | 9.1 | Reproduced: on `origin/main` the greps for `StreamableHTTP` in `services/mcp/src/`, for `aisoc-mcp` in `docker-compose.yml` and `infra/helm/`, for a per-tenant tool grant in `services/api/app/`, and for an `mcp:` audit action all counted **zero**, and `check_mcp_over_http.py` reported seven problems. Built the HTTP transport, the authorize/complete pair, the tenant grant table, the approval queue bound to a call's arguments, and the generated tool catalogue held in parity with the TypeScript registry. Four negative controls recorded in the PR; one of them found a hole in the new gate itself, which reported `http.ts` for reading the process-wide API key when the only mention was a comment saying it deliberately does not — the detector now strips comments before matching, and refuses a `{...cfg}` spread as well, because a spread is correct today and a credential fallback the day somebody reorders the literal. |
+| 2026-10-11 | 9.2 | Reproduced: `knowledge_base.py` searched with `to_tsvector`/`plainto_tsquery` and nothing else; `grep -rn qdrant services/api/app/` found only the migration runner and the tenant-deletion sweep, no recall path; and no memory row anywhere carried an author, a source, a scope, an expiry or a state. Built the store of record, the Qdrant index over it, the conflict state machine, the case-closure writer and the recall scorer. Two negative controls recorded in the PR: restoring last-write-wins on a contradiction fails three tests, and restoring vector truncation fails one. The measurement is negative and is published as such — see D11, which also records that it caught the truncation defect. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |
 | 2026-10-09 | 4.3 | Reproduced: `check_retention_window.py` on the unmodified tree reported six problems — the lake deleting at 90 days against a 3,650-day cap, no `MODIFY TTL` migration, tiering deleting at 90, and the purge worker calling neither `alerts_under_legal_hold` nor `may_purge` and reporting nothing withheld. Fixed all but the cold-query bullet. Four negative controls recorded in the PR, including the positive control: a purge stuck closed withholds every tenant and fails four of the eight hold tests, which is the only thing that separates a working control from commendable caution. One pre-existing test (`test_storage_tiering.py`) pinned the 90-day tiering DELETE and now reads the shared constant; `test_retention_worker.py`'s session double could not answer the new holds query, so the worker failed closed and five of its cases failed — the double was taught the query rather than the fail-closed behaviour relaxed. |
