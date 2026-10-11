@@ -69,7 +69,8 @@ from sqlalchemy import text
 
 from app.api.v1.deps import AuthUser, DBSession, bearer_scheme, get_current_user, require_permission
 from app.core.config import settings
-from app.core.security import ROLE_PERMISSIONS, create_access_token, create_refresh_token
+from app.core.role_grants import known_roles
+from app.core.security import create_access_token, create_refresh_token
 from app.db.rls import set_rls_context
 from app.security.credential_vault import CredentialVaultError, get_vault
 from app.services import mfa as totp
@@ -861,13 +862,19 @@ async def put_policy(
     this endpoint has no row and is not enforced.
 
     `require_for_roles` names roles that must hold a factor even when the
-    tenant-wide switch is off. Every name is checked against
-    `ROLE_PERMISSIONS` before it is stored: a typo would otherwise be
-    accepted, match nobody's role, and leave an administrator looking at
-    a policy page that says a role is enforced while it is not — the
-    quiet direction, and the one worth refusing loudly.
+    tenant-wide switch is off. Every name is checked against the role
+    vocabulary before it is stored: a typo would otherwise be accepted,
+    match nobody's role, and leave an administrator looking at a policy
+    page that says a role is enforced while it is not — the quiet
+    direction, and the one worth refusing loudly.
+
+    The vocabulary comes from `role_grants.known_roles()` rather than from
+    `ROLE_PERMISSIONS` directly. This route decides nothing about
+    permissions and must not be able to: a route that reads the static map
+    is how a second permission model gets rebuilt, which
+    `scripts/check_one_permission_model.py` exists to prevent.
     """
-    unknown = sorted(set(body.require_for_roles) - set(ROLE_PERMISSIONS))
+    unknown = sorted(set(body.require_for_roles) - known_roles())
     if unknown:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
