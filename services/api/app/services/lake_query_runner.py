@@ -107,20 +107,34 @@ async def read_progress(query_id: str) -> QueryProgress | None:
     )
 
 
-async def claim_job(session: AsyncSession, job_id: uuid.UUID) -> bool:
-    """Move one job from ``queued`` to ``running``, atomically.
+def claim_statement(job_id: uuid.UUID):
+    """The one statement that claims a job.
 
-    The ``status == 'queued'`` predicate is the whole mechanism: a second
-    replica running the same statement updates zero rows and learns that
-    it lost. A SELECT-then-UPDATE would have both replicas read `queued`
-    and both start the scan.
+    Factored out so a test can run *this* statement on two interleaved
+    connections rather than a hand-written copy of it. A concurrency
+    proof against a re-typed statement proves something about the test.
+
+    The ``status == 'queued'`` predicate is the whole mechanism. Postgres
+    takes a row lock on the UPDATE, so a second connection running the
+    same statement blocks until the first commits and then re-evaluates
+    the predicate against the committed row — finding `running`, matching
+    nothing, and learning that it lost. A SELECT followed by an
+    unconditional UPDATE has no such re-evaluation: the second
+    connection's SELECT cannot see the first's uncommitted change, reads
+    `queued`, and both replicas start the scan.
     """
-    result = await session.execute(
+    now = datetime.now(UTC)
+    return (
         update(LakeQueryJob)
         .where(LakeQueryJob.id == job_id, LakeQueryJob.status == "queued")
-        .values(status="running", started_at=datetime.now(UTC), updated_at=datetime.now(UTC))
+        .values(status="running", started_at=now, updated_at=now)
         .returning(LakeQueryJob.id)
     )
+
+
+async def claim_job(session: AsyncSession, job_id: uuid.UUID) -> bool:
+    """Move one job from ``queued`` to ``running``, atomically."""
+    result = await session.execute(claim_statement(job_id))
     claimed = result.scalar_one_or_none() is not None
     await session.commit()
     return claimed

@@ -23,6 +23,18 @@ system. The purge worker must read holds and must skip what they cover.
 purge and a purge that silently did nothing look the same in a log. The run
 summary has to carry the count it withheld.
 
+**A cold read with no cost and no progress.** The plan's third bullet. A
+query over the cold volume either returned inside the published
+30-second synchronous bound or raised a bare timeout, which tells an
+analyst nothing about whether a longer deadline would have helped or how
+much data was involved — and the ``cost`` ``/lake/sql`` did report was
+the rate limiter's token price, a number about how often you may ask.
+The estimate must come from ClickHouse's own planner and parts, the
+money figure must be absent rather than invented when no retrieval price
+is configured, the job must be claimed with a predicate that two
+replicas cannot both satisfy, and a progress ratio with no denominator
+must be null rather than zero.
+
 These are read out of the source rather than exercised, because the lake
 TTL lives in DDL and the worker needs Postgres and ClickHouse. The
 behavioural half is `services/api/tests/test_retention_legal_hold.py`,
@@ -56,6 +68,10 @@ TIERING_SQL = Path("services/api/clickhouse/tiering/002_tiering.sql")
 RETENTION_PY = Path("services/api/app/services/retention.py")
 WORKER_PY = Path("services/api/app/workers/retention_purge.py")
 LAKE_MIGRATIONS = Path("services/api/app/db/lake_migrations.py")
+COLD_QUERY_PY = Path("services/api/app/services/lake_cold_query.py")
+JOB_RUNNER_PY = Path("services/api/app/services/lake_query_runner.py")
+LAKE_ENDPOINT = Path("services/api/app/api/v1/endpoints/lake.py")
+JOB_MIGRATION = Path("services/api/migrations/111_lake_query_jobs.sql")
 
 #: The floor the plan names. A deployment that cannot keep a year and a bit
 #: cannot answer "show me this account's activity over the last audit
@@ -236,6 +252,122 @@ def evaluate(root: Path) -> list[str]:
                 f"that silently did nothing look identical in a log, and only one of them is working."
             )
 
+    failures.extend(_evaluate_cold_query(root))
+    return failures
+
+
+def _evaluate_cold_query(root: Path) -> list[str]:
+    """The plan's third bullet: cost and progress instead of a silent timeout."""
+    failures: list[str] = []
+
+    cold_src = _read(root, COLD_QUERY_PY)
+    if not cold_src:
+        failures.append(
+            f"{COLD_QUERY_PY} is missing, so a query over the cold volume still either returns inside the "
+            f"synchronous bound or raises a bare timeout with no indication of how much data was involved."
+        )
+        return failures
+    cold = _strip_py_comments(cold_src)
+
+    # The estimate has to be the server's, not ours.
+    if "EXPLAIN ESTIMATE" not in cold:
+        failures.append(
+            f"{COLD_QUERY_PY} does not ask ClickHouse for an estimate. A row count this code derived itself is a "
+            f"guess presented as a measurement."
+        )
+    if "system.parts" not in cold:
+        failures.append(
+            f"{COLD_QUERY_PY} does not read system.parts, so nothing says which of the scan is on the cold volume "
+            f"- which is the half that costs."
+        )
+    if "system.processes" not in cold:
+        failures.append(
+            f"{COLD_QUERY_PY} does not read system.processes, so a running scan has no progress to report and the "
+            f"only honest alternative is deriving one from elapsed time, which over a cold read is proportional "
+            f"to nothing."
+        )
+
+    # No invented money. This is the rule the repository cares about most.
+    if "RETRIEVAL_PRICE_ENV" not in cold:
+        failures.append(
+            f"{COLD_QUERY_PY} declares no configurable retrieval price, so any money figure it reports is either "
+            f"invented or taken from the storage rate card, which prices residency rather than reads."
+        )
+    if "storage-cost-model.json" not in cold_src:
+        failures.append(
+            f"{COLD_QUERY_PY} does not say why docs/decisions/storage-cost-model.json is the wrong source for a "
+            f"read price. The next person to want a dollar figure will reach for it."
+        )
+
+    # Progress that admits it does not know.
+    if not re.search(r"total_rows_approx\s*<=\s*0", cold):
+        failures.append(
+            f"{COLD_QUERY_PY} does not guard the progress denominator. ClickHouse publishes total_rows_approx "
+            f"best-effort, so a ratio computed without the guard renders 100% whenever the server has not "
+            f"published a total."
+        )
+
+    runner_src = _read(root, JOB_RUNNER_PY)
+    if not runner_src:
+        failures.append(f"{JOB_RUNNER_PY} is missing, so there is no job to carry a progress state.")
+    else:
+        runner = _strip_py_comments(runner_src)
+        if 'LakeQueryJob.status == "queued"' not in runner:
+            failures.append(
+                f"{JOB_RUNNER_PY} claims a job without re-checking its status in the same statement. Two API "
+                f"replicas would then both start one cold scan, which is two reads of the cold volume for one "
+                f"analyst's question."
+            )
+        # Matched as the *pair* rather than as the status string alone.
+        # list_stuck_jobs legitimately selects on status == "running", so
+        # a rule looking for the bare string passes a runner whose writes
+        # have lost their guard entirely - measured, by removing it and
+        # watching the first version of this rule stay green.
+        if 'LakeQueryJob.id == job_id, LakeQueryJob.status == "running"' not in runner:
+            failures.append(
+                f"{JOB_RUNNER_PY} writes to a job without checking it is still running, so a scan that completes "
+                f"after an operator cancelled it reports success, and a late progress read resurrects a finished "
+                f"job."
+            )
+
+    endpoint = _strip_py_comments(_read(root, LAKE_ENDPOINT))
+    if not endpoint:
+        failures.append(f"{LAKE_ENDPOINT} is missing; there is no surface for any of this.")
+    else:
+        # The *branch*, not the field name. LakeEstimateResponse
+        # declares a touches_cold field, so a rule looking for the bare
+        # name passes an endpoint that reports the flag and ignores it -
+        # which is the regression that matters, because the response
+        # still looks right.
+        if not re.search(r"estimate\.touches_cold", endpoint):
+            failures.append(
+                f"{LAKE_ENDPOINT} never branches on the estimate, so a cold query still goes down the "
+                f"synchronous path and still times out silently - while the estimate field in the response "
+                f"makes it look handled."
+            )
+        if '"/query-jobs"' not in endpoint:
+            failures.append(f"{LAKE_ENDPOINT} exposes no job surface, so a long scan has nowhere to report progress to.")
+        if "/estimate" not in endpoint:
+            failures.append(
+                f"{LAKE_ENDPOINT} offers no way to ask what a query would read without running it, so the only "
+                f"way to find out the cost is to pay it."
+            )
+
+    if not (root / JOB_MIGRATION).is_file():
+        failures.append(
+            f"{JOB_MIGRATION} is missing, so lake_query_jobs exists in the ORM and in no database - and an "
+            f"in-process registry loses every job on a restart and 404s half of them on a second replica."
+        )
+    else:
+        migration = _read(root, JOB_MIGRATION)
+        if "ENABLE ROW LEVEL SECURITY" not in migration:
+            failures.append(f"{JOB_MIGRATION} creates lake_query_jobs with no row-level security.")
+        if "progress_ratio  DOUBLE PRECISION" not in migration and "progress_ratio DOUBLE PRECISION" not in migration:
+            failures.append(
+                f"{JOB_MIGRATION} does not declare progress_ratio as a nullable double. NOT NULL would force a "
+                f"zero where the honest answer is unknown."
+            )
+
     return failures
 
 
@@ -256,12 +388,30 @@ def _self_test() -> int:
         ("a purge that never reads the holds in force", "NO_HOLD_READ"),
         ("a purge that reads holds and never compares a row against them", "NO_DECISION"),
         ("a purge that cannot report what a hold withheld", "SILENT_HOLD"),
+        ("a cold-query estimator that is absent entirely", "NO_COLD_ESTIMATOR"),
+        ("an estimate this code derives instead of asking the planner", "OWN_ESTIMATE"),
+        ("a scan with no warm/cold split, so nothing says what costs", "NO_PARTS_READ"),
+        ("a progress ratio with no denominator guard", "UNGUARDED_RATIO"),
+        ("a job claim two replicas can both win", "RACY_CLAIM"),
+        ("a terminal state a late finish can overwrite", "OVERWRITABLE_FINISH"),
+        ("a cold query still routed down the synchronous path", "NO_ROUTING"),
+        ("jobs that exist in the ORM and in no database", "NO_JOB_TABLE"),
     )
 
     for label, kind in cases:
         tmp = Path(tempfile.mkdtemp(prefix="aisoc-retention-selftest-"))
         try:
-            for rel in (INIT_SQL, TIERING_SQL, RETENTION_PY, WORKER_PY, LAKE_MIGRATIONS):
+            for rel in (
+                INIT_SQL,
+                TIERING_SQL,
+                RETENTION_PY,
+                WORKER_PY,
+                LAKE_MIGRATIONS,
+                COLD_QUERY_PY,
+                JOB_RUNNER_PY,
+                LAKE_ENDPOINT,
+                JOB_MIGRATION,
+            ):
                 src = REPO_ROOT / rel
                 if src.is_file():
                     (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -303,6 +453,46 @@ def _self_test() -> int:
                 worker.write_text(worker.read_text(encoding="utf-8").replace("may_purge(", "_unused_decision("), encoding="utf-8")
             elif kind == "SILENT_HOLD" and worker.is_file():
                 worker.write_text(re.sub(r"held", "skipped", worker.read_text(encoding="utf-8")), encoding="utf-8")
+            elif kind == "NO_COLD_ESTIMATOR":
+                (tmp / COLD_QUERY_PY).unlink(missing_ok=True)
+            elif kind == "OWN_ESTIMATE":
+                path = tmp / COLD_QUERY_PY
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace("EXPLAIN ESTIMATE", "SELECT count() FROM"),
+                    encoding="utf-8",
+                )
+            elif kind == "NO_PARTS_READ":
+                path = tmp / COLD_QUERY_PY
+                path.write_text(path.read_text(encoding="utf-8").replace("system.parts", "system.tables"), encoding="utf-8")
+            elif kind == "UNGUARDED_RATIO":
+                path = tmp / COLD_QUERY_PY
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace("if self.total_rows_approx <= 0:", "if False:"),
+                    encoding="utf-8",
+                )
+            elif kind == "RACY_CLAIM":
+                path = tmp / JOB_RUNNER_PY
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        'LakeQueryJob.id == job_id, LakeQueryJob.status == "queued"',
+                        "LakeQueryJob.id == job_id",
+                    ),
+                    encoding="utf-8",
+                )
+            elif kind == "OVERWRITABLE_FINISH":
+                path = tmp / JOB_RUNNER_PY
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        'LakeQueryJob.id == job_id, LakeQueryJob.status == "running"',
+                        "LakeQueryJob.id == job_id",
+                    ),
+                    encoding="utf-8",
+                )
+            elif kind == "NO_ROUTING":
+                path = tmp / LAKE_ENDPOINT
+                path.write_text(path.read_text(encoding="utf-8").replace("estimate.touches_cold", "False"), encoding="utf-8")
+            elif kind == "NO_JOB_TABLE":
+                (tmp / JOB_MIGRATION).unlink(missing_ok=True)
 
             results.append((f"catches {label}", bool(evaluate(tmp))))
         finally:
