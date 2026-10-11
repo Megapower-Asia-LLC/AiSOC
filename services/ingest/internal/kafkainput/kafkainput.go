@@ -317,12 +317,24 @@ func (s *Source) run(ctx context.Context) {
 				continue
 			case streamhealth.ClassPermanent:
 				return
-			default:
+			case streamhealth.ClassTransient:
 				// Not committed: a transient publish failure means this
 				// record has not been delivered, and committing it would
 				// lose it. Kafka is the one input in this service that can
 				// withhold an acknowledgement, which is exactly why syslog
 				// cannot.
+				if !streamhealth.SleepFor(ctx, s.stopCh, wait) {
+					return
+				}
+				continue
+			default:
+				// Named rather than folded into the transient arm: a class
+				// this switch has never heard of is a change in
+				// streamhealth that nobody propagated here, and treating
+				// it as transient would retry something that may well be
+				// permanent.
+				log.Error().Str("class", string(class)).Str("source", s.cfg.Name).
+					Msg("kafka_input: unhandled failure class; treating as transient but this needs a code change")
 				if !streamhealth.SleepFor(ctx, s.stopCh, wait) {
 					return
 				}

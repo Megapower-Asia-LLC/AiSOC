@@ -701,6 +701,21 @@ jobs:
         run: python3 scripts/check_cloud_native_collection.py --self-test
       - name: Cloud-native collection gate
         run: python3 scripts/check_cloud_native_collection.py
+      # The three standard inputs the syslog gate does not cover: OTLP
+      # logs, a customer Kafka topic and a TAXII 2.1 server. All three are
+      # things a third party points at, and all three fail the same three
+      # ways — unwired, tenant taken from the payload, and (for the Kafka
+      # consumer) a loop that cannot tell a permanent fault from a
+      # transient one. Self-test first, on the same tree: it injects
+      # nineteen violations, one per rule. Writing it found two real
+      # defects — the OTLP template was not in ALLOWED_TEMPLATE_IDS, so no
+      # operator could mint a token the receiver would accept, and the
+      # media-type rule matched the error message that names JSON rather
+      # than the case arm that accepts it.
+      - name: Standard inputs gate — self-test
+        run: python3 scripts/check_standard_inputs.py --self-test
+      - name: Standard inputs gate
+        run: python3 scripts/check_standard_inputs.py
       # One layer in from the name: the profile gate asks whether a connector
       # reaches a normalization path, this asks which OCSF class it reaches
       # when it gets there. The class uid divided by a thousand is the
