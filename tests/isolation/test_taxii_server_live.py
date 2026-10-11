@@ -47,6 +47,21 @@ def _dsn() -> str:
     return value
 
 
+def _admin_dsn() -> str:
+    """The owner connection, used only to seed and tear down fixtures.
+
+    The suite itself runs as the DML-only runtime role, because a suite
+    proving tenant scoping while connected as a superuser would pass
+    with every RLS policy removed. The runtime role cannot insert a
+    tenant — its WITH CHECK requires a tenant it has not been given —
+    so the fixture needs the owner, and nothing else does.
+    """
+    value = os.environ.get("ISOLATION_TAXII_ADMIN_DSN", "").strip() or _dsn()
+    if value.startswith("postgresql://"):
+        return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return value
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def engine():
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -59,7 +74,18 @@ async def engine():
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def world(engine):
+async def admin_engine():
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    eng = create_async_engine(_admin_dsn())
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def world(admin_engine):
     """Two tenants, each with a collection and indicators.
 
     Tenant B exists so every read in this suite is a cross-tenant read
@@ -72,7 +98,7 @@ async def world(engine):
     tenant_b = uuid.uuid4()
     base = datetime(2026, 10, 11, 9, 0, 0, tzinfo=UTC)
 
-    async with engine.begin() as conn:
+    async with admin_engine.begin() as conn:
         for tid, slug in ((tenant_a, "taxii-a"), (tenant_b, "taxii-b")):
             await conn.execute(
                 text("INSERT INTO tenants (id, name, slug) VALUES (:id, :n, :s)"),
@@ -127,7 +153,7 @@ async def world(engine):
         "base": base,
     }
 
-    async with engine.begin() as conn:
+    async with admin_engine.begin() as conn:
         for tid in (tenant_a, tenant_b):
             await conn.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": str(tid)})
 

@@ -46,7 +46,16 @@ jobs:
           --health-retries 20
 
     env:
-      TAXII_DSN: postgresql+asyncpg://aisoc:aisoc_ci_only@localhost:5432/aisoc
+      # The runtime role, not the owner. POSTGRES_USER (aisoc) is a
+      # superuser and ignores every RLS policy even under FORCE ROW LEVEL
+      # SECURITY, so a suite proving tenant scoping while connected as it
+      # would pass with the policies removed.
+      TAXII_DSN: postgresql+asyncpg://aisoc_app:aisoc_app_ci_only@localhost:5432/aisoc
+      # The owner, used only to run migrations and to seed the fixture's
+      # two tenants — rows the runtime role is correctly not allowed to
+      # write, because its RLS WITH CHECK requires a tenant it has not
+      # been given.
+      TAXII_DATABASE_MIGRATION_URL: postgresql+asyncpg://aisoc:aisoc_ci_only@localhost:5432/aisoc
       PGPASSWORD: aisoc_ci_only
       # Not a bypass environment. The suite constructs its principal
       # directly, but a tree where `development` is in scope could grow a
@@ -86,6 +95,14 @@ jobs:
       # the tenant's whole store on every request. Asserted rather than
       # assumed: a migration that ran and created nothing is the shape this
       # repository keeps finding.
+      - name: Give the runtime role its password
+        run: |
+          set -euo pipefail
+          psql -h localhost -U aisoc -d aisoc -v ON_ERROR_STOP=1 -q -c \
+            "ALTER ROLE aisoc_app WITH PASSWORD 'aisoc_app_ci_only';"
+          psql -h localhost -U aisoc -d aisoc -v ON_ERROR_STOP=1 -q -c \
+            "GRANT USAGE ON SCHEMA public TO aisoc_app;"
+
       - name: The paging index exists
         run: |
           set -euo pipefail
@@ -101,6 +118,7 @@ jobs:
         working-directory: services/api
         env:
           ISOLATION_TAXII_DSN: ${{ env.TAXII_DSN }}
+          ISOLATION_TAXII_ADMIN_DSN: ${{ env.TAXII_DATABASE_MIGRATION_URL }}
           DATABASE_URL: ${{ env.TAXII_DSN }}
         run: python -m pytest ../../tests/isolation/test_taxii_server_live.py -v --tb=short
 
@@ -111,6 +129,7 @@ jobs:
         working-directory: services/api
         env:
           ISOLATION_TAXII_DSN: ${{ env.TAXII_DSN }}
+          ISOLATION_TAXII_ADMIN_DSN: ${{ env.TAXII_DATABASE_MIGRATION_URL }}
           DATABASE_URL: ${{ env.TAXII_DSN }}
         run: |
           set -euo pipefail
@@ -135,6 +154,7 @@ jobs:
         working-directory: services/api
         env:
           ISOLATION_TAXII_DSN: ${{ env.TAXII_DSN }}
+          ISOLATION_TAXII_ADMIN_DSN: ${{ env.TAXII_DATABASE_MIGRATION_URL }}
           DATABASE_URL: ${{ env.TAXII_DSN }}
         run: |
           set -euo pipefail

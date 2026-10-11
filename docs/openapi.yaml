@@ -16219,6 +16219,390 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /api/v1/taxii2/:
+    get:
+      tags:
+      - taxii
+      summary: Discovery
+      description: '``GET /taxii2/`` — what this server is and where its API roots
+        are.'
+      operationId: discovery_api_v1_taxii2__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/taxii2/{api_root}/:
+    get:
+      tags:
+      - taxii
+      summary: Api Root Information
+      description: '``GET /taxii2/{api-root}/`` — the limits a client must respect.'
+      operationId: api_root_information_api_v1_taxii2__api_root___get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: api_root
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Api Root
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/taxii2/{api_root}/collections/:
+    get:
+      tags:
+      - taxii
+      summary: List Collections
+      description: '``GET /taxii2/{api-root}/collections/``.'
+      operationId: list_collections_api_v1_taxii2__api_root__collections__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: api_root
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Api Root
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/taxii2/{api_root}/collections/{collection_ref}/:
+    get:
+      tags:
+      - taxii
+      summary: Get Collection
+      description: '``GET /taxii2/{api-root}/collections/{id}/``.'
+      operationId: get_collection_api_v1_taxii2__api_root__collections__collection_ref___get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: api_root
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Api Root
+      - name: collection_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Collection Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/taxii2/{api_root}/collections/{collection_ref}/objects/:
+    get:
+      tags:
+      - taxii
+      summary: Get Objects
+      description: '``GET /taxii2/{api-root}/collections/{id}/objects/``.'
+      operationId: get_objects_api_v1_taxii2__api_root__collections__collection_ref__objects__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: api_root
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Api Root
+      - name: collection_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Collection Ref
+      - name: added_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Added After
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            maximum: 1000
+            minimum: 1
+          - type: 'null'
+          title: Limit
+      - name: next
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next
+      - name: match[id]
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Match[Id]
+      - name: match[type]
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Match[Type]
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - taxii
+      summary: Refuse Write
+      description: 'Inbound TAXII writes are refused, and say why.
+
+
+        A 405 would read as "wrong verb" and send the integrator looking for
+
+        the right one. This is a deliberate posture, so it is a 403 that names
+
+        it.'
+      operationId: refuse_write_api_v1_taxii2__api_root__collections__collection_ref__objects__post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: api_root
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Api Root
+      - name: collection_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Collection Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/taxii2/{api_root}/collections/{collection_ref}/manifest/:
+    get:
+      tags:
+      - taxii
+      summary: Get Manifest
+      description: '``GET /taxii2/{api-root}/collections/{id}/manifest/``.
+
+
+        The manifest is what a client polls to decide what to fetch, so it
+
+        pages by the same cursor as ``objects``. Two different orderings would
+
+        let a client hold a manifest entry it can never reach.'
+      operationId: get_manifest_api_v1_taxii2__api_root__collections__collection_ref__manifest__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: api_root
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Api Root
+      - name: collection_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Collection Ref
+      - name: added_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Added After
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            maximum: 1000
+            minimum: 1
+          - type: 'null'
+          title: Limit
+      - name: next
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/taxii/collections:
+    get:
+      tags:
+      - taxii
+      summary: List Managed Collections
+      operationId: list_managed_collections_api_v1_taxii_collections_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/CollectionOut'
+                type: array
+                title: Response List Managed Collections Api V1 Taxii Collections
+                  Get
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - taxii
+      summary: Create Managed Collection
+      operationId: create_managed_collection_api_v1_taxii_collections_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/taxii/collections/{collection_id}:
+    delete:
+      tags:
+      - taxii
+      summary: Delete Managed Collection
+      operationId: delete_managed_collection_api_v1_taxii_collections__collection_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: collection_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Collection Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/taxii/unpublished-types:
+    get:
+      tags:
+      - taxii
+      summary: Unpublished Types
+      description: 'Which IOC types this server will not publish, and why.
+
+
+        An absence a tenant cannot explain reads as a bug. Published as data
+
+        rather than documented in prose so the answer cannot drift from the
+
+        table the projection actually uses.'
+      operationId: unpublished_types_api_v1_taxii_unpublished_types_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Unpublished Types Api V1 Taxii Unpublished Types Get
+      security:
+      - HTTPBearer: []
   /api/v1/threat-intel/indicators:
     get:
       tags:
@@ -18118,7 +18502,27 @@ paths:
       tags:
       - Threat Intelligence
       summary: List Taxii Collections
-      description: List TAXII 2.1 collections for server compatibility.
+      description: 'Demo-only sample of TAXII collection metadata.
+
+
+        This is **not** the TAXII server. It returns a fixed sample list and is
+
+        gated behind demo mode, and it predates the real implementation added
+
+        for depth item 4.2, which lives at ``/api/v1/taxii2/`` and serves
+
+        discovery, API root, collections, objects, manifest and ``added_after``
+
+        pagination over this tenant''s own indicator store.
+
+
+        Kept rather than deleted because removing a published operation is a
+
+        breaking change to the committed OpenAPI document; said plainly here
+
+        because two surfaces both called "TAXII collections" is how a reader
+
+        concludes the product has two TAXII implementations.'
       operationId: list_taxii_collections_api_v1_threatintel_stix_taxii_collections_get
       responses:
         '200':
@@ -23062,6 +23466,81 @@ components:
       - outcome
       - detail
       title: CollectedControl
+    CollectionCreate:
+      properties:
+        title:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Title
+        description:
+          type: string
+          title: Description
+          default: ''
+        alias:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Alias
+        ioc_filter:
+          additionalProperties: true
+          type: object
+          title: Ioc Filter
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+          default: true
+      type: object
+      required:
+      - title
+      title: CollectionCreate
+    CollectionOut:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+        alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alias
+        can_read:
+          type: boolean
+          title: Can Read
+        can_write:
+          type: boolean
+          title: Can Write
+        ioc_filter:
+          additionalProperties: true
+          type: object
+          title: Ioc Filter
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - title
+      - description
+      - alias
+      - can_read
+      - can_write
+      - ioc_filter
+      - is_enabled
+      - created_at
+      title: CollectionOut
     CommentResponse:
       properties:
         id:

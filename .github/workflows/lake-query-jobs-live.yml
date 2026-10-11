@@ -50,7 +50,14 @@ jobs:
           --health-retries 20
 
     env:
-      LAKE_JOB_DSN: postgresql+asyncpg://aisoc:aisoc_ci_only@localhost:5432/aisoc
+      # The runtime role, not the owner. POSTGRES_USER (aisoc) is a
+      # superuser and ignores every RLS policy even under FORCE ROW LEVEL
+      # SECURITY, so a suite proving a job id is tenant-scoped while
+      # connected as it would pass with migration 111's policy deleted.
+      LAKE_JOB_DSN: postgresql+asyncpg://aisoc_app:aisoc_app_ci_only@localhost:5432/aisoc
+      # The owner, used only for migrations and to seed the fixture's two
+      # tenants — rows the runtime role is correctly not allowed to write.
+      LAKE_DATABASE_MIGRATION_URL: postgresql+asyncpg://aisoc:aisoc_ci_only@localhost:5432/aisoc
       PGPASSWORD: aisoc_ci_only
       ENVIRONMENT: test
       SECRET_KEY: ci-lake-job-signing-secret-at-least-32-chars
@@ -82,6 +89,14 @@ jobs:
       # progress_ratio must be nullable. NOT NULL would force a zero where
       # the honest answer is unknown, and a progress bar that renders a
       # forced zero as 0% is as wrong as one that renders it as 100%.
+      - name: Give the runtime role its password
+        run: |
+          set -euo pipefail
+          psql -h localhost -U aisoc -d aisoc -v ON_ERROR_STOP=1 -q -c \
+            "ALTER ROLE aisoc_app WITH PASSWORD 'aisoc_app_ci_only';"
+          psql -h localhost -U aisoc -d aisoc -v ON_ERROR_STOP=1 -q -c \
+            "GRANT USAGE ON SCHEMA public TO aisoc_app;"
+
       - name: progress_ratio is nullable
         run: |
           set -euo pipefail
@@ -98,6 +113,7 @@ jobs:
         working-directory: services/api
         env:
           ISOLATION_LAKE_JOB_DSN: ${{ env.LAKE_JOB_DSN }}
+          ISOLATION_LAKE_JOB_ADMIN_DSN: ${{ env.LAKE_DATABASE_MIGRATION_URL }}
           DATABASE_URL: ${{ env.LAKE_JOB_DSN }}
         run: python -m pytest ../../tests/isolation/test_lake_query_jobs_live.py -v --tb=short
 
@@ -105,6 +121,7 @@ jobs:
         working-directory: services/api
         env:
           ISOLATION_LAKE_JOB_DSN: ${{ env.LAKE_JOB_DSN }}
+          ISOLATION_LAKE_JOB_ADMIN_DSN: ${{ env.LAKE_DATABASE_MIGRATION_URL }}
           DATABASE_URL: ${{ env.LAKE_JOB_DSN }}
         run: |
           set -euo pipefail
@@ -128,6 +145,7 @@ jobs:
         working-directory: services/api
         env:
           ISOLATION_LAKE_JOB_DSN: ${{ env.LAKE_JOB_DSN }}
+          ISOLATION_LAKE_JOB_ADMIN_DSN: ${{ env.LAKE_DATABASE_MIGRATION_URL }}
           DATABASE_URL: ${{ env.LAKE_JOB_DSN }}
         run: |
           set -euo pipefail

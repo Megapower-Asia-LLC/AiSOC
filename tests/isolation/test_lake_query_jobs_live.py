@@ -56,6 +56,31 @@ async def engine():
         await eng.dispose()
 
 
+def _admin_dsn() -> str:
+    """The owner connection, used only to seed and tear down fixtures.
+
+    The suite runs as the DML-only runtime role, because a suite proving
+    a job id is tenant-scoped while connected as a superuser would pass
+    with the RLS policy removed. The runtime role cannot insert a
+    tenant, so the fixture needs the owner and nothing else does.
+    """
+    value = os.environ.get("ISOLATION_LAKE_JOB_ADMIN_DSN", "").strip() or _dsn()
+    if value.startswith("postgresql://"):
+        return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return value
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def admin_engine():
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    eng = create_async_engine(_admin_dsn())
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def session_factory(engine):
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -64,18 +89,18 @@ async def session_factory(engine):
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def tenants(engine):
+async def tenants(admin_engine):
     from sqlalchemy import text
 
     a, b = uuid.uuid4(), uuid.uuid4()
-    async with engine.begin() as conn:
+    async with admin_engine.begin() as conn:
         for tid, slug in ((a, "lakejob-a"), (b, "lakejob-b")):
             await conn.execute(
                 text("INSERT INTO tenants (id, name, slug) VALUES (:id, :n, :s)"),
                 {"id": str(tid), "n": slug, "s": f"{slug}-{uuid.uuid4().hex[:8]}"},
             )
     yield a, b
-    async with engine.begin() as conn:
+    async with admin_engine.begin() as conn:
         for tid in (a, b):
             await conn.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": str(tid)})
 

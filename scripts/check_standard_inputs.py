@@ -98,9 +98,7 @@ def _go_sources(root: Path, pkg: Path) -> str:
     if not directory.is_dir():
         return ""
     return "\n".join(
-        p.read_text(encoding="utf-8", errors="replace")
-        for p in sorted(directory.glob("*.go"))
-        if not p.name.endswith("_test.go")
+        p.read_text(encoding="utf-8", errors="replace") for p in sorted(directory.glob("*.go")) if not p.name.endswith("_test.go")
     )
 
 
@@ -133,11 +131,7 @@ def _strip_py_comments_and_docstrings(source: str) -> str:
             if node.lineno and node.end_lineno:
                 spans.append((node.lineno, node.end_lineno))
     drop = {line for start, end in spans for line in range(start, end + 1)}
-    kept = [
-        re.sub(r"#.*$", "", line)
-        for number, line in enumerate(source.splitlines(), start=1)
-        if number not in drop
-    ]
+    kept = [re.sub(r"#.*$", "", line) for number, line in enumerate(source.splitlines(), start=1) if number not in drop]
     return "\n".join(kept)
 
 
@@ -233,13 +227,12 @@ def _check_otlp(root: Path, main_go: str, failures: list[str]) -> None:
     server_go = _strip_go_comments(_read(root, SERVER_GO))
     if not re.search(r'r\.Post\(\s*"/logs"', server_go):
         failures.append(
-            f'{SERVER_GO} does not route POST /v1/logs. The path is fixed by OTLP/HTTP - an exporter appends '
+            f"{SERVER_GO} does not route POST /v1/logs. The path is fixed by OTLP/HTTP - an exporter appends "
             f"/v1/logs to its endpoint - so a receiver mounted anywhere else is unreachable by a stock collector."
         )
     if "otlp.New(" not in main_go:
         failures.append(
-            f"{MAIN_GO} never calls otlp.New, so the receiver is constructed by nothing and the route, if any, "
-            f"serves a nil handler."
+            f"{MAIN_GO} never calls otlp.New, so the receiver is constructed by nothing and the route, if any, serves a nil handler."
         )
     if not re.search(r'RegisterSubscription\(\s*"otlp_logs"', main_go):
         failures.append(
@@ -251,8 +244,7 @@ def _check_otlp(root: Path, main_go: str, failures: list[str]) -> None:
     # operator cannot create a token the receiver will accept.
     if not (root / TEMPLATE_DIR / f"{OTLP_TEMPLATE}.yaml").is_file():
         failures.append(
-            f"{TEMPLATE_DIR}/{OTLP_TEMPLATE}.yaml is missing, so every OTLP record is refused with "
-            f"'this build has no template'."
+            f"{TEMPLATE_DIR}/{OTLP_TEMPLATE}.yaml is missing, so every OTLP record is refused with 'this build has no template'."
         )
     mintable = _mintable_ids(root)
     if mintable and OTLP_TEMPLATE not in mintable:
@@ -428,9 +420,7 @@ def _check_taxii(root: Path, failures: list[str]) -> None:
 
     router = _read(root, API_ROUTER)
     if "taxii.router" not in router:
-        failures.append(
-            f"{API_ROUTER} does not include the TAXII router, so the server is written and serves nothing."
-        )
+        failures.append(f"{API_ROUTER} does not include the TAXII router, so the server is written and serves nothing.")
 
 
 def evaluate(root: Path) -> list[str]:
@@ -489,9 +479,7 @@ def _inject(tmp: Path, kind: str) -> None:
         main_go.write_text(main_go.read_text(encoding="utf-8").replace("otlp.New(", "otlpDisabled(", 1), encoding="utf-8")
     elif kind == "OTLP_NO_READYZ":
         main_go.write_text(
-            main_go.read_text(encoding="utf-8").replace(
-                'RegisterSubscription("otlp_logs"', 'RegisterSubscription("otlp_unnamed"', 1
-            ),
+            main_go.read_text(encoding="utf-8").replace('RegisterSubscription("otlp_logs"', 'RegisterSubscription("otlp_unnamed"', 1),
             encoding="utf-8",
         )
     elif kind == "OTLP_TEMPLATE":
@@ -520,7 +508,7 @@ def _inject(tmp: Path, kind: str) -> None:
         kafka.write_text(
             kafka.read_text(encoding="utf-8").replace(
                 "\ttenantID := tok.TenantID.String()",
-                '\ttenantID := string(msg.Headers[0].Value)',
+                "\ttenantID := string(msg.Headers[0].Value)",
                 1,
             ),
             encoding="utf-8",
