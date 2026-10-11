@@ -184,7 +184,7 @@ jobs:
   # — so this proves the native project configures and compiles, and the
   # README does not claim more.
   ios-simulator:
-    name: Mobile — iOS simulator build (no signing)
+    name: Mobile — iOS simulator compile + link (no signing, no JS bundle)
     runs-on: macos-15
     timeout-minutes: 60
     defaults:
@@ -224,10 +224,25 @@ jobs:
           # broken script.
           scheme=$(xcodebuild -list -json -workspace "$ws" | python3 -c 'import json,sys; d=json.load(sys.stdin); c=d.get("workspace") or d.get("project") or {}; s=c.get("schemes") or []; sys.exit("xcodebuild -list reported no schemes") if not s else print(s[0])')
           echo "building scheme $scheme from $ws"
+          # Debug, not Release, and the reason is worth stating because it
+          # bounds what this job proves. A Release build runs React
+          # Native's bundle phase, and Metro's asset hashing dies on this
+          # runner with `The "list" argument must be an instance of
+          # SharedArrayBuffer...` while reading one of expo-router's PNGs —
+          # a Metro/Node incompatibility that has nothing to do with this
+          # app's code. Chasing it here would be chasing someone else's
+          # bug on the one platform that cannot produce a shippable
+          # artefact anyway.
+          #
+          # What a Debug simulator build does prove is the whole of what
+          # this job is for: the Expo config generates a valid Xcode
+          # project, the pods resolve, and every native module compiles and
+          # links. **JS bundling is proven on the Android job**, which runs
+          # `assembleRelease` and therefore does bundle.
           xcodebuild \
             -workspace "$ws" \
             -scheme "$scheme" \
-            -configuration Release \
+            -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
