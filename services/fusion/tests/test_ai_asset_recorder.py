@@ -21,8 +21,8 @@ from app.services.ai_asset_recorder import (
     ALL_KINDS,
     CODING_AGENT_PROCESSES,
     AiAssetRecorder,
-    _Sighting,
     _score,
+    _Sighting,
     classify,
 )
 
@@ -105,9 +105,7 @@ def test_an_unrecognised_agent_binary_is_an_ai_app_not_a_coding_agent():
     An agent we cannot place is an `ai_app`. Calling it a coding agent would
     put a vendor name on a row we have no evidence for.
     """
-    event = runtime_event(
-        actor={"process": {"name": "svc-42", "path": "/opt/inhouse/summariser"}, "user": {"name": "ada@example.com"}}
-    )
+    event = runtime_event(actor={"process": {"name": "svc-42", "path": "/opt/inhouse/summariser"}, "user": {"name": "ada@example.com"}})
     agents = [s for s in classify(event) if s.kind in ("coding_agent", "ai_app")]
     assert [s.kind for s in agents] == ["ai_app"]
     assert agents[0].vendor == "anthropic"

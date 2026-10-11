@@ -7035,6 +7035,139 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-assets:
+    get:
+      tags:
+      - ai-estate
+      summary: List Ai Assets
+      description: The estate, newest sighting first.
+      operationId: list_ai_assets_api_v1_ai_assets_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter to one asset kind.
+          title: Kind
+        description: Filter to one asset kind.
+      - name: unlinked
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Only assets with no person linked.
+          default: false
+          title: Unlinked
+        description: Only assets with no person linked.
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAssetListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-assets/{asset_id}:
+    get:
+      tags:
+      - ai-estate
+      summary: Get Ai Asset
+      operationId: get_ai_asset_api_v1_ai_assets__asset_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Asset Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAssetModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-assets/{asset_id}/sanction:
+    post:
+      tags:
+      - ai-estate
+      summary: Sanction Ai Asset
+      description: 'Approve an asset, refuse it, or put it back to undecided.
+
+
+        The risk score is recomputed here rather than left stale, through the
+
+        same `score_risk` the recorder calls, because the sanction decision is
+
+        one of its inputs: an asset that has just been refused and is still
+
+        running is a different exposure from one nobody had looked at.'
+      operationId: sanction_ai_asset_api_v1_ai_assets__asset_id__sanction_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Asset Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SanctionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAssetModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/tenant-skills:
     get:
       tags:
@@ -20340,6 +20473,104 @@ components:
         and it is the more flattering of the two to print by accident in the
 
         abstention column and the more damning in the agreement column.'
+    AiAssetListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AiAssetModel'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        observedSources:
+          items:
+            type: string
+          type: array
+          title: Observedsources
+      type: object
+      required:
+      - items
+      - total
+      title: AiAssetListResponse
+    AiAssetModel:
+      properties:
+        id:
+          type: string
+          title: Id
+        kind:
+          type: string
+          title: Kind
+        externalId:
+          type: string
+          title: Externalid
+        displayName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Displayname
+        vendor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Vendor
+        discoverySource:
+          type: string
+          title: Discoverysource
+        principal:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Principal
+        device:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device
+        effectivePermissions:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Effectivepermissions
+        attributes:
+          additionalProperties: true
+          type: object
+          title: Attributes
+        risk:
+          type: integer
+          title: Risk
+        riskReasons:
+          items:
+            type: string
+          type: array
+          title: Riskreasons
+        sanctioned:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Sanctioned
+        firstSeen:
+          type: string
+          title: Firstseen
+        lastSeen:
+          type: string
+          title: Lastseen
+        observationCount:
+          type: integer
+          title: Observationcount
+      type: object
+      required:
+      - id
+      - kind
+      - externalId
+      - discoverySource
+      - risk
+      - firstSeen
+      - lastSeen
+      - observationCount
+      title: AiAssetModel
+      description: One asset as the console sees it.
     AirgapStatus:
       properties:
         ready:
@@ -34591,6 +34822,25 @@ components:
       - scenarios
       - note
       title: SampleDataResponse
+    SanctionRequest:
+      properties:
+        sanctioned:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Sanctioned
+          description: true = approved, false = reviewed and refused, null = back
+            to undecided. The three are distinct.
+        note:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Note
+      type: object
+      required:
+      - sanctioned
+      title: SanctionRequest
     SandboxResultResponse:
       properties:
         outcome:

@@ -338,8 +338,7 @@ def _check_graph(root: Path) -> list[str]:
         failures.append(f"GRAPH: NodeAIAsset is not in AllNodeLabels in {GRAPH_GO}, so no consumer enumerates it.")
     if "NodeAIAsset" not in extractor:
         failures.append(
-            f"GRAPH: {EXTRACTOR_GO} never emits an {GRAPH_LABEL} node. The label would exist in the vocabulary "
-            f"and in no database."
+            f"GRAPH: {EXTRACTOR_GO} never emits an {GRAPH_LABEL} node. The label would exist in the vocabulary and in no database."
         )
     return failures
 
@@ -521,7 +520,11 @@ def main() -> int:
         print(f"\n{len(failures)} problem(s) across {len(RULES)} rule(s).", file=sys.stderr)
         return 1
 
-    print(f"OK — {TABLE} created with forced RLS, authorized routes, a writer on the fusion path, {len(REQUIRED_KINDS)} asset kinds, a graph label emitted at ingest, and a console page.")
+    print(
+        f"OK — {TABLE} created with forced RLS, authorized routes, a writer on the "
+        f"fusion path, {len(REQUIRED_KINDS)} asset kinds, a graph label emitted at "
+        f"ingest, and a console page."
+    )
     return 0
 
 

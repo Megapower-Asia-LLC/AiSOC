@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging, logger
 from app.memory.provider import MemoryPriorProvider
 from app.services import ioc_match
+from app.services.ai_asset_recorder import AiAssetRecorder
 from app.services.alert_enricher import AlertEnricher
 from app.services.alert_sink import AlertSink
 from app.services.attack_chain_grouper import AttackChainGrouper
@@ -21,7 +22,6 @@ from app.services.deduplicator import Deduplicator
 from app.services.detection_engine import DetectionEngine
 from app.services.dlq_sink import PostgresDLQ
 from app.services.entity_risk import EntityRiskEngine
-from app.services.ai_asset_recorder import AiAssetRecorder
 from app.services.first_seen import FirstSeenStore
 from app.services.fusion_engine import FusionEngine
 from app.services.ioc_match import TenantIocMatcher

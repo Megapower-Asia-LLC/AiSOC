@@ -139,16 +139,8 @@ async def list_ai_assets(
         count_stmt = count_stmt.where(AiAsset.principal.is_(None))
     total = len((await db.execute(count_stmt)).scalars().all())
 
-    sources = sorted(
-        {
-            s
-            for s in (
-                await db.execute(select(AiAsset.discovery_source).where(AiAsset.tenant_id == current_user.tenant_id).distinct())
-            )
-            .scalars()
-            .all()
-        }
-    )
+    source_rows = await db.execute(select(AiAsset.discovery_source).where(AiAsset.tenant_id == current_user.tenant_id).distinct())
+    sources = sorted(set(source_rows.scalars().all()))
 
     return AiAssetListResponse(items=[_to_model(r) for r in rows], total=total, observedSources=sources)
 
