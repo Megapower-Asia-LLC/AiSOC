@@ -126,6 +126,27 @@ jobs:
       # Generates `android/` from app.json. Not committed, deliberately: a
       # checked-in native project drifts from the Expo config and the drift
       # is invisible until a build fails for a reason nobody changed.
+      # Expo's own compatibility table, checked rather than trusted. The
+      # first run of this job failed inside
+      # `:react-native-screens:generateCodegenSchemaFromJavaScript` with
+      # "The first argument of method showColumn must be of type
+      # React.ElementRef<>", because `^4.11.0` had resolved to 4.28.0 — a
+      # version whose component specs the React Native 0.81 codegen cannot
+      # parse. That is the caret-pin defect this repository has documented
+      # elsewhere: the same commit building two ways. Both packages are now
+      # pinned to the versions Expo SDK 54 expects, and this step fails the
+      # build if a future bump drifts off that table again.
+      - name: The native dependency versions must be the ones Expo expects
+        run: |
+          set -euo pipefail
+          out=$(npx --yes expo install --check 2>&1 || true)
+          if echo "$out" | grep -qE 'react-native-screens@|react-native-safe-area-context@'; then
+            echo "::error::a native module has drifted off Expo SDK 54's compatibility table."
+            echo "$out"
+            exit 1
+          fi
+          echo "OK: react-native-screens and react-native-safe-area-context match Expo's table."
+
       - name: Generate the native Android project
         run: npx expo prebuild --platform android --no-install
 
