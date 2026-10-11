@@ -42,6 +42,7 @@ from app.api.v1.endpoints import (
     graph,
     graph_ws,
     health,
+    hunt_reports,
     hunts,
     identity_graph,
     identity_timeline,
@@ -317,6 +318,10 @@ api_router.include_router(posture.router)
 api_router.include_router(easm.router)
 api_router.include_router(identity_graph.router)
 api_router.include_router(reports.router)
+# Depth 9.5: a natural-language hunt or a retro-hunt that found something
+# becomes a readable, cited report, exportable through the same WeasyPrint
+# path the weekly digest already uses.
+api_router.include_router(hunt_reports.router)
 api_router.include_router(retro_hunts.router)
 
 # Wave 7 — customizable dashboard / report builder
