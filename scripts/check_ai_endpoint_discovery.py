@@ -232,11 +232,16 @@ def _check_capabilities(root: Path) -> list[str]:
         targets = node.targets if isinstance(node, ast.Assign) else ([node.target] if isinstance(node, ast.AnnAssign) else [])
         if not any(isinstance(t, ast.Name) and t.id == "SOURCE_CAPABILITIES" for t in targets):
             continue
+        # Narrowed explicitly: `tree.body` is `list[ast.stmt]`, and only the
+        # two assignment forms carry a `.value`. Reading it off the statement
+        # works for the nodes this loop reaches and is unchecked for the rest.
+        if not isinstance(node, ast.Assign | ast.AnnAssign):
+            continue
         value = node.value
         if isinstance(value, ast.Dict):
-            for key, entry in zip(value.keys, value.values, strict=False):
-                if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                    table[key.value] = ast.unparse(entry)
+            for key, declaration in zip(value.keys, value.values, strict=False):
+                if isinstance(key, ast.Constant) and isinstance(key.value, str) and declaration is not None:
+                    table[key.value] = ast.unparse(declaration)
     if not table:
         return ["CAPABILITIES: SOURCE_CAPABILITIES is absent. The plan asks, in words, to record what each source can and cannot see."]
 
