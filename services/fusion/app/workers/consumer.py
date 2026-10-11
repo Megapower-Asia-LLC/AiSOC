@@ -22,6 +22,7 @@ from app.services.event_schema import validate_event
 from app.services.fusion_engine import FusionEngine
 from app.services.lake_writer import LakeWriter
 from app.services.promoter import promote_normalized_event
+from app.services.scale_hint import compute as compute_scale_hint
 from app.services.tenant_overlay import OverlayCache
 from app.services.ueba_signal import UebaSignalCache
 from app.services.windowed_detection import WindowedDetectionEngine
@@ -411,3 +412,41 @@ class FusionWorker:
     @staticmethod
     def get_metrics() -> dict:
         return dict(_METRICS)
+
+    async def consumer_lag(self) -> int | None:
+        """Total backlog across the partitions this replica is assigned.
+
+        ``None`` when it cannot be read — no consumer, no assignment yet,
+        or a broker that did not answer. Deliberately not zero: an
+        unreadable backlog reported as no backlog is how a stalled
+        consumer looks healthy, which is the defect this service has
+        shipped before.
+        """
+        consumer = self._consumer
+        if consumer is None:
+            return None
+        try:
+            assignment = consumer.assignment()
+            if not assignment:
+                return None
+            total = 0
+            for partition in assignment:
+                end = await consumer.position(partition)
+                highwater = consumer.highwater(partition)
+                if end is None or highwater is None:
+                    return None
+                total += max(0, highwater - end)
+            return total
+        except Exception as exc:  # noqa: BLE001 — a lag read must never stop the consumer
+            logger.warning("fusion.lag_unreadable", error=str(exc))
+            return None
+
+    async def scale_hint(self) -> dict:
+        """The autoscaling signal, for an operator's HPA or KEDA scaler.
+
+        AiSOC publishes this and does not act on it; ADR-0011 records
+        why. The per-replica budget is derived from the published
+        realistic-mix run rather than chosen, so the number relates to a
+        measurement someone can go and check.
+        """
+        return compute_scale_hint(await self.consumer_lag()).as_dict()
