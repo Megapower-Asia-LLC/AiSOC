@@ -278,7 +278,7 @@ def _check_writer(root: Path) -> list[str]:
         failures.append(f"WRITER: {RECORDER_PATH} never names {TABLE}, so whatever it writes, it is not the inventory.")
 
     consumer = _read(root, CONSUMER_PATH)
-    if not _calls_within(consumer, "_process_message", ("_ai_assets",)):
+    if not _calls_within(consumer, "_process_message", ("_ai_assets.observe",)):
         failures.append(
             f"WRITER: {CONSUMER_PATH}::_process_message does not reach the recorder. Module reachability cannot "
             f"see this: the module imports, the tests pass, and no event ever reaches it."
@@ -305,6 +305,20 @@ def _check_kinds(root: Path) -> list[str]:
     return []
 
 
+def _all_node_labels(go_text: str) -> set[str]:
+    """Members of the ``AllNodeLabels`` literal, comments excluded."""
+    match = re.search(r"AllNodeLabels\s*=\s*\[\]NodeLabel\{(.*?)\n\}", go_text, re.DOTALL)
+    if not match:
+        return set()
+    members: set[str] = set()
+    for line in match.group(1).splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        members.add(stripped.rstrip(","))
+    return members
+
+
 def _check_graph(root: Path) -> list[str]:
     """The label is declared on both sides and something emits it."""
     failures: list[str] = []
@@ -315,10 +329,12 @@ def _check_graph(root: Path) -> list[str]:
         failures.append(f"GRAPH: {GRAPH_YAML} does not declare node label {GRAPH_LABEL}.")
     if f'NodeAIAsset NodeLabel = "{GRAPH_LABEL}"' not in go_text.replace("\t", " ").replace("  ", " "):
         failures.append(f"GRAPH: {GRAPH_GO} does not declare NodeAIAsset = {GRAPH_LABEL!r}.")
-    # Declared and never enumerated is the drift the schema gate was blind to
-    # for 11 labels: the YAML listed them, the Go constant existed, and
-    # AllNodeLabels — the list every consumer reads — did not.
-    if "NodeAIAsset," not in go_text:
+    # Declared and never enumerated is the drift a schema gate is blind to:
+    # the YAML lists the label, the Go constant exists, and AllNodeLabels —
+    # the list every consumer reads — does not. Parsed out of the literal
+    # rather than substring-matched, because `// NodeAIAsset,` contains the
+    # substring and means the opposite.
+    if "NodeAIAsset" not in _all_node_labels(go_text):
         failures.append(f"GRAPH: NodeAIAsset is not in AllNodeLabels in {GRAPH_GO}, so no consumer enumerates it.")
     if "NodeAIAsset" not in extractor:
         failures.append(
@@ -326,6 +342,18 @@ def _check_graph(root: Path) -> list[str]:
             f"and in no database."
         )
     return failures
+
+
+def _strip_ts_comments(source: str) -> str:
+    """Drop `//` and `/* */` so the gate does not read its own prose.
+
+    `check_gate_coverage.py` counted a gate named only in a docstring as
+    invoked, and reported "all reachable" while the gate ran in no workflow.
+    The same mistake here would be a component documenting that it does not
+    fabricate, failing for saying so.
+    """
+    without_block = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    return re.sub(r"^\s*//.*$", "", without_block, flags=re.MULTILINE)
 
 
 def _check_console(root: Path) -> list[str]:
@@ -336,7 +364,8 @@ def _check_console(root: Path) -> list[str]:
     for needle, label in (("firstSeen", "first seen"), ("lastSeen", "last seen"), ("risk", "risk")):
         if needle not in source:
             failures.append(f"CONSOLE: {CONSOLE_PAGE} does not render {label}, which the plan names as a required column.")
-    if re.search(r"\?\?\s*(MOCK|SAMPLE|DEMO_[A-Z_]*ASSET)", source) or "fallbackData" in source:
+    code = _strip_ts_comments(source)
+    if re.search(r"\?\?\s*(MOCK|SAMPLE|DEMO_[A-Z_]*ASSET)", code) or "fallbackData" in code:
         failures.append(
             f"CONSOLE: {CONSOLE_PAGE} falls back to fabricated rows. An invented AI inventory is worse than an "
             f"empty one: it is a security surface a reader would act on."
@@ -375,10 +404,14 @@ INJECTIONS: tuple[tuple[str, Path, str, str], ...] = (
     ("MODEL", MODEL_PATH, f'__tablename__ = "{TABLE}"', '__tablename__ = "aisoc_ai_assets_v2"'),
     ("ROUTES", ROUTES_PATH, "Depends(require_permission", "Annotated_discarded(require_permission"),
     ("PERMISSIONS", SECURITY_PATH, '"ai_estate:read"', '"ai_estate:read_TYPO"'),
-    ("WRITER", CONSUMER_PATH, "self._ai_assets", "self._unwired_ai_assets"),
+    ("WRITER", CONSUMER_PATH, "await self._ai_assets.observe(payload)", "await _noop(payload)"),
     ("KINDS", RECORDER_PATH, '"coding_agent"', '"coding_agent_TYPO"'),
-    ("GRAPH", GRAPH_GO, "NodeAIAsset,", "// NodeAIAsset,"),
-    ("CONSOLE", CONSOLE_PAGE, "firstSeen", "firstSeenXX"),
+    # Commenting the member out, not deleting it — the shape a reviewer waves
+    # through, and the one a substring match cannot see.
+    ("GRAPH", GRAPH_GO, "\tNodeAIAsset,", "\t// NodeAIAsset,"),
+    # Renamed rather than suffixed: `firstSeenXX` still contains `firstSeen`,
+    # so a suffix injection would be caught by a gate that does nothing.
+    ("CONSOLE", CONSOLE_PAGE, "firstSeen", "createdOn"),
 )
 
 
@@ -396,12 +429,18 @@ def _materialise(dest: Path) -> None:
             shutil.copy2(sql, dest / MIGRATIONS_DIR / sql.name)
 
 
-def _apply(root: Path, target: Path, old: str, new: str) -> bool:
+#: Injections where renaming one occurrence proves nothing: four roles hold
+#: the permission, and `firstSeen` appears in both the wire type and the cell
+#: that renders it, so renaming the declaration alone leaves the column there.
+_REPLACE_ALL = {"PERMISSIONS", "CONSOLE"}
+
+
+def _apply(root: Path, target: Path, old: str, new: str, *, replace_all: bool = False) -> bool:
     if target == MIGRATIONS_DIR:
         for sql in (root / MIGRATIONS_DIR).glob("*.sql"):
             text = sql.read_text(encoding="utf-8")
             if old in text:
-                sql.write_text(text.replace(old, new, 1), encoding="utf-8")
+                sql.write_text(text.replace(old, new, -1 if replace_all else 1), encoding="utf-8")
                 return True
         return False
     path = root / target
@@ -410,7 +449,7 @@ def _apply(root: Path, target: Path, old: str, new: str) -> bool:
     text = path.read_text(encoding="utf-8")
     if old not in text:
         return False
-    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+    path.write_text(text.replace(old, new, -1 if replace_all else 1), encoding="utf-8")
     return True
 
 
@@ -433,7 +472,7 @@ def _self_test() -> int:
         tmp = Path(tempfile.mkdtemp(prefix="ai-inv-"))
         try:
             _materialise(tmp)
-            applied = _apply(tmp, target, old, new)
+            applied = _apply(tmp, target, old, new, replace_all=rule_name in _REPLACE_ALL)
             if not applied:
                 results.append((f"{rule_name}: injection applies", False))
                 continue

@@ -294,6 +294,11 @@ const navSections: NavSection[] = [
         icon: <EyeIcon />,
       },
       {
+        label: 'AI Estate',
+        href: '/ai-estate',
+        icon: <EyeIcon />,
+      },
+      {
         label: 'Purple Team',
         href: '/purple-team',
         icon: <ShieldIcon />,
