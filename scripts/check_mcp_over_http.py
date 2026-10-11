@@ -107,6 +107,26 @@ def _read(root: Path, rel: Path) -> str | None:
         return None
 
 
+#: `//` to end of line, and `/* */` including JSDoc. Crude by design: it can
+#: mangle a comment-like sequence inside a string literal, which costs nothing
+#: here because every rule below asks "does this identifier appear", not "is
+#: this source valid".
+_TS_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+
+
+def _code_only(source: str) -> str:
+    """Source with its comments removed.
+
+    Written the first time this gate ran: it reported ``http.ts`` for reading
+    the process-wide API key, and the only mention was a comment saying the
+    file deliberately does not. A detector that matches prose is the
+    documented way a gate in this tree ends up grading a docstring --
+    ``check_gate_coverage.py`` counted five modules' docstrings as invocations
+    and reported full coverage over a gate no workflow ran.
+    """
+    return _TS_COMMENT_RE.sub(" ", source)
+
+
 def _tool_names_from_registry(source: str) -> set[str]:
     """Names a TypeScript tool module advertises, read from its metadata.
 
@@ -163,13 +183,16 @@ def violations(root: Path) -> list[str]:
 
     # per-request-credential
     if http_src is not None:
-        if re.search(r"\b(cfg|config)\.apiKey\b", http_src):
+        http_code = _code_only(http_src)
+        if re.search(r"\b(cfg|config)\.apiKey\b", http_code) or re.search(r"\.\.\.\s*cfg\b", http_code):
             found.append(
-                f"per-request-credential: {HTTP_MODULE} reads the process-wide API key. "
-                "Over HTTP the credential must come from the request's Authorization header, "
-                "or one tenant's question is answered with the server operator's access."
+                f"per-request-credential: {HTTP_MODULE} reads, or spreads, the process-wide config's "
+                "API key. Over HTTP the credential must come from the request's Authorization header, "
+                "or one tenant's question is answered with the server operator's access. A spread "
+                "counts: `{...cfg, apiKey: x}` is correct today and inherits the key the day somebody "
+                "reorders the literal."
             )
-        if "authorization" not in http_src.lower():
+        if "authorization" not in http_code.lower():
             found.append(
                 f"per-request-credential: {HTTP_MODULE} never reads an Authorization header, "
                 "so it cannot be deriving the caller's tenant from their credential."

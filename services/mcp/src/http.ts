@@ -202,10 +202,21 @@ export async function handleMcpRequest(
     log,
   };
 
-  // A per-request config carrying the caller's credential. The process-wide
-  // `cfg.apiKey` is not read here and must not be: the whole point of the
-  // HTTP transport is that the caller's own credential decides the tenant.
-  const requestCfg: ServerConfig = { ...cfg, apiKey: bearer.replace(/^Bearer\s+/i, "") };
+  // A per-request config carrying the caller's own credential.
+  //
+  // Written field by field rather than as a spread with an override. The
+  // spread form is correct today and becomes a credential fallback the day
+  // somebody reorders the literal, and the thing it would fall back to is
+  // the server operator's own key against somebody else's tenant. Listing
+  // the fields means the key can only ever be the one that arrived in this
+  // request; `scripts/check_mcp_over_http.py` refuses the spread too.
+  const requestCfg: ServerConfig = {
+    aisocUrl: cfg.aisocUrl,
+    apiKey: bearer.replace(/^Bearer\s+/i, ""),
+    timeoutMs: cfg.timeoutMs,
+    verbose: cfg.verbose,
+    userAgent: cfg.userAgent,
+  };
 
   const transport = new StreamableHTTPServerTransport({
     // Stateless. See the module header for why a session id would be worse.

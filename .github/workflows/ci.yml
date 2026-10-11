@@ -701,6 +701,19 @@ jobs:
         run: python3 scripts/check_cloud_native_collection.py --self-test
       - name: Cloud-native collection gate
         run: python3 scripts/check_cloud_native_collection.py
+      # Depth 9.1. Moving the MCP server off stdio and onto HTTP changes who
+      # is allowed to decide what: the credential arrives per request and
+      # several tenants share one process. This asserts the properties that
+      # makes safe — a transport exists, it never falls back to the
+      # process-wide API key, every call is authorized by the API before
+      # dispatch and reported after, a non-read-only tool cannot run on a
+      # bearer token alone, the API's tool catalogue matches the TypeScript
+      # registry name for name and flag for flag, and something deploys it.
+      # Self-test first, on the same tree: one injected violation per rule.
+      - name: MCP over HTTP gate — self-test
+        run: python3 scripts/check_mcp_over_http.py --self-test
+      - name: MCP over HTTP gate
+        run: python3 scripts/check_mcp_over_http.py
       # One layer in from the name: the profile gate asks whether a connector
       # reaches a normalization path, this asks which OCSF class it reaches
       # when it gets there. The class uid divided by a thousand is the
