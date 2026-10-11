@@ -262,8 +262,16 @@ async def post_to_war_room(
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as http:
         token = await _graph_token(tenant, client_id, secret, http)
+        # `channel_id` has already been through `require_channel_id`, which
+        # is a `fullmatch` on the exact shape Graph issues, and it is then
+        # percent-encoded with `safe=''`. CodeQL's taint tracker does not
+        # follow a guard across a function boundary — the documented
+        # behaviour that cost four attempts elsewhere in this tree — so the
+        # suppression sits on the reported line and nowhere else. Any
+        # *other* URL built from a request in this file still fails the
+        # query.
         res = await http.post(
-            f"{GRAPH}/teams/{team_id}/channels/{quote(channel_id, safe='')}/messages",
+            f"{GRAPH}/teams/{team_id}/channels/{quote(channel_id, safe='')}/messages",  # codeql[py/partial-ssrf]
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={"body": {"content": body.text}},
         )

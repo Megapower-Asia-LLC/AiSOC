@@ -195,6 +195,10 @@ class TestOpen:
         # Named, so the console can say which people were not added rather
         # than reporting a generic failure for a room that is open.
         assert [row["user"] for row in body["not_invited"]] == ["UGONE"]
+        # A reason code, not the API response: this list is rendered in the
+        # console, and `str(exc)` from the Slack SDK carries everything the
+        # API said.
+        assert body["not_invited"][0]["reason"] == "user_not_found"
 
     def test_someone_already_in_the_channel_counts_as_invited(self, monkeypatch) -> None:
         fake = FakeClient(invite_fails={"UALREADY1"})

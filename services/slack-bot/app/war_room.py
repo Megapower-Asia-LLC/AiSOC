@@ -204,7 +204,12 @@ async def open_war_room(
             if "already_in_channel" in str(exc):
                 invited.append(user)
                 continue
-            not_invited.append({"user": user, "reason": str(exc)[:200]})
+            # A reason code, not `str(exc)`. The Slack SDK's error carries
+            # the whole API response, and this list is returned to the
+            # caller and rendered in the console — so the same rule as the
+            # create failure above applies, and `py/stack-trace-exposure`
+            # was right to report the earlier form.
+            not_invited.append({"user": user, "reason": slack_reason(exc)})
 
     header = (
         f"*AiSOC case {body.case_number or body.case_id[:8]}* — {body.title or 'untitled'}\n"
