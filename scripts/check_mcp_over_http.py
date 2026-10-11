@@ -161,9 +161,7 @@ def _registry_sources(root: Path) -> str:
     if not tools_dir.is_dir():
         return ""
     return "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted(tools_dir.glob("*.ts"))
-        if path.name not in {"index.ts", "types.ts"}
+        path.read_text(encoding="utf-8") for path in sorted(tools_dir.glob("*.ts")) if path.name not in {"index.ts", "types.ts"}
     )
 
 
@@ -255,8 +253,7 @@ def violations(root: Path) -> list[str]:
             drifted = sorted(n for n in set(registry) & set(declared) if registry[n] != declared[n])
             if missing:
                 found.append(
-                    f"catalogue-parity: {CATALOGUE} does not know about {', '.join(missing)}. "
-                    "An unknown tool is authorised by nothing."
+                    f"catalogue-parity: {CATALOGUE} does not know about {', '.join(missing)}. An unknown tool is authorised by nothing."
                 )
             if extra:
                 found.append(f"catalogue-parity: {CATALOGUE} lists {', '.join(extra)}, which the registry does not export.")
@@ -305,10 +302,7 @@ def write_catalogue(root: Path) -> int:
             "services/mcp/src/tools/. Do not hand-edit: the same script fails CI "
             "when this file and the registry disagree."
         ),
-        "tools": [
-            {"name": name, "read_only": registry[name], "default_enabled": registry[name]}
-            for name in sorted(registry)
-        ],
+        "tools": [{"name": name, "read_only": registry[name], "default_enabled": registry[name]} for name in sorted(registry)],
     }
     path = root / CATALOGUE
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -334,7 +328,9 @@ def main() -> int:
         print(f"\n{len(problems)} problem(s).", file=sys.stderr)
         return 1
 
-    print("check_mcp_over_http: OK — streamable HTTP, per-request credentials, authorized and audited per call, deployed in compose and Helm")
+    print(
+        "check_mcp_over_http: OK — streamable HTTP, per-request credentials, authorized and audited per call, deployed in compose and Helm"
+    )
     return 0
 
 
@@ -383,7 +379,10 @@ def _rule_self_test() -> list[tuple[str, bool]]:
     checks.append(
         (
             "removing the HTTP transport is reported",
-            any("transport:" in v for v in _with_edit(root, {HTTP_MODULE: http_src.replace("StreamableHTTPServerTransport", "StdioServerTransport")})),
+            any(
+                "transport:" in v
+                for v in _with_edit(root, {HTTP_MODULE: http_src.replace("StreamableHTTPServerTransport", "StdioServerTransport")})
+            ),
         )
     )
     checks.append(
@@ -424,8 +423,7 @@ def _rule_self_test() -> list[tuple[str, bool]]:
     checks.append(
         (
             "a write tool relabelled read-only in the catalogue is reported",
-            catalogue != flipped
-            and any("catalogue-parity:" in v for v in _with_edit(root, {CATALOGUE: json.dumps(flipped, indent=2)})),
+            catalogue != flipped and any("catalogue-parity:" in v for v in _with_edit(root, {CATALOGUE: json.dumps(flipped, indent=2)})),
         )
     )
     checks.append(

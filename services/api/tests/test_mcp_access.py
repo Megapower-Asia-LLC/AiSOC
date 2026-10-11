@@ -108,9 +108,7 @@ async def client(session_factory):
     app = FastAPI()
     app.include_router(mcp_router, prefix="/api/v1")
 
-    state: dict[str, CurrentUser] = {
-        "user": _principal(user_id=ANALYST, scopes=["*"], key_prefix="aisoc_analyst")
-    }
+    state: dict[str, CurrentUser] = {"user": _principal(user_id=ANALYST, scopes=["*"], key_prefix="aisoc_analyst")}
 
     async def _db():
         async with session_factory() as session:
@@ -176,9 +174,7 @@ async def test_a_refused_call_is_recorded_too(client, session_factory) -> None:
 
 @pytest.mark.asyncio
 async def test_the_outcome_is_a_second_row_because_audit_rows_are_immutable(client, session_factory) -> None:
-    authorized = client.post(
-        "/api/v1/mcp/tool-calls/authorize", json={"tool_name": READ_TOOL, "arguments": {}}
-    ).json()
+    authorized = client.post("/api/v1/mcp/tool-calls/authorize", json={"tool_name": READ_TOOL, "arguments": {}}).json()
     res = client.post(
         f"/api/v1/mcp/tool-calls/{authorized['call_id']}/complete",
         json={"outcome": "success", "latency_ms": 42},
@@ -209,9 +205,7 @@ async def test_an_outcome_outside_the_closed_set_is_refused(client) -> None:
 
 @pytest.mark.asyncio
 async def test_a_tenant_can_turn_a_tool_off_against_a_wildcard_key(client, session_factory) -> None:
-    assert client.post("/api/v1/mcp/tool-calls/authorize", json={"tool_name": READ_TOOL, "arguments": {}}).json()[
-        "outcome"
-    ] == "allow"
+    assert client.post("/api/v1/mcp/tool-calls/authorize", json={"tool_name": READ_TOOL, "arguments": {}}).json()["outcome"] == "allow"
 
     off = client.put(f"/api/v1/mcp/tools/{READ_TOOL}", json={"enabled": False})
     assert off.status_code == 200, off.text
@@ -232,7 +226,7 @@ async def test_a_tenant_can_turn_a_tool_off_against_a_wildcard_key(client, sessi
 
 @pytest.mark.asyncio
 async def test_no_row_means_default_not_denied_and_the_console_can_tell(client) -> None:
-    """"Nobody decided" and "somebody turned it off" must not render the same."""
+    """ "Nobody decided" and "somebody turned it off" must not render the same."""
     listed = {entry["name"]: entry for entry in client.get("/api/v1/mcp/tools").json()}
     assert listed[READ_TOOL]["source"] == "default"
     assert listed[READ_TOOL]["enabled"] is True
@@ -323,16 +317,22 @@ async def test_an_approval_is_spent_by_the_call_it_authorised(client) -> None:
         user_id=ANALYST, scopes=["*"], key_prefix="aisoc_analyst"
     )
 
-    assert client.post(
-        "/api/v1/mcp/tool-calls/authorize",
-        json={"tool_name": WRITE_TOOL, "arguments": {"case_id": "case-a"}},
-    ).json()["outcome"] == "allow"
+    assert (
+        client.post(
+            "/api/v1/mcp/tool-calls/authorize",
+            json={"tool_name": WRITE_TOOL, "arguments": {"case_id": "case-a"}},
+        ).json()["outcome"]
+        == "allow"
+    )
     # Second use of the same approval: a grant that outlives the call it was
     # given for is a permission, and nobody granted a permission.
-    assert client.post(
-        "/api/v1/mcp/tool-calls/authorize",
-        json={"tool_name": WRITE_TOOL, "arguments": {"case_id": "case-a"}},
-    ).json()["outcome"] == "approval_required"
+    assert (
+        client.post(
+            "/api/v1/mcp/tool-calls/authorize",
+            json={"tool_name": WRITE_TOOL, "arguments": {"case_id": "case-a"}},
+        ).json()["outcome"]
+        == "approval_required"
+    )
 
 
 @pytest.mark.asyncio
@@ -386,21 +386,20 @@ async def test_an_expired_approval_is_not_a_live_one(client, session_factory) ->
     client.post(f"/api/v1/mcp/approvals/{pending['approval_id']}/decide", json={"approve": True})
 
     async with session_factory() as session:
-        row = (
-            await session.execute(
-                select(McpToolApproval).where(McpToolApproval.id == uuid.UUID(pending["approval_id"]))
-            )
-        ).scalar_one()
+        row = (await session.execute(select(McpToolApproval).where(McpToolApproval.id == uuid.UUID(pending["approval_id"])))).scalar_one()
         row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.commit()
 
     client.state_holder["user"] = _principal(  # type: ignore[attr-defined]
         user_id=ANALYST, scopes=["*"], key_prefix="aisoc_analyst"
     )
-    assert client.post(
-        "/api/v1/mcp/tool-calls/authorize",
-        json={"tool_name": WRITE_TOOL, "arguments": {"case_id": "case-a"}},
-    ).json()["outcome"] == "approval_required"
+    assert (
+        client.post(
+            "/api/v1/mcp/tool-calls/authorize",
+            json={"tool_name": WRITE_TOOL, "arguments": {"case_id": "case-a"}},
+        ).json()["outcome"]
+        == "approval_required"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -431,8 +430,7 @@ def test_a_permission_is_one_a_key_can_actually_be_minted_with() -> None:
 
     policy.tool_catalogue.cache_clear()
     missing = sorted(
-        {spec.required_permission for spec in policy.tool_catalogue().values() if spec.required_permission}
-        - set(VALID_SCOPES)
+        {spec.required_permission for spec in policy.tool_catalogue().values() if spec.required_permission} - set(VALID_SCOPES)
     )
     assert missing == [], f"not mintable into an API key: {missing}"
 

@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS aisoc_mcp_tool_grants (
 
     -- Matches `name` in app/data/mcp_tool_catalog.json. Not an FK: the
     -- catalogue is a generated file held in parity with the TypeScript
-    -- registry by scripts/check_mcp_tool_catalog.py, and a row for a tool
+    -- registry by scripts/check_mcp_over_http.py, and a row for a tool
     -- that has since been removed should survive as history rather than
     -- block the removal.
     tool_name       TEXT        NOT NULL,

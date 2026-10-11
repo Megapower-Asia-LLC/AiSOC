@@ -75,9 +75,7 @@ router = APIRouter(prefix="/mcp", tags=["mcp"])
 #: Outcomes the MCP server may report. Closed on purpose: a free-text
 #: outcome column is one nobody can aggregate, and "success" spelled three
 #: ways is how a usage meter reads zero.
-COMPLETION_OUTCOMES: frozenset[str] = frozenset(
-    {"success", "error", "invalid_arguments", "unknown_tool", "denied"}
-)
+COMPLETION_OUTCOMES: frozenset[str] = frozenset({"success", "error", "invalid_arguments", "unknown_tool", "denied"})
 
 
 # ---------------------------------------------------------------------------

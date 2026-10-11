@@ -170,9 +170,7 @@ async def effective_tools(db: AsyncSession, tenant_id: uuid.UUID) -> list[dict[s
     return out
 
 
-async def _live_approval(
-    db: AsyncSession, tenant_id: uuid.UUID, tool_name: str, fingerprint: str
-) -> McpToolApproval | None:
+async def _live_approval(db: AsyncSession, tenant_id: uuid.UUID, tool_name: str, fingerprint: str) -> McpToolApproval | None:
     """An approved, unexpired, unspent approval for exactly this call."""
     now = datetime.now(UTC)
     stmt = (
