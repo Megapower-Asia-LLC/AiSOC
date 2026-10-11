@@ -321,6 +321,39 @@ async def passkey_register_finish(
 # because the thing they guard is a console sign-in, not a passkey.
 
 
+def _allow_credentials(rows: Any) -> list[Any]:
+    """Stored credential rows as the descriptors the library requires.
+
+    `generate_authentication_options` accepts a list of plain dicts
+    without complaining, and `options_to_json` then reads `.id` off each
+    one and raises `AttributeError` — **past every handler**, so the
+    route answers an unhandled 500. Both call sites passed dicts, which
+    means `POST /passkeys/authenticate/begin` crashed for any user who
+    actually had a credential: the dict path is only reached when an
+    email hint resolves to somebody with one, so the failure was
+    invisible to a request that named nobody.
+
+    Transports are enum members, not strings, for the same reason — and
+    an unrecognised one is **dropped rather than passed**. A transport
+    this library version has no member for is a hint about which
+    physical interface to try; losing the hint costs a prompt the user
+    can dismiss, while raising costs them the sign-in.
+    """
+    from webauthn.helpers.structs import AuthenticatorTransport, PublicKeyCredentialDescriptor  # noqa: PLC0415
+
+    known = {t.value: t for t in AuthenticatorTransport}
+    descriptors = []
+    for row in rows:
+        transports = [known[t] for t in (row.transports or []) if t in known]
+        descriptors.append(
+            PublicKeyCredentialDescriptor(
+                id=_b64url_decode(row.credential_id),
+                transports=transports or None,
+            )
+        )
+    return descriptors
+
+
 async def webauthn_second_factor_options(db: Any, *, user_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, Any] | None:
     """Assertion options restricted to *user_id*'s own credentials.
 
@@ -352,9 +385,7 @@ async def webauthn_second_factor_options(db: Any, *, user_id: uuid.UUID, tenant_
 
     options = webauthn.generate_authentication_options(
         rp_id=settings.PASSKEY_RP_ID,
-        allow_credentials=[
-            {"id": _b64url_decode(c.credential_id), "type": "public-key", "transports": c.transports or None} for c in cred_rows
-        ],
+        allow_credentials=_allow_credentials(cred_rows),
     )
     encoded_challenge = await _store_challenge(
         db,
@@ -362,6 +393,11 @@ async def webauthn_second_factor_options(db: Any, *, user_id: uuid.UUID, tenant_
         challenge=options.challenge,
         user_id=user_id,
         tenant_id=tenant_id,
+        # No hint. The hint exists so a discoverable sign-in can be
+        # narrowed to one address; here the user is already known from a
+        # signed challenge token, and writing their address into a row
+        # that does not need it is one more place it can be read from.
+        email_hint=None,
     )
     return {"publicKey": json.loads(webauthn.options_to_json(options)), "challenge": encoded_challenge}
 
@@ -439,7 +475,7 @@ async def passkey_authenticate_begin(
     """
     webauthn, _ = _import_webauthn()
 
-    allow_credentials: list[dict[str, Any]] = []
+    allow_credentials: list[Any] = []
     target_user: User | None = None
 
     if body.email:
@@ -465,14 +501,7 @@ async def passkey_authenticate_begin(
                 .scalars()
                 .all()
             )
-            allow_credentials = [
-                {
-                    "id": _b64url_decode(c.credential_id),
-                    "type": "public-key",
-                    "transports": c.transports or None,
-                }
-                for c in cred_rows
-            ]
+            allow_credentials = _allow_credentials(cred_rows)
 
     options = webauthn.generate_authentication_options(
         rp_id=settings.PASSKEY_RP_ID,

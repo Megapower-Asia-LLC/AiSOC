@@ -40,6 +40,7 @@ passing for the wrong reason:
 
 from __future__ import annotations
 
+import base64
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -629,9 +630,12 @@ class TestWebAuthnIsASecondFactor:
         assert "access_token" not in replayed.text
 
     async def test_an_access_token_is_not_a_webauthn_challenge(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
-        user = await _user(db)
-        await _register_credential(db, user)
-        access_token = (await _password_login(app_client, user)).json()["access_token"]
+        # The session belongs to a user with no factor, because a user who
+        # *has* one is answered 202 and never holds an access token to
+        # misuse. That is the new enforcement working, and it would
+        # otherwise make this control untestable through the front door.
+        holder = await _user(db)
+        access_token = (await _password_login(app_client, holder)).json()["access_token"]
 
         response = await app_client.post(
             "/api/v1/auth/mfa/webauthn/challenge",
@@ -653,7 +657,12 @@ async def _register_credential(session: AsyncSession, user: dict, *, enrolled_vi
     import sqlalchemy
 
     await session.rollback()
-    credential_id = f"cred-{uuid.uuid4().hex}"
+    # Base64url, because that is what `_b64url_encode` stores and what
+    # every read path decodes. A friendlier string like `cred-<hex>` makes
+    # the fixture *less* capable than the real thing — it raises in
+    # `_b64url_decode` before reaching the behaviour under test, which is
+    # a harness failure wearing the costume of a product defect.
+    credential_id = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("=")
     await session.execute(
         sqlalchemy.text(
             "INSERT INTO passkey_credentials (tenant_id, user_id, credential_id, public_key, device_name, enrolled_via) "
