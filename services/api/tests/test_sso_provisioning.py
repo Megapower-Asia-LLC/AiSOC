@@ -150,9 +150,7 @@ class TestTheHandlersUseIt:
         """Depth 8.1. The callback lands on the second-factor page with a
         challenge, and **no tokens at all** — a fragment that carried both
         would hand over the session the challenge exists to withhold."""
-        fragment = saml._session_fragment(
-            {"mfa_required": True, "mfa_token": "challenge-token", "methods": ["totp", "webauthn"]}
-        )
+        fragment = saml._session_fragment({"mfa_required": True, "mfa_token": "challenge-token", "methods": ["totp", "webauthn"]})
 
         assert "access_token" not in fragment
         assert "refresh_token" not in fragment
