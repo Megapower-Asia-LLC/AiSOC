@@ -85,7 +85,7 @@ COMPLETION_OUTCOMES: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 
 
-class AuthorizeRequest(BaseModel):
+class McpAuthorizeRequest(BaseModel):
     """What ``services/mcp`` asks before dispatching.
 
     ``arguments`` is sent in full rather than as key names because the
@@ -98,7 +98,7 @@ class AuthorizeRequest(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
-class AuthorizeResponse(BaseModel):
+class McpAuthorizeResponse(BaseModel):
     call_id: str
     outcome: str
     reason: str
@@ -106,13 +106,13 @@ class AuthorizeResponse(BaseModel):
     required_permission: str = ""
 
 
-class CompleteRequest(BaseModel):
+class McpCompleteRequest(BaseModel):
     outcome: str
     latency_ms: int = Field(ge=0, le=86_400_000)
     error_kind: str | None = Field(default=None, max_length=120)
 
 
-class ToolStateModel(BaseModel):
+class McpToolStateModel(BaseModel):
     name: str
     read_only: bool
     enabled: bool
@@ -125,11 +125,11 @@ class ToolStateModel(BaseModel):
     decided_by: str
 
 
-class ToolGrantRequest(BaseModel):
+class McpToolGrantRequest(BaseModel):
     enabled: bool
 
 
-class ApprovalModel(BaseModel):
+class McpApprovalModel(BaseModel):
     id: str
     tool_name: str
     argument_fingerprint: str
@@ -141,7 +141,7 @@ class ApprovalModel(BaseModel):
     created_at: datetime
 
 
-class ApprovalDecisionRequest(BaseModel):
+class McpApprovalDecisionRequest(BaseModel):
     approve: bool
     note: str = Field(default="", max_length=500)
 
@@ -151,13 +151,13 @@ class ApprovalDecisionRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/tool-calls/authorize", response_model=AuthorizeResponse)
+@router.post("/tool-calls/authorize", response_model=McpAuthorizeResponse)
 async def authorize_tool_call(
-    body: AuthorizeRequest,
+    body: McpAuthorizeRequest,
     request: Request,
     db: TenantDBSession,
     current_user: AuthUser,
-) -> AuthorizeResponse:
+) -> McpAuthorizeResponse:
     """Decide one tool call and record the decision.
 
     No ``require_permission`` dependency: the permission a call needs depends
@@ -217,7 +217,7 @@ async def authorize_tool_call(
     )
     await db.commit()
 
-    return AuthorizeResponse(
+    return McpAuthorizeResponse(
         call_id=str(call_id),
         outcome=decision.outcome,
         reason=decision.reason,
@@ -229,7 +229,7 @@ async def authorize_tool_call(
 @router.post("/tool-calls/{call_id}/complete", status_code=status.HTTP_204_NO_CONTENT)
 async def complete_tool_call(
     call_id: uuid.UUID,
-    body: CompleteRequest,
+    body: McpCompleteRequest,
     request: Request,
     db: TenantDBSession,
     current_user: AuthUser,
@@ -264,24 +264,24 @@ async def complete_tool_call(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tools", response_model=list[ToolStateModel])
+@router.get("/tools", response_model=list[McpToolStateModel])
 async def list_tools(
     db: TenantDBSession,
     current_user: AuthUser,
     _: Annotated[None, Depends(require_permission("settings:read"))],
-) -> list[ToolStateModel]:
-    return [ToolStateModel(**row) for row in await effective_tools(db, current_user.tenant_id)]
+) -> list[McpToolStateModel]:
+    return [McpToolStateModel(**row) for row in await effective_tools(db, current_user.tenant_id)]
 
 
-@router.put("/tools/{tool_name}", response_model=ToolStateModel)
+@router.put("/tools/{tool_name}", response_model=McpToolStateModel)
 async def set_tool_grant(
     tool_name: str,
-    body: ToolGrantRequest,
+    body: McpToolGrantRequest,
     request: Request,
     db: TenantDBSession,
     current_user: AuthUser,
     _: Annotated[None, Depends(require_permission("settings:write"))],
-) -> ToolStateModel:
+) -> McpToolStateModel:
     if tool_name not in tool_catalogue():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -324,16 +324,16 @@ async def set_tool_grant(
     await db.commit()
 
     states = {entry["name"]: entry for entry in await effective_tools(db, current_user.tenant_id)}
-    return ToolStateModel(**states[tool_name])
+    return McpToolStateModel(**states[tool_name])
 
 
-@router.get("/approvals", response_model=list[ApprovalModel])
+@router.get("/approvals", response_model=list[McpApprovalModel])
 async def list_approvals(
     db: TenantDBSession,
     current_user: AuthUser,
     _: Annotated[None, Depends(require_permission("settings:read"))],
     state: str = "pending",
-) -> list[ApprovalModel]:
+) -> list[McpApprovalModel]:
     stmt = (
         select(McpToolApproval)
         .where(McpToolApproval.tenant_id == current_user.tenant_id)
@@ -344,7 +344,7 @@ async def list_approvals(
         stmt = stmt.where(McpToolApproval.state == state)
     rows = (await db.execute(stmt)).scalars().all()
     return [
-        ApprovalModel(
+        McpApprovalModel(
             id=str(row.id),
             tool_name=row.tool_name,
             argument_fingerprint=row.argument_fingerprint,
@@ -359,15 +359,15 @@ async def list_approvals(
     ]
 
 
-@router.post("/approvals/{approval_id}/decide", response_model=ApprovalModel)
+@router.post("/approvals/{approval_id}/decide", response_model=McpApprovalModel)
 async def decide_approval(
     approval_id: uuid.UUID,
-    body: ApprovalDecisionRequest,
+    body: McpApprovalDecisionRequest,
     request: Request,
     db: TenantDBSession,
     current_user: AuthUser,
     _: Annotated[None, Depends(require_permission("settings:write"))],
-) -> ApprovalModel:
+) -> McpApprovalModel:
     row = (
         await db.execute(
             select(McpToolApproval).where(
@@ -414,7 +414,7 @@ async def decide_approval(
     await db.commit()
     await db.refresh(row)
 
-    return ApprovalModel(
+    return McpApprovalModel(
         id=str(row.id),
         tool_name=row.tool_name,
         argument_fingerprint=row.argument_fingerprint,
