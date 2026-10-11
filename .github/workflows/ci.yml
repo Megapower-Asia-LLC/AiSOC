@@ -701,6 +701,19 @@ jobs:
         run: python3 scripts/check_cloud_native_collection.py --self-test
       - name: Cloud-native collection gate
         run: python3 scripts/check_cloud_native_collection.py
+      # Depth 6.1. The AI estate is a stored value a console page reads, and
+      # the failure that costs most here is not an absent feature but a
+      # present one nothing writes: the page renders "no AI estate" to a
+      # tenant that has one, which is the single most dangerous false
+      # statement it could make. The WRITER rule is therefore the
+      # load-bearing one — it requires the fusion consumer to call the
+      # recorder on the raw-events branch *and* the service to construct it
+      # at startup, because an unconstructed recorder is a None that every
+      # call site skips in silence.
+      - name: AI asset inventory gate — self-test
+        run: python3 scripts/check_ai_asset_inventory.py --self-test
+      - name: AI asset inventory gate
+        run: python3 scripts/check_ai_asset_inventory.py
       # One layer in from the name: the profile gate asks whether a connector
       # reaches a normalization path, this asks which OCSF class it reaches
       # when it gets there. The class uid divided by a thousand is the
