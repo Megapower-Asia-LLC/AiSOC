@@ -344,17 +344,97 @@ invented fields on the first run of the gate.
 ## Phase 4: Collection and scale
 
 - [ ] **4.1** Cloud-native collection (S3+SQS org trail, Pub/Sub, Event Hubs)
-- [~] **4.2** Standard inputs (syslog, OTLP, Kafka, TAXII 2.1). **One of
-  four bullets closed.** The syslog listener is done: `services/ingest`
+- [x] **4.2** Standard inputs (syslog, OTLP, Kafka, TAXII 2.1). **All four
+  bullets closed.** The syslog bullet landed earlier (its entry is below
+  and is unchanged); the three that were open are done here.
+
+  **OTLP logs.** `POST /v1/logs` in `services/ingest/internal/otlp`,
+  reading `ExportLogsServiceRequest` in both encodings the specification
+  defines and gzip bodies, because real collectors emit both and a
+  receiver that reads one of them is a receiver half the estates cannot
+  use. The path is not ours to choose: an exporter appends `/v1/logs` to
+  its endpoint. The partial-success contract is implemented rather than
+  skipped — a partly unprojectable batch answers 200 with
+  `rejected_log_records`, and a publish failure answers 503 with
+  `Retry-After`, because a blanket 200 tells the collector records it
+  never delivered have landed and a 400 makes it discard them.
+
+  **Kafka input.** `services/ingest/internal/kafkainput`, one source per
+  tenant, the tenant from a minted token and from nothing in the record.
+  The failure handling is the whole of it, and it is the shared
+  `streamhealth` table rather than a second copy: a rebalance is
+  transient and the loop continues, a `TopicAuthorizationFailed` stops it
+  naming the operator action, and an undecodable record is poison —
+  skipped *and* committed, because a poison record that is not committed
+  is re-read forever. A publish failure is the one case that must not
+  commit, Kafka being the only input here that can withhold an
+  acknowledgement.
+
+  **TAXII 2.1.** A real server at `/api/v1/taxii2/` over
+  `threat_intel_iocs` (migration `110`), serving discovery, API root,
+  collections, objects, manifest and `added_after` pagination. A
+  collection is a filtered view, never a copy. The API root is a fixed
+  string because a tenant in the path is a segment any caller can retype,
+  on an endpoint whose purpose is to be pointed at by a third party.
+  Writes are refused with a 403 that names the posture.
+
+  **The refactor that came first**, because it decides whether the Kafka
+  input is a second copy of a table or a second user of one: the
+  permanent/transient/poison classifier, the stuck-after escalation and
+  the kafka-go reader-error bridge were private to `graph_ws`. They moved
+  to `services/ingest/internal/streamhealth`, parameterised by the two
+  genuinely per-subsystem things — the published metric stem, which keeps
+  its name, and the environment variables the advice tells an operator to
+  edit. `graph_ws` keeps its API through aliases and its 555-line test
+  passes unchanged.
+
+  Gated by `scripts/check_standard_inputs.py` (self-test: nineteen
+  injected violations, one per rule, plus a refusal on both an absent and
+  an empty tree) wired into `ci.yml :: python-lint`, and by
+  `taxii-live.yml` against real Postgres. **49 new Go tests** (27 OTLP,
+  22 Kafka input), **37 Python projection tests**, **15 live TAXII
+  tests**. Three claim rows added; the matrix reads 305 rows, 302 GATED.
+
+  **Four defects found by writing this, recorded rather than quietly
+  fixed.** A well-formed empty OTLP batch answered 400, because an
+  `ExportLogsServiceRequest` with no fields set encodes to zero protobuf
+  bytes and the body reader called that unreadable. The partial-success
+  path had no reachable trigger, so the contract was a mechanism with no
+  caller; a record carrying nothing of its own is now refused and
+  counted. `otlp-logs` was absent from `ALLOWED_TEMPLATE_IDS`, so no
+  operator could mint a token the receiver accepts — the receiver, its
+  route, its template and its readiness entry were all correct and the
+  feature was unusable. And the gate's own media-type rule matched the
+  error message that names JSON rather than the case arm that accepts it,
+  so a receiver that had stopped reading JSON entirely passed.
+
+  **Three verification gaps, stated rather than implied.** No live
+  OpenTelemetry Collector, no live Kafka broker and no third-party TAXII
+  client has been exercised against any of this. The OTLP bodies are
+  built with the vendor's own protobuf types, the Kafka loop is driven
+  through a scripted reader so what is proven is the failure handling
+  rather than kafka-go's wire protocol, and TAXII conformance is asserted
+  against the specification's shapes rather than against a client's
+  behaviour.
+
+  **One thing found and left.**
+  `GET /api/v1/threatintel/stix/taxii/collections` is a demo-gated stub
+  returning a fixed sample list under the description "TAXII 2.1
+  collections for server compatibility". Removing a published operation
+  is a breaking OpenAPI change, so it stays; its docstring now says
+  plainly that it is not the server, and so does the new page.
+- [~] **4.2 (historical)** The syslog bullet, closed earlier. `services/ingest`
   accepts UDP and TCP and reads RFC 5424, RFC 3164, CEF and LEEF, with the
   tenant taken from a minted token because syslog carries nothing a sender
   does not control. Gated by `scripts/check_syslog_listener.py` (self-test:
   one injected violation per rule, including each of the three Go syntaxes
   a tenant could leak through) wired into `ci.yml :: python-lint`. 33 new
-  Go tests. **Three bullets are open and were not attempted**, named here
-  rather than left to be inferred: an OTLP logs receiver, a Kafka input for
-  customer topics, and a TAXII 2.1 server over the tenant IOC store. Each
-  reproduces trivially — nothing in the tree implements any of them.
+  Go tests. At the time this was written three bullets were open and were
+  named here rather than left to be inferred: an OTLP logs receiver, a
+  Kafka input for customer topics, and a TAXII 2.1 server over the tenant
+  IOC store. All three are now closed; see the `[x]` entry above. This
+  paragraph is kept as the record of what the syslog bullet alone
+  covered, not as a live statement of what is missing.
 - [x] **4.1** Cloud-native collection (S3+SQS org trail, Pub/Sub, Event Hubs).
   Three connectors (`aws_cloudtrail_s3`, `gcp_pubsub`, `azure_event_hubs`),
   each resumable and each declaring a bounded `collection_budget` that says
@@ -451,5 +531,6 @@ invented fields on the first run of the gate.
 | 2026-10-07 | 0.3 | `make up` and `make smoke` (10/10) pass. Injection suite and load-harness baselines committed. `make up-full` deferred (D2) and hosted model rows blocked (D3). Fixing D1 was a precondition for the load-harness baseline. |
 | 2026-10-09 | 3.3 | Identity privilege (18 rules) and a per-tenant first-seen store (2) built; 5 rules were never unreachable (gate operator drift, D9); 18 retired with a reason (D10). `MAX_UNREACHABLE` 45 → 2, the two remaining both needing the 3.4 baseline. Two matcher operators three shipped rules already used were implemented. |
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
+| 2026-10-11 | 4.2 | Reproduced: `check_standard_inputs.py` against the pre-fix tree reported no OTLP package, no Kafka input and no TAXII server — the only TAXII-shaped route being a demo-gated sample list. Built all three, after moving the consumer-health classifier out of `graph_ws` into `streamhealth` so the new Kafka consumer shares the table rather than copying it. Negative controls recorded in the PR: a timestamp-only TAXII cursor loses an indicator in the single-row pagination walk (measured — 3 of 4), and nineteen gate injections each go red. Writing it found four defects, including an OTLP template nobody could mint a token for and a gate rule that read an error message instead of the behaviour. Ingest Go suite green; api projection suite 37; live TAXII suite 15. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |
