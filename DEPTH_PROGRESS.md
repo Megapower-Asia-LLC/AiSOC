@@ -58,10 +58,19 @@ is written. Next free at capture: migration `095`, ADR `0010`
 | ADR `0010` | 2.7 — entity and session context in CORE | **landed**, `docs/decisions/0010-entity-and-session-context-in-core.md`, accepted |
 | migration `102` | 2.4 — `102_sessions.sql` | claimed |
 | migration `103` | 2.5 — `103_posture_snapshots.sql` | claimed |
+| migration `104` | 5.4 — `104_playbook_verification.sql` | claimed on `depth/5.4-5.6-lane-c`, recorded here because the lane took it without a row |
+| migration `105` | 6.1 — `105_ai_assets.sql` | claimed |
+| migration `106` | 6.4 — `106_ai_agent_identities.sql` | claimed |
+| ADR `0011` | 6.6 — AI containment arms off by default, and the rollback a kill-switch needs | claimed |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
 so `095`--`101` were taken by sibling lanes between the capture above and this
 claim; re-read `services/api/migrations/` rather than trusting the capture row.
+
+The same is true of this table: `104` was already written on a sibling lane's
+branch with no row here, which is how two lanes collide. Phase 6's numbers
+above were picked after reading `services/api/migrations/` on `main` **and**
+`git ls-tree` over every `origin/*` branch, not from the row above.
 
 ## Phase 0: Kickoff
 
