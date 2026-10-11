@@ -422,7 +422,38 @@ invented fields on the first run of the gate.
 - [ ] **9.3** Case depth (parity 5.6 remainder)
 - [ ] **9.4** War rooms
 - [ ] **9.5** Hunt to report
-- [ ] **9.6** Native responder
+- [~] **9.6** Native responder. **Two of three bullets closed; the third is
+  maintainer-blocked and the block is in the product, not in this note.**
+  *Device build:* `mobile.yml` gains an Android job that runs
+  `expo prebuild` and Gradle `assembleRelease`, asserts the APK really
+  contains `classes.dex` (a green build that produced nothing is a shape
+  this repository has shipped) and uploads it — an APK that installs on a
+  handset, not store-signable, which needs a Google Play account. iOS
+  compiles for the **simulator** on a macOS runner, which proves the native
+  project configures and builds; a device build needs an Apple developer
+  account. *Voice:* `apps/mobile/src/lib/voice.ts` takes a recogniser that
+  returns a **string**, so no audio type appears anywhere in the module and
+  there is nothing for a later edit to upload; a device with no offline
+  model is **refused** rather than silently using the platform's cloud
+  recogniser; the transcript is shown before it is sent, because on-device
+  recognition is worse and a security question misheard is a question
+  answered about the wrong host. Gated by `scripts/check_no_audio_egress.py`
+  (self-test: six checks, including that a *comment* saying the app does not
+  record is not mistaken for the app recording), wired into both `ci.yml`
+  unconditionally and `mobile.yml`. *Push:* `services/realtime` sent every
+  subscription through `web-push`, which signs a VAPID JWT and POSTs to the
+  endpoint **URL** — a bare APNs device token is not a URL, so a
+  subscription saved by the mobile app was accepted, counted and failed on
+  every send, which is the worst of the three states because the count
+  looked healthy. `native-push.ts` speaks APNs and FCM HTTP v1 and
+  distinguishes delivered, device-gone and **not-configured**, the last
+  naming each missing variable and never reporting a delivery. 19 new tests
+  (11 realtime, 8 mobile); mobile suite 34 → 42. **Open and stated:** no
+  APNs `.p8` and no FCM service account exist here, so nothing has been
+  delivered to a real handset, and no microphone has exercised the voice
+  path. The README's claim table was inverted rather than deleted — it now
+  has to keep saying that an iPhone *device* build and a real-handset push
+  have **not** happened, and `mobile.yml` fails if it stops.
 
 ## Phase 10: Close the books
 
@@ -433,6 +464,7 @@ invented fields on the first run of the gate.
 
 | Date | Item | What happened |
 |---|---|---|
+| 2026-10-11 | 9.6 | Reproduced: `grep -c 'eas build|gradlew|xcodebuild|expo prebuild' .github/workflows/mobile.yml` returned **0** and the workflow actively *required* the README to say no device build had happened; `grep -rni 'speech|voice' apps/mobile/src apps/mobile/app` returned **0**; and `services/realtime/src/push.ts` sent every record through `webpush.sendNotification`, so a native token was accepted and could never be delivered to. Built the Android APK job, the simulator job, the on-device voice module and the APNs/FCM sender. Negative control: removing the on-device refusal so the cloud recogniser could be used fails two of the eight voice tests. The README guard was inverted rather than deleted — "we added a build so the honesty check is no longer needed" is how an ungated claim comes back. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |
 | 2026-10-09 | 4.3 | Reproduced: `check_retention_window.py` on the unmodified tree reported six problems — the lake deleting at 90 days against a 3,650-day cap, no `MODIFY TTL` migration, tiering deleting at 90, and the purge worker calling neither `alerts_under_legal_hold` nor `may_purge` and reporting nothing withheld. Fixed all but the cold-query bullet. Four negative controls recorded in the PR, including the positive control: a purge stuck closed withholds every tenant and fails four of the eight hold tests, which is the only thing that separates a working control from commendable caution. One pre-existing test (`test_storage_tiering.py`) pinned the 90-day tiering DELETE and now reads the shared constant; `test_retention_worker.py`'s session double could not answer the new holds query, so the worker failed closed and five of its cases failed — the double was taught the query rather than the fail-closed behaviour relaxed. |
