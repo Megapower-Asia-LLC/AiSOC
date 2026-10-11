@@ -58,10 +58,17 @@ is written. Next free at capture: migration `095`, ADR `0010`
 | ADR `0010` | 2.7 — entity and session context in CORE | **landed**, `docs/decisions/0010-entity-and-session-context-in-core.md`, accepted |
 | migration `102` | 2.4 — `102_sessions.sql` | claimed |
 | migration `103` | 2.5 — `103_posture_snapshots.sql` | claimed |
+| migration `104` | 7.1 — `104_phishing_campaigns.sql` | claimed |
+| migration `105` | 7.2 — `105_phishing_message_analysis.sql` | claimed |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
 so `095`--`101` were taken by sibling lanes between the capture above and this
 claim; re-read `services/api/migrations/` rather than trusting the capture row.
+
+Phase 7 re-read `services/api/migrations/` on 2026-10-11 before claiming: the
+highest on `main` was still `101_audit_immutable_nullify.sql`, and `102`/`103`
+were held by the rows above, so `104` and `105` were the first free pair. 7.3
+is detection content and claims no number.
 
 ## Phase 0: Kickoff
 
