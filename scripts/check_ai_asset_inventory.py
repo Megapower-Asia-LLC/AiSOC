@@ -50,7 +50,17 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# `scripts/` is on sys.path when this file runs as a program, but not when a
+# test loads it by path with importlib. gate_toolkit sits beside it either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from gate_toolkit import repo_root  # noqa: E402
+
+# Resolved through `git rev-parse`, not from `__file__`. Two levels above this
+# script is whatever happens to be there -- `scripts/` copied into an empty
+# repository is exactly that, and a gate that reads it reports a tree clean
+# without ever seeing the product. `check_gate_contract.py` refuses it.
+REPO_ROOT = repo_root()
 
 #: The table the whole item hangs on.
 TABLE = "aisoc_ai_assets"
