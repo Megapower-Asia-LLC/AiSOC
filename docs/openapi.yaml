@@ -246,6 +246,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/mfa/webauthn/challenge:
+    post:
+      tags:
+      - auth
+      - mfa
+      summary: Webauthn Challenge
+      description: 'Assertion options for a user part-way through a sign-in.
+
+
+        The user is taken from the signed `mfa_token`, never from the body:
+
+        an endpoint that let a caller name whose credentials to list would
+
+        answer "does this address hold a passkey" to anybody who asked.'
+      operationId: webauthn_challenge_api_v1_auth_mfa_webauthn_challenge_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebAuthnChallengeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Webauthn Challenge Api V1 Auth Mfa Webauthn Challenge
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/mfa/webauthn/verify:
+    post:
+      tags:
+      - auth
+      - mfa
+      summary: Webauthn Verify
+      description: 'Complete a sign-in with a security key or passkey.
+
+
+        The credential must belong to the user the challenge names. Without
+
+        that check anybody holding **any** enrolled authenticator could
+
+        discharge **anybody''s** challenge, which is the whole control.'
+      operationId: webauthn_verify_api_v1_auth_mfa_webauthn_verify_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebAuthnVerifyRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokens'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/auth/mfa:
     delete:
       tags:
@@ -358,7 +429,20 @@ paths:
 
         when an administrator asks for one, so a tenant that has never visited
 
-        this endpoint has no row and is not enforced.'
+        this endpoint has no row and is not enforced.
+
+
+        `require_for_roles` names roles that must hold a factor even when the
+
+        tenant-wide switch is off. Every name is checked against
+
+        `ROLE_PERMISSIONS` before it is stored: a typo would otherwise be
+
+        accepted, match nobody''s role, and leave an administrator looking at
+
+        a policy page that says a role is enforced while it is not — the
+
+        quiet direction, and the one worth refusing loudly.'
       operationId: put_policy_api_v1_auth_mfa_policy_put
       requestBody:
         content:
@@ -30304,6 +30388,11 @@ components:
         require_totp:
           type: boolean
           title: Require Totp
+        require_for_roles:
+          items:
+            type: string
+          type: array
+          title: Require For Roles
       type: object
       required:
       - require_totp
@@ -30319,6 +30408,23 @@ components:
         recovery_codes_remaining:
           type: integer
           title: Recovery Codes Remaining
+        has_totp:
+          type: boolean
+          title: Has Totp
+          default: false
+        has_webauthn:
+          type: boolean
+          title: Has Webauthn
+          default: false
+        require_for_roles:
+          items:
+            type: string
+          type: array
+          title: Require For Roles
+        required_for_me:
+          type: boolean
+          title: Required For Me
+          default: false
       type: object
       required:
       - enrolled
@@ -38921,6 +39027,33 @@ components:
       required:
       - is_watchlisted
       title: WatchlistUpdate
+    WebAuthnChallengeRequest:
+      properties:
+        mfa_token:
+          type: string
+          title: Mfa Token
+      type: object
+      required:
+      - mfa_token
+      title: WebAuthnChallengeRequest
+    WebAuthnVerifyRequest:
+      properties:
+        mfa_token:
+          type: string
+          title: Mfa Token
+        challenge:
+          type: string
+          title: Challenge
+        credential:
+          additionalProperties: true
+          type: object
+          title: Credential
+      type: object
+      required:
+      - mfa_token
+      - challenge
+      - credential
+      title: WebAuthnVerifyRequest
     WebhookCreate:
       properties:
         name:
