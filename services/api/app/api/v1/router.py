@@ -92,6 +92,7 @@ from app.api.v1.endpoints import (
     tenant_provision,
     tenant_skills,
     tenants,
+    taxii,
     threat_intel,
     translation,
     usage,
@@ -312,6 +313,8 @@ api_router.include_router(evaluations.router)
 api_router.include_router(knowledge_base.router)
 
 # Wave 4 — advanced capabilities
+api_router.include_router(taxii.router)
+api_router.include_router(taxii.admin_router)
 api_router.include_router(threat_intel.router)
 api_router.include_router(posture.router)
 api_router.include_router(easm.router)
