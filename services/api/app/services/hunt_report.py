@@ -75,6 +75,40 @@ def _cite(kind: str, identifier: Any, label: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def _strings(value: Any) -> list[str]:
+    """Flatten a JSONB array column into strings, tolerating any shape.
+
+    These columns are JSONB rather than `text[]`, so a row can legitimately
+    hold a list of strings, a list of objects, or a scalar somebody wrote by
+    hand. Refusing any of those would make a report fail on data the rest of
+    the product accepts.
+    """
+    if isinstance(value, list):
+        return [str(v) for v in value if isinstance(v, (str, int, float))]
+    if isinstance(value, str):
+        return [value]
+    return []
+
+
+def _entity_values(rows: Any, group: str) -> set[str]:
+    """Entity values of one kind out of `alerts.entities`.
+
+    `entities` is what fusion writes; the `affected_*` columns are written
+    only by the demo seed. Reading both means a report says something on a
+    real deployment as well as a seeded one.
+    """
+    out: set[str] = set()
+    for row in rows:
+        for entity in row["entities"] or []:
+            if not isinstance(entity, dict):
+                continue
+            kind = str(entity.get("kind") or entity.get("type") or "").lower()
+            value = entity.get("value") or entity.get("name")
+            if value and group in kind:
+                out.add(str(value))
+    return out
+
+
 async def build_from_hunt(
     db: AsyncSession,
     *,
@@ -89,14 +123,18 @@ async def build_from_hunt(
     saved-hunt list already shows that.
     """
     hunt = (
-        await db.execute(
-            text(
-                "SELECT id, name, nl_query, translated_query, language, last_run_at, "
-                "       created_by, created_at "
-                "FROM aisoc_saved_hunts WHERE id = :id AND tenant_id = :tenant_id"
-            ).bindparams(id=saved_hunt_id, tenant_id=tenant_id)
+        (
+            await db.execute(
+                text(
+                    "SELECT id, name, nl_query, translated_query, language, last_run_at, "
+                    "       created_by, created_at "
+                    "FROM aisoc_saved_hunts WHERE id = :id AND tenant_id = :tenant_id"
+                ).bindparams(id=saved_hunt_id, tenant_id=tenant_id)
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if hunt is None:
         raise HuntReportError("No such saved hunt in this tenant.")
     if hunt["last_run_at"] is None:
@@ -110,36 +148,43 @@ async def build_from_hunt(
     # raised them from it; a hunt that matched events without raising alerts
     # is reported by its run metadata alone and says so.
     matches = (
-        await db.execute(
-            text(
-                "SELECT id, title, severity, created_at, "
-                "       COALESCE(affected_host, '') AS host, COALESCE(affected_user, '') AS actor "
-                "FROM alerts WHERE tenant_id = :tenant_id AND raw_event->>'saved_hunt_id' = :hunt "
-                "ORDER BY created_at DESC LIMIT 50"
-            ).bindparams(tenant_id=tenant_id, hunt=str(saved_hunt_id))
+        (
+            await db.execute(
+                text(
+                    # `affected_hosts` / `affected_users` are JSONB *arrays*, not the
+                    # singular text columns a reader expects, and `entities` is what
+                    # fusion actually writes -- the `affected_*` pair is written only
+                    # by the demo seed. Both are read, so a report covers a demo
+                    # tenant and a real one, and a `WHERE` section built from
+                    # whichever is present beats one that is empty on real data.
+                    "SELECT id, title, severity, created_at, "
+                    "       COALESCE(affected_hosts, '[]'::jsonb) AS hosts, "
+                    "       COALESCE(affected_users, '[]'::jsonb) AS actors, "
+                    "       COALESCE(entities, '[]'::jsonb) AS entities "
+                    "FROM alerts WHERE tenant_id = :tenant_id AND raw_event->>'saved_hunt_id' = :hunt "
+                    "ORDER BY created_at DESC LIMIT 50"
+                ).bindparams(tenant_id=tenant_id, hunt=str(saved_hunt_id))
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     translated = hunt["translated_query"] or {}
     query_text = translated.get("query") if isinstance(translated, dict) else None
 
     report = HuntReport(title=f"Hunt findings: {hunt['name']}", match_count=len(matches))
-    report.what = (
-        f"The saved hunt {hunt['name']!r} matched {len(matches)} alert(s). "
-        f"The analyst asked: {hunt['nl_query']!r}."
-    )
+    report.what = f"The saved hunt {hunt['name']!r} matched {len(matches)} alert(s). The analyst asked: {hunt['nl_query']!r}."
     report.how = (
         f"The question was translated into {hunt['language'].upper()} and run against the event "
         f"store. The model never wrote the query text; it chose a template and its parameters, "
         f"which is why the executed query can be shown verbatim"
         + (f":\n\n{query_text}" if query_text else " but was not recorded on this hunt.")
     )
-    report.citations.append(
-        _cite("saved_hunt", hunt["id"], f"saved hunt {hunt['name']!r} ({hunt['language'].upper()})")
-    )
+    report.citations.append(_cite("saved_hunt", hunt["id"], f"saved hunt {hunt['name']!r} ({hunt['language'].upper()})"))
 
-    hosts = sorted({row["host"] for row in matches if row["host"]})
-    actors = sorted({row["actor"] for row in matches if row["actor"]})
+    hosts = sorted({h for row in matches for h in _strings(row["hosts"]) if h} | _entity_values(matches, "host"))
+    actors = sorted({a for row in matches for a in _strings(row["actors"]) if a} | _entity_values(matches, "user"))
     if hosts or actors:
         parts = []
         if hosts:
@@ -160,9 +205,7 @@ async def build_from_hunt(
         report.when = f"The hunt last ran at {hunt['last_run_at'].isoformat()}."
 
     for row in matches[:20]:
-        report.citations.append(
-            _cite("alert", row["id"], f"{row['severity']} · {row['title'][:80]}")
-        )
+        report.citations.append(_cite("alert", row["id"], f"{row['severity']} · {row['title'][:80]}"))
     return report
 
 
@@ -184,15 +227,19 @@ async def build_from_retro_hunt(
     stated rather than left for a reader to subtract two timestamps.
     """
     row = (
-        await db.execute(
-            text(
-                "SELECT id, indicator_type, indicator_value, feed_source, intel_first_seen_at, "
-                "       first_matched_at, last_matched_at, first_sighting_at, last_sighting_at, "
-                "       sightings, matched_surfaces, alert_id, times_seen "
-                "FROM retro_hunt_sightings WHERE id = :id AND tenant_id = :tenant_id"
-            ).bindparams(id=sighting_id, tenant_id=tenant_id)
+        (
+            await db.execute(
+                text(
+                    "SELECT id, indicator_type, indicator_value, feed_source, intel_first_seen_at, "
+                    "       first_matched_at, last_matched_at, first_sighting_at, last_sighting_at, "
+                    "       sightings, matched_surfaces, alert_id, times_seen "
+                    "FROM retro_hunt_sightings WHERE id = :id AND tenant_id = :tenant_id"
+                ).bindparams(id=sighting_id, tenant_id=tenant_id)
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
         raise HuntReportError("No such retro-hunt sighting in this tenant.")
 
@@ -219,9 +266,7 @@ async def build_from_retro_hunt(
     intel_at = row["intel_first_seen_at"]
     when_parts: list[str] = []
     if first_seen and row["last_sighting_at"]:
-        when_parts.append(
-            f"Seen in this estate from {first_seen.isoformat()} to {row['last_sighting_at'].isoformat()}."
-        )
+        when_parts.append(f"Seen in this estate from {first_seen.isoformat()} to {row['last_sighting_at'].isoformat()}.")
     if intel_at:
         when_parts.append(f"Intelligence first published it at {intel_at.isoformat()}.")
     if first_seen and intel_at:
@@ -229,9 +274,7 @@ async def build_from_retro_hunt(
         if gap_days > 0:
             # The number a retro-hunt exists to produce, stated rather than
             # left as two timestamps for the reader to subtract.
-            when_parts.append(
-                f"The estate saw it **{gap_days:.1f} days before** the intelligence named it."
-            )
+            when_parts.append(f"The estate saw it **{gap_days:.1f} days before** the intelligence named it.")
     report.when = " ".join(when_parts)
 
     report.citations.append(
@@ -269,18 +312,30 @@ async def attach_ledger_citations(
     if case_id is None:
         return report
     rows = (
-        await db.execute(
-            text(
-                "SELECT id, kind, created_at FROM investigation_events "
-                "WHERE tenant_id = :tenant_id AND case_id = :case_id "
-                "ORDER BY created_at ASC LIMIT 20"
-            ).bindparams(tenant_id=tenant_id, case_id=case_id)
+        (
+            await db.execute(
+                text(
+                    # `investigation_events` keys on `run_id`, not on the case:
+                    # the ledger belongs to a run and a case can have several.
+                    # Joining through `investigation_runs` is the only path from
+                    # one to the other, and getting this wrong would have cited
+                    # an empty set on every report.
+                    "SELECT e.id, e.kind, e.created_at FROM investigation_events e "
+                    "JOIN investigation_runs r ON r.id = e.run_id "
+                    "WHERE e.tenant_id = :tenant_id AND r.case_id = :case_id "
+                    "ORDER BY e.created_at ASC LIMIT 20"
+                )  # `investigation_runs.case_id` is TEXT, not UUID: the ledger predates
+                # the typed case id, and binding a UUID raises in asyncpg rather
+                # than coercing. Stringified here rather than cast in SQL so the
+                # index on that column is still usable.
+                .bindparams(tenant_id=tenant_id, case_id=str(case_id))
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     for row in rows:
-        report.citations.append(
-            _cite("ledger_event", row["id"], f"{row['kind']} at {row['created_at'].isoformat()}")
-        )
+        report.citations.append(_cite("ledger_event", row["id"], f"{row['kind']} at {row['created_at'].isoformat()}"))
     return report
 
 
@@ -320,7 +375,7 @@ def render_html(row: dict[str, Any], *, product_name: str = "AiSOC") -> str:
     citations = row.get("citations") or []
     if citations:
         items = "".join(
-            f"<li><span class=\"kind\">{escape(str(c.get('kind', '')))}</span> "
+            f'<li><span class="kind">{escape(str(c.get("kind", "")))}</span> '
             f"<code>{escape(str(c.get('id', '')))}</code> — {escape(str(c.get('label', '')))}</li>"
             for c in citations
         )
@@ -392,30 +447,36 @@ async def persist(
             "and the point of this surface is that an assertion is not evidence."
         )
     row = (
-        await db.execute(
-            text(
-                "INSERT INTO aisoc_hunt_reports "
-                '(tenant_id, source_kind, source_id, case_id, title, what, how, "where", "when", '
-                " citations, match_count, generated_by) "
-                "VALUES (:tenant_id, :source_kind, :source_id, :case_id, :title, :what, :how, "
-                "        :where_, :when_, CAST(:citations AS jsonb), :match_count, :generated_by) "
-                "RETURNING *"
-            ).bindparams(
-                tenant_id=tenant_id,
-                source_kind=source_kind,
-                source_id=source_id,
-                case_id=case_id,
-                title=report.title,
-                what=report.what,
-                how=report.how,
-                where_=report.where,
-                when_=report.when,
-                citations=json.dumps(report.citations),
-                match_count=report.match_count,
-                generated_by=generated_by,
+        (
+            await db.execute(
+                text(
+                    "INSERT INTO aisoc_hunt_reports "
+                    '(tenant_id, source_kind, source_id, case_id, title, what, how, "where", "when", '
+                    " citations, match_count, generated_by) "
+                    "VALUES (:tenant_id, :source_kind, :source_id, :case_id, :title, :what, :how, "
+                    "        :where_, :when_, CAST(:citations AS jsonb), :match_count, :generated_by) "
+                    "RETURNING *"
+                ).bindparams(
+                    tenant_id=tenant_id,
+                    source_kind=source_kind,
+                    source_id=source_id,
+                    case_id=case_id,
+                    title=report.title,
+                    what=report.what,
+                    how=report.how,
+                    where_=report.where,
+                    when_=report.when,
+                    citations=json.dumps(report.citations),
+                    match_count=report.match_count,
+                    generated_by=generated_by,
+                )
             )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     out = dict(row)
-    out["created_at"] = out["created_at"].astimezone(UTC).isoformat() if isinstance(out.get("created_at"), datetime) else out.get("created_at")
+    out["created_at"] = (
+        out["created_at"].astimezone(UTC).isoformat() if isinstance(out.get("created_at"), datetime) else out.get("created_at")
+    )
     return out

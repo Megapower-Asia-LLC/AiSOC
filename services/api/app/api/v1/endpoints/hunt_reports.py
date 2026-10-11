@@ -140,9 +140,7 @@ async def from_hunt(
     return await _build(db, current_user, request, source_kind="hunt", source_id=saved_hunt_id, case_id=body.case_id)
 
 
-@router.post(
-    "/from-retro-hunt/{sighting_id}", response_model=HuntReportOut, status_code=status.HTTP_201_CREATED
-)
+@router.post("/from-retro-hunt/{sighting_id}", response_model=HuntReportOut, status_code=status.HTTP_201_CREATED)
 async def from_retro_hunt(
     sighting_id: uuid.UUID,
     body: BuildRequest,
@@ -151,9 +149,7 @@ async def from_retro_hunt(
     current_user: AuthUser,
     _: Annotated[None, Depends(require_permission("reports:write"))],
 ) -> HuntReportOut:
-    return await _build(
-        db, current_user, request, source_kind="retro_hunt", source_id=sighting_id, case_id=body.case_id
-    )
+    return await _build(db, current_user, request, source_kind="retro_hunt", source_id=sighting_id, case_id=body.case_id)
 
 
 @router.get("", response_model=list[HuntReportOut])
@@ -185,12 +181,16 @@ async def get_report(
     fmt: str = Query("json", alias="format", pattern="^(json|html|pdf)$"),
 ) -> HuntReportOut | HTMLResponse | Response:
     row = (
-        await db.execute(
-            text("SELECT * FROM aisoc_hunt_reports WHERE id = :id AND tenant_id = :tenant_id").bindparams(
-                id=report_id, tenant_id=current_user.tenant_id
+        (
+            await db.execute(
+                text("SELECT * FROM aisoc_hunt_reports WHERE id = :id AND tenant_id = :tenant_id").bindparams(
+                    id=report_id, tenant_id=current_user.tenant_id
+                )
             )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such hunt report")
 
