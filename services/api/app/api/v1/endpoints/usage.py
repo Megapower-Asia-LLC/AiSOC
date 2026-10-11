@@ -15,15 +15,19 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field
+from sqlalchemy import bindparam, select, text
+from sqlalchemy.types import Uuid as SAUuid
 
 from app.api.v1.deps import AuthUser, DBSession, require_permission
+from app.db.rls import set_rls_context
 from app.models.organization import Organization
 from app.models.tenant import Tenant
 from app.services import usage_metering
+from app.services.audit import emit_audit
 from app.services.branding.resolver import owning_org_id
-from app.services.entitlements import headroom_for_tenant
+from app.services.entitlements import LIMIT_KEYS_BY_NAME, enforced_keys, headroom_for_tenant
 from app.services.org_scope import resolve_portfolio_scope
 
 router = APIRouter(prefix="/usage", tags=["usage"])
@@ -90,6 +94,11 @@ async def get_usage(
         # The limits these counts run against, so a usage screen and a quota
         # screen cannot disagree about the same rows.
         "entitlements": [h.as_dict() for h in await headroom_for_tenant(db, current_user.tenant_id, tenant_limits)],
+        # Which of those ceilings actually refuse work. Reported beside the
+        # headroom rather than on a route of its own, because "you are at
+        # 47 of 45" means two different things depending on this and a
+        # console that shows one without the other cannot say which.
+        "enforced": sorted(await enforced_keys(db, current_user.tenant_id)),
     }
 
 
@@ -227,3 +236,81 @@ async def _org_name(db: Any, tenant_id: uuid.UUID) -> str | None:
     if org_id is None:
         return None
     return (await db.execute(select(Organization.name).where(Organization.id == org_id))).scalar_one_or_none()
+
+
+class EnforcementPolicy(BaseModel):
+    """Which limit keys this tenant refuses work on, rather than only reporting.
+
+    The whole set is sent, not a delta, so clearing a key from the console
+    actually clears it. A merge would leave the page able to add a
+    restriction and unable to remove one.
+    """
+
+    enforce: list[str] = Field(default_factory=list)
+
+
+@router.get("/enforcement", response_model=EnforcementPolicy)
+async def get_enforcement(db: DBSession, current_user: AuthUser) -> EnforcementPolicy:
+    """The limit keys this tenant enforces. Absence of a row means none."""
+    return EnforcementPolicy(enforce=sorted(await enforced_keys(db, current_user.tenant_id)))
+
+
+@router.put("/enforcement", response_model=EnforcementPolicy)
+async def put_enforcement(
+    body: EnforcementPolicy,
+    db: DBSession,
+    request: Request,
+    current_user: Annotated[AuthUser, Depends(require_permission("settings:write"))],
+) -> EnforcementPolicy:
+    """Turn enforcement on or off, per limit key, for the caller's tenant.
+
+    The tenant is the caller's and never a parameter: a route that let one
+    authenticated user switch enforcement on for somebody else's tenant
+    would be a denial of service against them, delivered as a setting.
+
+    Every name is checked against `LIMIT_KEYS` before it is stored. A typo
+    would otherwise be accepted, match no key, enforce nothing, and leave
+    an operator reading a page that says a limit is enforced while it is
+    not — which is the quiet direction and the one worth refusing loudly.
+    """
+    unknown = sorted(set(body.enforce) - set(LIMIT_KEYS_BY_NAME))
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No such limit: {', '.join(unknown)}. A policy naming a limit that does not exist enforces nothing.",
+        )
+
+    await set_rls_context(db, current_user.tenant_id)
+
+    requested = sorted(set(body.enforce))
+    tenant_param = bindparam("tenant_id", type_=SAUuid(as_uuid=True))
+
+    # Replaced rather than merged, for the reason on the model.
+    await db.execute(
+        text("DELETE FROM aisoc_tenant_entitlement_enforcement WHERE tenant_id = :tenant_id").bindparams(tenant_param),
+        {"tenant_id": current_user.tenant_id},
+    )
+    for key in requested:
+        await db.execute(
+            text(
+                "INSERT INTO aisoc_tenant_entitlement_enforcement "
+                "       (tenant_id, limit_key, enforce, updated_by, updated_at) "
+                "VALUES (:tenant_id, :limit_key, TRUE, :updated_by, now())"
+            ).bindparams(tenant_param, bindparam("updated_by", type_=SAUuid(as_uuid=True))),
+            {"tenant_id": current_user.tenant_id, "limit_key": key, "updated_by": current_user.user_id},
+        )
+    # Audited. Turning enforcement on is the moment a reported ceiling
+    # starts refusing work, and turning it off is the moment a tenant stops
+    # being capped -- both are things an auditor asks who did and when.
+    await emit_audit(
+        db=db,
+        tenant_id=current_user.tenant_id,
+        actor_id=current_user.user_id,
+        action="entitlements.enforcement_changed",
+        resource="tenant",
+        resource_id=str(current_user.tenant_id),
+        changes={"enforce": requested},
+        request=request,
+    )
+    await db.commit()
+    return EnforcementPolicy(enforce=requested)

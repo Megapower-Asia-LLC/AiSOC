@@ -72,6 +72,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 from sqlalchemy import select, update  # noqa: E402
 
 from app.api.v1.deps import AuthUser, DBSession, require_permission  # noqa: E402
+from app.api.v1.limits import refuse_if_over_limit  # noqa: E402
 from app.core import connectors_auth  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.models.connector import Connector  # noqa: E402
@@ -793,6 +794,11 @@ async def create_connector(
     ``auth_config`` is encrypted with the credential vault before it
     touches Postgres.
     """
+    # Before anything is encrypted or written. A ceiling checked after the
+    # row exists is not a ceiling, and the vault call below is the expensive
+    # part of this handler.
+    await refuse_if_over_limit(db, current_user.tenant_id, "connectors")
+
     catalog_entry = await _validate_connector_type(request.connector_type, current_user.tenant_id)
     category = request.category or catalog_entry.get("category") or "uncategorized"
 

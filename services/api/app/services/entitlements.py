@@ -271,3 +271,125 @@ async def headroom_for_tenant(
             )
         rows.append(Headroom(key=key.name, label=key.label, used=used, limit=limit, state=state))
     return rows
+
+
+# ── Enforcement ─────────────────────────────────────────────────────────────
+#
+# Everything above reports. Parity 4.5 asks for the other half: a limit an
+# operator configured should be able to actually stop work, with a clear
+# over-limit state rather than a silent one.
+#
+# Three properties decide the shape, and each is a reaction to how this has
+# gone wrong before.
+#
+# **Opt-in, per tenant, per key.** `tenants.limits` has been a *reporting*
+# input since it existed, so the numbers already written there were never
+# chosen as hard caps. Enforcement arriving switched on would turn every one
+# of them into a refusal on upgrade. Absence of a row means not enforced, and
+# migration `113` writes none.
+#
+# **A measurement failure does not refuse.** The fail-closed instinct is
+# wrong here and the precedent is explicit: a safety control that gets stuck
+# closed reads as working caution, and a quota that cannot count would stop a
+# customer's SOC for a reason that has nothing to do with their usage. An
+# unreadable count is logged at `error` and the work proceeds. The positive
+# control in the test suite is what keeps that honest in the other direction.
+#
+# **The refusal says what to do.** `LimitExceeded` carries the key, the
+# measured usage and the ceiling, because "quota exceeded" sends an operator
+# to a support channel while "47 of 45 connectors" sends them to the setting.
+
+
+class LimitExceeded(Exception):
+    """A tenant is over an enforced ceiling.
+
+    Raised only when an operator opted that key in. Carries the numbers
+    rather than a bare message: the caller turns this into an HTTP 402 or
+    409, and the operator reading it needs to know which limit, by how
+    much, and what the ceiling is.
+    """
+
+    def __init__(self, key: str, label: str, used: int, limit: int) -> None:
+        self.key = key
+        self.label = label
+        self.used = used
+        self.limit = limit
+        super().__init__(
+            f"{label} is at {used} of a configured limit of {limit}. "
+            f"Raise the limit for this tenant, or disable enforcement of '{key}', to continue."
+        )
+
+
+async def enforced_keys(db: AsyncSession, tenant_id: uuid.UUID) -> frozenset[str]:
+    """The limit keys this tenant has opted in to enforcing.
+
+    An unreadable table is an empty set, not an exception: enforcement is
+    the opt-in half of this module and a storage fault must not become a
+    refusal. Logged at `error`, because a deployment that wanted a ceiling
+    applied and is not getting one should be visible.
+    """
+    try:
+        result = await db.execute(
+            text("SELECT limit_key FROM aisoc_tenant_entitlement_enforcement  WHERE tenant_id = :tenant_id AND enforce IS TRUE").bindparams(
+                bindparam("tenant_id", type_=Uuid(as_uuid=True))
+            ),
+            {"tenant_id": tenant_id},
+        )
+    except Exception:
+        logger.error(
+            "entitlements.enforcement_unreadable tenant=%s — no limit is being enforced for this tenant",
+            tenant_id,
+            exc_info=True,
+        )
+        return frozenset()
+    return frozenset(str(row[0]) for row in result.fetchall())
+
+
+async def assert_within_limit(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    tenant_limits: dict | None,
+    key: str,
+) -> None:
+    """Refuse the caller if *key* is enforced for this tenant and exhausted.
+
+    Returns silently in every other case: the key is not opted in, no
+    ceiling is configured, there is room left, or the usage could not be
+    measured. Only the first of those is a policy decision; the rest are
+    the absence of one.
+
+    `classify` decides exhaustion, so the number a caller is refused on is
+    the same one the console's headroom bar drew. Two definitions of "full"
+    is how a customer gets refused by a screen that says they have room.
+    """
+    if key not in LIMIT_KEYS_BY_NAME:
+        raise KeyError(f"unknown limit key: {key!r}")
+    if key not in await enforced_keys(db, tenant_id):
+        return
+
+    limit = limit_for(tenant_limits, key)
+    if limit is None:
+        return
+
+    try:
+        used = (await measure_usage(db, tenant_id)).get(key, 0)
+    except Exception:
+        # Deliberately not a refusal. See the note above the class.
+        logger.error(
+            "entitlements.usage_unmeasurable tenant=%s key=%s — allowing the request rather than "
+            "refusing on evidence that could not be read",
+            tenant_id,
+            key,
+            exc_info=True,
+        )
+        return
+
+    if classify(used, limit) == "exhausted":
+        logger.warning(
+            "entitlements.refused tenant=%s key=%s used=%d limit=%d",
+            tenant_id,
+            key,
+            used,
+            limit,
+        )
+        raise LimitExceeded(key, LIMIT_KEYS_BY_NAME[key].label, used, limit)
