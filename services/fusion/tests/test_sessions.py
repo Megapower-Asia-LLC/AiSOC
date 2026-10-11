@@ -9,6 +9,8 @@ arguments have to satisfy is asserted against the migration itself.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import re
 import uuid
@@ -18,6 +20,7 @@ from pathlib import Path
 
 import pytest
 from app.services.sessions import (
+    DERIVED_IDLE_SECONDS,
     KEY_KINDS,
     SessionStore,
     session_id,
@@ -29,15 +32,27 @@ TENANT = "11111111-1111-1111-1111-111111111111"
 
 
 class RecordingConn:
-    def __init__(self, fail: Exception | None = None) -> None:
+    def __init__(self, fail: Exception | None = None, tenants: list[str] | None = None) -> None:
         self.calls: list[tuple[str, tuple]] = []
         self._fail = fail
+        # What `SELECT DISTINCT tenant_id` returns. asyncpg hands back
+        # mapping-like Records, so a dict is the honest stand-in.
+        self._tenants = tenants if tenants is not None else []
 
     async def execute(self, sql: str, *args):
         if self._fail is not None:
             raise self._fail
         self.calls.append((sql, args))
         return "INSERT 0 1"
+
+    async def fetch(self, sql: str, *args):
+        if self._fail is not None:
+            raise self._fail
+        self.calls.append((sql, args))
+        return [{"tenant_id": t} for t in self._tenants]
+
+    def all_sql_containing(self, needle: str) -> list[tuple[str, tuple]]:
+        return [(sql, args) for sql, args in self.calls if needle in sql]
 
     def sql_containing(self, needle: str) -> tuple[str, tuple]:
         for sql, args in self.calls:
@@ -191,16 +206,16 @@ async def test_a_call_that_issued_its_own_credential_is_not_its_own_parent():
 async def test_the_id_is_deterministic_across_stores_and_replays():
     """Three stores have to agree on one id without coordinating, and a Kafka
     replay must upsert the same row rather than minting a second session."""
-    first = session_id(TENANT, "okta", "102bFs0Aq6VQ1qjqVqk")
-    second = session_id(TENANT, "okta", "102bFs0Aq6VQ1qjqVqk")
+    first = session_id(TENANT, "okta", "00okta0session0EXAMPLE0001")
+    second = session_id(TENANT, "okta", "00okta0session0EXAMPLE0001")
     assert first == second
     assert isinstance(first, uuid.UUID)
 
     # Namespaced by tenant and by source: two tenants may legitimately observe
     # the same vendor identifier, and an Okta session id and a GitHub token
     # hash share no namespace.
-    assert session_id("22222222-2222-2222-2222-222222222222", "okta", "102bFs0Aq6VQ1qjqVqk") != first
-    assert session_id(TENANT, "github", "102bFs0Aq6VQ1qjqVqk") != first
+    assert session_id("22222222-2222-2222-2222-222222222222", "okta", "00okta0session0EXAMPLE0001") != first
+    assert session_id(TENANT, "github", "00okta0session0EXAMPLE0001") != first
 
 
 @pytest.mark.asyncio
@@ -220,11 +235,45 @@ async def test_only_derived_sessions_are_closed_on_an_idle_gap():
     conn = RecordingConn()
     store = SessionStore(RecordingPool(conn))
 
-    await store.close_idle(900)
+    await store.close_idle(900, tenant_id=TENANT)
 
     sql, args = conn.sql_containing("UPDATE sessions")
     assert "key_kind = 'derived'" in sql
-    assert args[0] == 900.0
+    assert args == (TENANT, 900.0)
+
+
+@pytest.mark.asyncio
+async def test_the_idle_sweep_never_issues_an_update_without_a_tenant():
+    """The first version of this swept the whole table and leaned on the RLS
+    policy's `current_tenant_id() IS NULL` arm, which a worker satisfies by
+    setting nothing -- so one statement reached every tenant's rows and
+    `check_tenant_query_predicates.py` failed the build for it.
+
+    RLS is defence in depth here, not the control. Every UPDATE the sweep
+    issues names exactly one tenant."""
+    other = "33333333-3333-3333-3333-333333333333"
+    conn = RecordingConn(tenants=[TENANT, other])
+    store = SessionStore(RecordingPool(conn))
+
+    closed = await store.close_idle(900)
+
+    updates = conn.all_sql_containing("UPDATE sessions")
+    assert len(updates) == 2
+    assert {args[0] for _, args in updates} == {TENANT, other}
+    for sql, _ in updates:
+        assert "tenant_id = $1" in sql
+    assert closed == 2
+
+
+@pytest.mark.asyncio
+async def test_a_sweep_with_no_idle_tenants_issues_no_update_at_all():
+    """The control. A quiet deployment must not write, or the test above
+    would pass on a sweep that updates unconditionally."""
+    conn = RecordingConn(tenants=[])
+    store = SessionStore(RecordingPool(conn))
+
+    assert await store.close_idle(900) == 0
+    assert conn.all_sql_containing("UPDATE sessions") == []
 
 
 def test_the_closed_set_matches_the_migrations_check_constraint():
@@ -262,3 +311,66 @@ def test_event_time_handles_every_shape_the_spine_delivers(raw, expect_year):
 
     payload = {"time": raw} if raw is not None else {}
     assert _event_time(payload).year == expect_year
+
+
+@pytest.mark.asyncio
+async def test_the_idle_sweep_runs_from_the_worker_rather_than_nowhere():
+    """`close_idle` had no production caller at all.
+
+    A derived session ends when the activity stops, so nothing on the event
+    path can ever close one -- the closing condition is the *absence* of an
+    event. Without a ticker every derived session stays open forever and
+    "what else did this sitting do" accumulates months of unrelated activity
+    under one id, which is worse than having no session grouping at all.
+
+    Drives the worker's real ticker with the real interval arithmetic rather
+    than asserting the call exists in the source.
+    """
+    from app.workers import consumer as consumer_mod
+
+    swept: list[int] = []
+
+    class SweepOnlyStore:
+        async def close_idle(self, *_a, **_kw) -> int:
+            swept.append(1)
+            return 0
+
+    worker = consumer_mod.FusionWorker.__new__(consumer_mod.FusionWorker)
+    worker._running = True
+    worker._lake = None
+    worker._sessions = SweepOnlyStore()
+
+    # The real period is a quarter of the idle window (~7 minutes). Shortened
+    # here so the test exercises the real loop and its real clock arithmetic
+    # rather than a reimplementation of it.
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(consumer_mod, "SESSION_SWEEP_SECONDS", 0.0)
+    monkeypatch.setattr(consumer_mod.settings, "lake_batch_max_age_seconds", 0.01)
+    try:
+        task = asyncio.create_task(worker._periodic_flush())
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            if swept:
+                break
+        worker._running = False
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    finally:
+        monkeypatch.undo()
+
+    assert swept, "the worker ticker never called close_idle"
+
+
+def test_the_sweep_period_is_shorter_than_the_window_it_sweeps_for():
+    """Two independently-written numbers describing one budget.
+
+    If the sweep ran less often than the idle window, a session would stay
+    open for up to the sum of the two rather than the window -- the shape
+    this repository has already been bitten by, where a caller's deadline
+    was a sixth of the retry budget it wrapped and the shorter number won
+    silently. Asserted as a relation, not as either value.
+    """
+    from app.workers.consumer import SESSION_SWEEP_SECONDS
+
+    assert 0 < SESSION_SWEEP_SECONDS <= DERIVED_IDLE_SECONDS / 2

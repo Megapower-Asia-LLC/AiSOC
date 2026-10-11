@@ -7,6 +7,7 @@ results back to Kafka, and persists non-duplicate alerts to Postgres.
 import asyncio
 import contextlib
 import json
+import time
 from typing import Any
 
 import structlog
@@ -22,7 +23,7 @@ from app.services.event_schema import validate_event
 from app.services.fusion_engine import FusionEngine
 from app.services.lake_writer import LakeWriter
 from app.services.promoter import promote_normalized_event
-from app.services.sessions import SessionRef, SessionStore
+from app.services.sessions import DERIVED_IDLE_SECONDS, SessionRef, SessionStore
 from app.services.tenant_overlay import OverlayCache
 from app.services.ueba_signal import UebaSignalCache
 from app.services.windowed_detection import WindowedDetectionEngine
@@ -48,6 +49,12 @@ _METRICS = {
     "dead_lettered": 0,
     "errors": 0,
 }
+
+
+#: How often the worker sweeps for derived sessions that have gone quiet.
+#: A quarter of the idle window, so a session is closed within roughly
+#: DERIVED_IDLE_SECONDS of its last event rather than up to twice that.
+SESSION_SWEEP_SECONDS = DERIVED_IDLE_SECONDS / 4
 
 
 class FusionWorker:
@@ -135,11 +142,19 @@ class FusionWorker:
         await self._producer.start()
         if self._sink is not None:
             await self._sink.start()
-        if self._lake is not None:
-            await self._lake.start()
+        if self._lake is not None or self._sessions is not None:
+            if self._lake is not None:
+                await self._lake.start()
             # Low-traffic safety net: a single buffered event would otherwise
             # wait for the NEXT message before flush_if_stale runs. A background
             # ticker guarantees the lake batch flushes by age even when idle.
+            #
+            # The same ticker closes idle derived sessions. A derived session
+            # ends when the activity stops, so nothing on the event path can
+            # ever close one -- the closing condition is the *absence* of an
+            # event. Without a ticker every derived session would stay open
+            # forever and "what else did this sitting do" would accumulate
+            # months of unrelated activity under one id.
             self._flush_task = asyncio.create_task(self._periodic_flush())
         self._running = True
         logger.info(
@@ -154,11 +169,26 @@ class FusionWorker:
 
     async def _periodic_flush(self) -> None:
         interval = max(0.5, settings.lake_batch_max_age_seconds)
+        # Elapsed wall-clock rather than a tick count, because the two
+        # cadences are set independently: a tick count derived from the
+        # lake's flush interval silently changes the sweep period whenever
+        # someone tunes the lake, which is a coupling nobody would expect
+        # from either setting's name.
+        last_sweep = time.monotonic()
         try:
             while self._running:
                 await asyncio.sleep(interval)
                 if self._lake is not None:
                     await self._lake.flush_if_stale()
+                if self._sessions is None:
+                    continue
+                now = time.monotonic()
+                if now - last_sweep < SESSION_SWEEP_SECONDS:
+                    continue
+                last_sweep = now
+                closed = await self._sessions.close_idle()
+                if closed:
+                    logger.info("Closed idle derived sessions", closed=closed)
         except asyncio.CancelledError:  # pragma: no cover — shutdown path
             pass
 

@@ -165,11 +165,32 @@ ON CONFLICT (id) DO UPDATE SET
 #: Close derived sessions that have gone quiet. Vendor sessions are left
 #: alone: the vendor says when those end, and guessing on their behalf would
 #: report a session as over while it is still being used.
+#:
+#: Scoped to one tenant per call rather than sweeping the table. The first
+#: version had no tenant predicate and relied on the RLS policy's
+#: `current_tenant_id() IS NULL` arm, which a worker satisfies by setting
+#: nothing -- so one statement reached every tenant's rows and
+#: `check_tenant_query_predicates.py` failed the build for it. That gate is
+#: right: RLS is defence in depth here, not the control, and a maintenance
+#: sweep that can touch every tenant at once is the shape this repository
+#: has been bitten by before. It also bounds the work, so one noisy tenant
+#: cannot stall the sweep for the rest.
 _CLOSE_IDLE_SQL = """
 UPDATE sessions
    SET ended_at = last_seen_at,
        ended_reason = 'idle',
        updated_at = now()
+ WHERE tenant_id = $1
+   AND ended_at IS NULL
+   AND key_kind = 'derived'
+   AND last_seen_at < now() - make_interval(secs => $2)
+"""
+
+#: The tenants with at least one open derived session. Drives the sweep so
+#: it visits only tenants that can have work, rather than every tenant row.
+_IDLE_TENANTS_SQL = """
+SELECT DISTINCT tenant_id
+  FROM sessions
  WHERE ended_at IS NULL
    AND key_kind = 'derived'
    AND last_seen_at < now() - make_interval(secs => $1)
@@ -289,15 +310,34 @@ class SessionStore:
             parent_id,
         )
 
-    async def close_idle(self, idle_seconds: int = DERIVED_IDLE_SECONDS) -> int:
-        """Close derived sessions that have gone quiet. Returns rows closed."""
+    async def close_idle(
+        self,
+        idle_seconds: int = DERIVED_IDLE_SECONDS,
+        *,
+        tenant_id: str | None = None,
+    ) -> int:
+        """Close derived sessions that have gone quiet. Returns rows closed.
+
+        With ``tenant_id`` the sweep touches that tenant only. Without it the
+        tenants that *have* idle sessions are read first and swept one at a
+        time, so the UPDATE always carries a tenant predicate and one
+        tenant's backlog cannot stall the others.
+        """
         try:
             async with self._pool.acquire() as conn:
-                result = await conn.execute(_CLOSE_IDLE_SQL, float(idle_seconds))
+                if tenant_id is not None:
+                    result = await conn.execute(_CLOSE_IDLE_SQL, tenant_id, float(idle_seconds))
+                    return _rows_affected(result)
+
+                rows = await conn.fetch(_IDLE_TENANTS_SQL, float(idle_seconds))
+                closed = 0
+                for row in rows:
+                    result = await conn.execute(_CLOSE_IDLE_SQL, row["tenant_id"], float(idle_seconds))
+                    closed += _rows_affected(result)
+                return closed
         except Exception as exc:  # noqa: BLE001 — same reasoning as record_event
             logger.error("fusion.session.close_idle_failed", extra={"error": str(exc)}, exc_info=True)
             return 0
-        return _rows_affected(result)
 
 
 def _session_block(payload: dict[str, Any]) -> dict[str, Any] | None:

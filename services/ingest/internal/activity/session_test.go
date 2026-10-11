@@ -39,9 +39,9 @@ func TestSessionKeyComesFromTheVendorsOwnField(t *testing.T) {
 			connector: "okta",
 			vendor: map[string]any{
 				"actor":                 map[string]any{"alternateId": "alice@corp.example", "type": "User"},
-				"authenticationContext": map[string]any{"externalSessionId": "102bFs0Aq6VQ1qjqVqk"},
+				"authenticationContext": map[string]any{"externalSessionId": "00okta0session0EXAMPLE0001"},
 			},
-			wantKey:    "102bFs0Aq6VQ1qjqVqk",
+			wantKey:    "00okta0session0EXAMPLE0001",
 			wantKind:   SessionVendorSession,
 			wantSource: "authenticationContext.externalSessionId",
 		},
@@ -61,9 +61,9 @@ func TestSessionKeyComesFromTheVendorsOwnField(t *testing.T) {
 			connector: "azure_entra",
 			vendor: map[string]any{
 				"userPrincipalName": "alice@corp.example",
-				"correlationId":     "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+				"correlationId":     "00000000-1111-2222-3333-444444444444",
 			},
-			wantKey:    "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+			wantKey:    "00000000-1111-2222-3333-444444444444",
 			wantKind:   SessionVendorFlow,
 			wantSource: "correlationId",
 		},
@@ -374,7 +374,7 @@ func TestEverySessionKindIsInTheClosedSet(t *testing.T) {
 // the vendor's own console. A hash here would be a value that exists nowhere
 // else and cannot be looked up anywhere.
 func TestTheKeyIsTheVendorsOwnValue(t *testing.T) {
-	const raw = "102bFs0Aq6VQ1qjqVqk"
+	const raw = "00okta0session0EXAMPLE0001"
 	got := Project("okta", canonical("okta", map[string]any{
 		"actor":                 map[string]any{"alternateId": "alice@corp.example"},
 		"authenticationContext": map[string]any{"externalSessionId": raw},
