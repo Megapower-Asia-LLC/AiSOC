@@ -79,9 +79,7 @@ class TestOnlyOneLeader:
         results = await asyncio.gather(a.acquire(), b.acquire())
         assert sum(1 for won in results if won) == 1, f"acquisitions: {results}"
 
-    async def test_two_interleaved_transactions_cannot_both_take_an_expired_lease(
-        self, engine, scope
-    ):
+    async def test_two_interleaved_transactions_cannot_both_take_an_expired_lease(self, engine, scope):
         """The deterministic proof, not a race.
 
         The first challenger runs the acquire and **holds its
@@ -111,9 +109,7 @@ class TestOnlyOneLeader:
         async def challenger_a() -> None:
             async with engine.connect() as conn:
                 await conn.begin()
-                row = (
-                    await conn.execute(_ACQUIRE_SQL, {"scope": scope, "holder": "a", "lease": 90.0})
-                ).first()
+                row = (await conn.execute(_ACQUIRE_SQL, {"scope": scope, "holder": "a", "lease": 90.0})).first()
                 first.append(row is not None)
                 first_has_run.set()
                 await asyncio.sleep(0.5)
@@ -124,18 +120,14 @@ class TestOnlyOneLeader:
             await asyncio.sleep(0.1)
             async with engine.connect() as conn:
                 await conn.begin()
-                row = (
-                    await conn.execute(_ACQUIRE_SQL, {"scope": scope, "holder": "b", "lease": 90.0})
-                ).first()
+                row = (await conn.execute(_ACQUIRE_SQL, {"scope": scope, "holder": "b", "lease": 90.0})).first()
                 second.append(row is not None)
                 await conn.commit()
 
         await asyncio.gather(challenger_a(), challenger_b())
 
         assert first == [True], "the first challenger did not take the expired lease"
-        assert second == [False], (
-            "both replicas took the lease; every vendor would be polled twice on every cycle"
-        )
+        assert second == [False], "both replicas took the lease; every vendor would be polled twice on every cycle"
 
     async def test_a_held_lease_cannot_be_stolen(self, engine, scope):
         a = _lease(engine, scope, "replica-a")
@@ -209,9 +201,7 @@ class TestRelease:
 
 
 class TestState:
-    async def test_state_names_the_holder_so_an_all_follower_deployment_is_visible(
-        self, engine, scope
-    ):
+    async def test_state_names_the_holder_so_an_all_follower_deployment_is_visible(self, engine, scope):
         a = _lease(engine, scope, "replica-a")
         await a.acquire()
         b = _lease(engine, scope, "replica-b")

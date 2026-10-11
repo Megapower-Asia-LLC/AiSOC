@@ -716,6 +716,18 @@ jobs:
         run: python3 scripts/check_standard_inputs.py --self-test
       - name: Standard inputs gate
         run: python3 scripts/check_standard_inputs.py
+      # Three descriptions of one platform that can drift apart
+      # silently: the Helm chart against CORE in docker-compose.yml,
+      # restore.sh against backup.sh, and the connector scheduler
+      # against its own lease. Each was wrong in a way nothing could
+      # see — `helm install` brought up a deployment missing response
+      # execution and every connector poll and reported success, and
+      # two scheduler replicas each polled every vendor. Self-test
+      # first, on the same tree: nine injected violations, one per rule.
+      - name: Deployment completeness gate — self-test
+        run: python3 scripts/check_deployment_completeness.py --self-test
+      - name: Deployment completeness gate
+        run: python3 scripts/check_deployment_completeness.py
       # One layer in from the name: the profile gate asks whether a connector
       # reaches a normalization path, this asks which OCSF class it reaches
       # when it gets there. The class uid divided by a thousand is the
