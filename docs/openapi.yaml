@@ -3572,6 +3572,65 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/usage/enforcement:
+    get:
+      tags:
+      - usage
+      summary: Get Enforcement
+      description: The limit keys this tenant enforces. Absence of a row means none.
+      operationId: get_enforcement_api_v1_usage_enforcement_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnforcementPolicy'
+      security:
+      - HTTPBearer: []
+    put:
+      tags:
+      - usage
+      summary: Put Enforcement
+      description: 'Turn enforcement on or off, per limit key, for the caller''s tenant.
+
+
+        The tenant is the caller''s and never a parameter: a route that let one
+
+        authenticated user switch enforcement on for somebody else''s tenant
+
+        would be a denial of service against them, delivered as a setting.
+
+
+        Every name is checked against `LIMIT_KEYS` before it is stored. A typo
+
+        would otherwise be accepted, match no key, enforce nothing, and leave
+
+        an operator reading a page that says a limit is enforced while it is
+
+        not — which is the quiet direction and the one worth refusing loudly.'
+      operationId: put_enforcement_api_v1_usage_enforcement_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnforcementPolicy'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnforcementPolicy'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /api/v1/rules:
     get:
       tags:
@@ -26604,6 +26663,24 @@ components:
       - permissions
       - justification
       title: ElevationRequest
+    EnforcementPolicy:
+      properties:
+        enforce:
+          items:
+            type: string
+          type: array
+          title: Enforce
+      type: object
+      title: EnforcementPolicy
+      description: 'Which limit keys this tenant refuses work on, rather than only
+        reporting.
+
+
+        The whole set is sent, not a delta, so clearing a key from the console
+
+        actually clears it. A merge would leave the page able to add a
+
+        restriction and unable to remove one.'
     EngageRequest:
       properties:
         reason:
