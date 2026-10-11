@@ -211,9 +211,21 @@ jobs:
         working-directory: apps/mobile/ios
         run: |
           set -euo pipefail
-          scheme=$(xcodebuild -list -json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace"]["schemes"][0])')
+          ws=$(ls -d *.xcworkspace | head -1)
+          # `-list` must be told which container to list. Without
+          # `-workspace` it describes the *project*, so the JSON has a
+          # `project` key and reading `["workspace"]` is a KeyError — which
+          # is exactly how the first run of this job failed. Both keys are
+          # accepted so the step does not depend on which one Xcode
+          # happens to emit.
+          # One expression, deliberately: a `python3 -c` body indented to
+          # match the YAML block keeps its leading spaces and dies with an
+          # IndentationError, which reads as a broken runner rather than a
+          # broken script.
+          scheme=$(xcodebuild -list -json -workspace "$ws" | python3 -c 'import json,sys; d=json.load(sys.stdin); c=d.get("workspace") or d.get("project") or {}; s=c.get("schemes") or []; sys.exit("xcodebuild -list reported no schemes") if not s else print(s[0])')
+          echo "building scheme $scheme from $ws"
           xcodebuild \
-            -workspace "$(ls -d *.xcworkspace | head -1)" \
+            -workspace "$ws" \
             -scheme "$scheme" \
             -configuration Release \
             -sdk iphonesimulator \
