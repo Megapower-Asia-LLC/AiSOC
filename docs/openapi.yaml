@@ -434,15 +434,26 @@ paths:
 
         `require_for_roles` names roles that must hold a factor even when the
 
-        tenant-wide switch is off. Every name is checked against
+        tenant-wide switch is off. Every name is checked against the role
 
-        `ROLE_PERMISSIONS` before it is stored: a typo would otherwise be
+        vocabulary before it is stored: a typo would otherwise be accepted,
 
-        accepted, match nobody''s role, and leave an administrator looking at
+        match nobody''s role, and leave an administrator looking at a policy
 
-        a policy page that says a role is enforced while it is not — the
+        page that says a role is enforced while it is not — the quiet
 
-        quiet direction, and the one worth refusing loudly.'
+        direction, and the one worth refusing loudly.
+
+
+        The vocabulary comes from `role_grants.known_roles()` rather than from
+
+        `ROLE_PERMISSIONS` directly. This route decides nothing about
+
+        permissions and must not be able to: a route that reads the static map
+
+        is how a second permission model gets rebuilt, which
+
+        `scripts/check_one_permission_model.py` exists to prevent.'
       operationId: put_policy_api_v1_auth_mfa_policy_put
       requestBody:
         content:
