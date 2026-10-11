@@ -420,7 +420,33 @@ invented fields on the first run of the gate.
 - [ ] **9.1** MCP over streamable HTTP (parity 6.6)
 - [ ] **9.2** Semantic memory (parity 6.5)
 - [ ] **9.3** Case depth (parity 5.6 remainder)
-- [ ] **9.4** War rooms
+- [~] **9.4** War rooms. **Slack is complete; Teams is built and
+  maintainer-blocked, and the block is stated in the product rather than
+  here.** One action (`POST /war-rooms/cases/{id}`, and a console panel on
+  the case) creates the channel, invites the assignees, posts the case
+  header and records the room; a sweep worker posts the timeline and
+  verdicts as they change; a decision taken in the channel comes back onto
+  the case through a service-token-only route. Idempotency is the design
+  rather than a refinement: every post is keyed by a fingerprint of the
+  *event value*, unique per room, so a retry is a no-op, two replicas cannot
+  double-post, and a case that goes `open → closed → open` posts three times
+  because a re-opened case is news. The sweep derives its events from the
+  case row rather than a cursor, so a missed tick cannot lose one. Opening
+  fails **loudly** (502 carrying the vendor's own sentence) because an
+  analyst pressed a button; syncing fails **soft** and records `last_error`,
+  which the console renders — a room that has silently stopped mirroring is
+  worse than one that was never opened, and "never synced" renders
+  differently from "synced with nothing to say". A chat button reaches four
+  verbs and **`close` is not one of them**. 37 new tests (17 slack-bot, 9
+  teams-bot, 11 API). **Open and stated, not inferred:** creating a Teams
+  channel needs Microsoft Graph with an Entra application registration and
+  admin consent, which no maintainer has provisioned, so that route answers
+  **501 naming all four missing settings** and deliberately does not fall
+  back to the incoming webhook — one shared channel per deployment would put
+  the next incident's traffic in the last one's thread. The Graph calls
+  themselves have therefore never run against a real tenant. Neither has the
+  Slack path against a real workspace: it is covered by 17 tests against a
+  fake client, and no Slack token exists here.
 - [ ] **9.5** Hunt to report
 - [ ] **9.6** Native responder
 
@@ -433,6 +459,7 @@ invented fields on the first run of the gate.
 
 | Date | Item | What happened |
 |---|---|---|
+| 2026-10-11 | 9.4 | Reproduced: `grep -rn 'conversations.create|channels.create|war_room'` across every service and the console returned four hits, all prose — a playbook template describing a "Notify war-room" step and an eval fixture quoting the phrase. Both bots could only answer: slack-bot had one outbound route (an approval card) and teams-bot posts to a hand-configured webhook. Built the channel creation, the keyed sweep, the decision route and the console panel. Teams is 501 with its four missing settings named, which is the honest state and the one a stock install is in. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |
 | 2026-10-09 | 4.3 | Reproduced: `check_retention_window.py` on the unmodified tree reported six problems — the lake deleting at 90 days against a 3,650-day cap, no `MODIFY TTL` migration, tiering deleting at 90, and the purge worker calling neither `alerts_under_legal_hold` nor `may_purge` and reporting nothing withheld. Fixed all but the cold-query bullet. Four negative controls recorded in the PR, including the positive control: a purge stuck closed withholds every tenant and fails four of the eight hold tests, which is the only thing that separates a working control from commendable caution. One pre-existing test (`test_storage_tiering.py`) pinned the 90-day tiering DELETE and now reads the shared constant; `test_retention_worker.py`'s session double could not answer the new holds query, so the worker failed closed and five of its cases failed — the double was taught the query rather than the fail-closed behaviour relaxed. |
