@@ -160,15 +160,28 @@ async def list_reports(
     case_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[HuntReportOut]:
-    stmt = (
-        "SELECT * FROM aisoc_hunt_reports WHERE tenant_id = :tenant_id "
-        + ("AND case_id = :case_id " if case_id else "")
-        + "ORDER BY created_at DESC LIMIT :limit"
+    # A parameter, not a clause spliced into the statement. Both forms were
+    # correct -- the only variable was one of two literals in this module --
+    # and only this one stops reading as dynamic SQL to every scanner and
+    # every reviewer that looks at it.
+    rows = (
+        (
+            await db.execute(
+                text(
+                    "SELECT * FROM aisoc_hunt_reports "
+                    "WHERE tenant_id = :tenant_id "
+                    "  AND (CAST(:case_id AS uuid) IS NULL OR case_id = CAST(:case_id AS uuid)) "
+                    "ORDER BY created_at DESC LIMIT :limit"
+                ).bindparams(
+                    tenant_id=current_user.tenant_id,
+                    case_id=str(case_id) if case_id else None,
+                    limit=limit,
+                )
+            )
+        )
+        .mappings()
+        .all()
     )
-    params: dict[str, Any] = {"tenant_id": current_user.tenant_id, "limit": limit}
-    if case_id:
-        params["case_id"] = case_id
-    rows = (await db.execute(text(stmt).bindparams(**params))).mappings().all()  # noqa: S608 - the only variable is a literal clause above
     return [_out(dict(row)) for row in rows]
 
 
