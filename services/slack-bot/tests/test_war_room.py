@@ -130,15 +130,22 @@ class TestChannelName:
 class TestErrorText:
     """The vendor's own words go to the log; the reason code goes to the caller."""
 
-    def test_a_reason_code_is_extracted(self) -> None:
-        assert slack_reason(Exception("The request to the Slack API failed. name_taken")) == "request"
+    def test_a_known_code_is_returned(self) -> None:
+        assert slack_reason(Exception("The request to the Slack API failed: name_taken")) == "name_taken"
         assert slack_reason(FakeSlackError("restricted_action")) == "restricted_action"
 
-    def test_an_unrecognisable_error_yields_a_fixed_string(self) -> None:
-        assert slack_reason(Exception("!!! 500 !!!")) == "no reason code"
+    def test_an_unknown_code_is_a_fixed_string_not_a_passthrough(self) -> None:
+        # Slack adds error codes and this list will go stale. "refused"
+        # plus a log line is the right failure for that; a passthrough
+        # would reopen the hole the day a new code appears.
+        assert slack_reason(Exception("some_brand_new_code_2027")) == "refused"
+        assert slack_reason(Exception("!!! 500 !!!")) == "refused"
 
-    def test_the_reason_is_bounded_so_a_body_cannot_ride_out_in_it(self) -> None:
-        assert len(slack_reason(Exception("a" * 500))) <= 48
+    def test_the_result_is_always_a_literal_from_the_closed_set(self) -> None:
+        from app.war_room import _SLACK_REASONS, _UNKNOWN_REASON
+
+        for message in ("a" * 5000, "xoxb-leaked-token", "", "NAME_TAKEN"):
+            assert slack_reason(Exception(message)) in _SLACK_REASONS | {_UNKNOWN_REASON}
 
     def test_a_create_failure_does_not_return_the_api_response(self, monkeypatch) -> None:
         secret = "xoxb-this-would-be-a-leaked-token"

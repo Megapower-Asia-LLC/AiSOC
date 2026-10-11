@@ -76,29 +76,70 @@ class PostRequest(BaseModel):
     case_id: str = ""
 
 
-#: Slack's machine-readable reason codes. The API answers with one of a
-#: closed set (`name_taken`, `restricted_action`, `channel_not_found`, …),
-#: and that token is both the whole actionable content of the failure and
-#: safe to return — unlike `str(exc)`, which carries the full API response.
-_REASON_RE = re.compile(r"\b([a-z][a-z0-9_]{3,48})\b")
+#: Slack's documented error codes, as a closed set.
+#:
+#: A regex over `str(exc)` was the first attempt and it was still a
+#: *substring of the exception*, so the value returned to the caller was
+#: derived from the API response however short it was — which is both the
+#: `py/stack-trace-exposure` finding and, more to the point, true. This
+#: returns a literal from the set below or a fixed string, so nothing
+#: derived from the exception can reach a response at all.
+#:
+#: Unknown codes are deliberately not passed through. Slack adds error codes
+#: and this list will go stale; "refused" plus a log line is the right
+#: failure for that, because the alternative is a passthrough that reopens
+#: the hole the day a new code appears.
+_SLACK_REASONS: frozenset[str] = frozenset(
+    {
+        "name_taken",
+        "restricted_action",
+        "invalid_name",
+        "invalid_name_specials",
+        "invalid_name_maxlength",
+        "invalid_name_punctuation",
+        "invalid_name_required",
+        "channel_not_found",
+        "is_archived",
+        "user_not_found",
+        "users_not_found",
+        "cant_invite_self",
+        "cant_invite",
+        "not_in_channel",
+        "already_in_channel",
+        "ura_max_channels",
+        "too_many_users",
+        "missing_scope",
+        "not_authed",
+        "invalid_auth",
+        "account_inactive",
+        "token_revoked",
+        "no_permission",
+        "ratelimited",
+        "rate_limited",
+        "fatal_error",
+        "internal_error",
+        "service_unavailable",
+        "msg_too_long",
+        "no_text",
+    }
+)
 
-#: Bounded so an unrecognised error cannot smuggle a response body out
-#: through the reason slot.
-_MAX_REASON = 48
+#: What a caller is told when Slack's code is not one this build knows.
+_UNKNOWN_REASON = "refused"
 
 
 def slack_reason(exc: BaseException) -> str:
-    """The reason code from a Slack SDK error, or a fixed fallback.
+    """A reason code from the closed set above, or a fixed string.
 
-    A `fullmatch`-shaped allowlist rather than a redaction pass: anything
-    that is not a lower-case reason token is replaced, not escaped, because
-    an escaped response body returned to a caller is still the response
-    body.
+    Never a slice of the exception. The Slack SDK's error carries the whole
+    API response, and a caller gets a code it can act on rather than a
+    redacted copy of somebody else's HTTP body.
     """
-    for candidate in _REASON_RE.findall(str(exc))[:20]:
-        if candidate not in ("the", "error", "response", "slack", "api", "data"):
-            return candidate[:_MAX_REASON]
-    return "no reason code"
+    message = str(exc).lower()
+    for code in sorted(_SLACK_REASONS):
+        if code in message:
+            return code
+    return _UNKNOWN_REASON
 
 
 def _authorized(supplied: str | None) -> bool:
