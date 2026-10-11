@@ -2070,6 +2070,199 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/cases/{case_id}:
+    post:
+      tags:
+      - war-rooms
+      summary: Open For Case
+      description: 'One action: create the channel, invite, post the header, record
+        it.
+
+
+        Fails loudly. The analyst pressed a button and is entitled to know when
+
+        it did not work — a 202 "we''ll try" here would be the toast-only control
+
+        this console is not allowed to ship.'
+      operationId: open_for_case_api_v1_war_rooms_cases__case_id__post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Case Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenWarRoomRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarRoomModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - war-rooms
+      summary: List For Case
+      operationId: list_for_case_api_v1_war_rooms_cases__case_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Case Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WarRoomModel'
+                title: Response List For Case Api V1 War Rooms Cases  Case Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/{war_room_id}/sync:
+    post:
+      tags:
+      - war-rooms
+      summary: Sync
+      operationId: sync_api_v1_war_rooms__war_room_id__sync_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: war_room_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: War Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/{war_room_id}/close:
+    post:
+      tags:
+      - war-rooms
+      summary: Close
+      description: 'Stop mirroring. The channel itself is left alone, deliberately.
+
+
+        Archiving somebody''s channel from a console button is a bigger action
+
+        than it looks: the transcript is often the incident''s own record and the
+
+        people in it did not press anything.'
+      operationId: close_api_v1_war_rooms__war_room_id__close_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: war_room_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: War Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarRoomModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/{war_room_id}/decision:
+    post:
+      tags:
+      - war-rooms
+      summary: Channel Decision
+      description: 'A decision taken in the channel, delivered by the bot.
+
+
+        Service-token only. See the module header: the bot has verified the
+
+        vendor''s signature and this service cannot, so the token is the whole
+
+        trust relationship and ``CHANNEL_DECISIONS`` is its blast radius.'
+      operationId: channel_decision_api_v1_war_rooms__war_room_id__decision_post
+      parameters:
+      - name: war_room_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: War Room Id
+      - name: X-AiSOC-Service-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Aisoc-Service-Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelDecisionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Channel Decision Api V1 War Rooms  War Room Id  Decision
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/cases/{case_id}/attack-chain:
     get:
       tags:
@@ -22871,6 +23064,25 @@ components:
       - tags
       - sla_due_at
       title: CaseResponse
+    ChannelDecisionRequest:
+      properties:
+        decision:
+          type: string
+          title: Decision
+        actor:
+          type: string
+          maxLength: 200
+          title: Actor
+          default: ''
+        note:
+          type: string
+          maxLength: 1000
+          title: Note
+          default: ''
+      type: object
+      required:
+      - decision
+      title: ChannelDecisionRequest
     ChildTenantOut:
       properties:
         id:
@@ -30957,6 +31169,21 @@ components:
       - alerts
       - sample_data_loaded
       title: OnboardingStatus
+    OpenWarRoomRequest:
+      properties:
+        provider:
+          type: string
+          title: Provider
+          description: slack | teams
+          default: slack
+        invite:
+          items:
+            type: string
+          type: array
+          maxItems: 100
+          title: Invite
+      type: object
+      title: OpenWarRoomRequest
     OrganizationCreate:
       properties:
         slug:
@@ -35928,6 +36155,21 @@ components:
       required:
       - reason
       title: SuppressRequest
+    SyncResult:
+      properties:
+        posted:
+          type: integer
+          title: Posted
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - posted
+      - error
+      title: SyncResult
     TAXIICollection:
       properties:
         id:
@@ -38388,6 +38630,53 @@ components:
         Same shape whether the email was net-new or already on the list —
 
         the prospect should not be able to enumerate existing signups.'
+    WarRoomModel:
+      properties:
+        id:
+          type: string
+          title: Id
+        case_id:
+          type: string
+          title: Case Id
+        provider:
+          type: string
+          title: Provider
+        channel_id:
+          type: string
+          title: Channel Id
+        channel_name:
+          type: string
+          title: Channel Name
+        channel_url:
+          type: string
+          title: Channel Url
+        state:
+          type: string
+          title: State
+        opened_by:
+          type: string
+          title: Opened By
+        last_synced_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Synced At
+        last_error:
+          type: string
+          title: Last Error
+      type: object
+      required:
+      - id
+      - case_id
+      - provider
+      - channel_id
+      - channel_name
+      - channel_url
+      - state
+      - opened_by
+      - last_synced_at
+      - last_error
+      title: WarRoomModel
     WatchlistUpdate:
       properties:
         is_watchlisted:
