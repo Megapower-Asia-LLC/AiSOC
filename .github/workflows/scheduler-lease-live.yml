@@ -47,7 +47,12 @@ jobs:
           --health-retries 20
 
     env:
-      LEASE_DSN: postgresql+asyncpg://aisoc:aisoc_ci_only@localhost:5432/aisoc
+      # The runtime role, not the owner. A superuser ignores every RLS
+      # policy in the schema, and although scheduler_leases carries none
+      # by design — it is replica coordination, not tenant data — running
+      # a live suite as the superuser is how a tree acquires the habit.
+      LEASE_DSN: postgresql+asyncpg://aisoc_app:aisoc_app_ci_only@localhost:5432/aisoc
+      LEASE_DATABASE_MIGRATION_URL: postgresql+asyncpg://aisoc:aisoc_ci_only@localhost:5432/aisoc
       PGPASSWORD: aisoc_ci_only
       ENVIRONMENT: test
       OTEL_SDK_DISABLED: "true"
@@ -78,6 +83,14 @@ jobs:
           for f in services/api/migrations/*.sql; do
             psql -h localhost -U aisoc -d aisoc -v ON_ERROR_STOP=1 -q -f "$f"
           done
+
+      - name: Give the runtime role its password
+        run: |
+          set -euo pipefail
+          psql -h localhost -U aisoc -d aisoc -v ON_ERROR_STOP=1 -q -c \
+            "ALTER ROLE aisoc_app WITH PASSWORD 'aisoc_app_ci_only';"
+          psql -h localhost -U aisoc -d aisoc -v ON_ERROR_STOP=1 -q -c \
+            "GRANT USAGE ON SCHEMA public TO aisoc_app;"
 
       - name: The lease table exists
         run: |
