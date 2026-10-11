@@ -80,6 +80,21 @@ def _normalised(raw: dict[str, Any]) -> dict[str, Any]:
         "event_type": raw.get("eventType"),
         "outcome": result,
         "outcome_reason": outcome.get("reason"),
+        # Depth 7.3. The connector's own test pins the full payload; these
+        # are transcribed so this file keeps matching it, and because the
+        # AiTM family reads them. The trimmed fixture above carries none of
+        # them, so every one is None — which the sibling test asserts is the
+        # right answer for an event that has no session.
+        "session_id": (raw.get("authenticationContext") or {}).get("externalSessionId"),
+        "authentication_step": (raw.get("authenticationContext") or {}).get("authenticationStep"),
+        "src_asn": (raw.get("securityContext") or {}).get("asNumber"),
+        "src_asn_org": (raw.get("securityContext") or {}).get("asOrg"),
+        "src_isp": (raw.get("securityContext") or {}).get("isp"),
+        "is_proxy": (raw.get("securityContext") or {}).get("isProxy"),
+        "src_country": ((raw.get("client") or {}).get("geographicalContext") or {}).get("country"),
+        "user_agent": ((raw.get("client") or {}).get("userAgent") or {}).get("rawUserAgent"),
+        "client_browser": ((raw.get("client") or {}).get("userAgent") or {}).get("browser"),
+        "client_os": ((raw.get("client") or {}).get("userAgent") or {}).get("os"),
         "raw_event": raw,
         "created_at": raw.get("published"),
     }
