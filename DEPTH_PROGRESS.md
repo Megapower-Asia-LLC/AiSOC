@@ -590,7 +590,62 @@ invented fields on the first run of the gate.
   through the **published images**, not a build of this branch, so it is
   not a measurement of the rule index — that is measured separately and
   in process.
-- [ ] **4.5** Deployment completeness (parity 6.8)
+- [~] **4.5** Deployment completeness (parity 6.8). **Three of four
+  bullets closed; the managed-cluster run is maintainer-blocked.**
+
+  **The chart installs CORE.** `infra/helm/aisoc/values.yaml` declared
+  **seven** application services against CORE's sixteen: no response
+  execution, no connector polling, no threat-intel store, no LLM
+  gateway, no local model, no vector store. `helm install` produced a
+  deployment that could not act, could not collect and could not triage
+  — and reported success, because nothing compared the two files.
+  `actions`, `connectors` and `threatintel` are now entries in
+  `.Values.services`; `litellm`, `ollama` and `qdrant` are deliberately
+  not, because that map defaults every image tag to
+  `.Chart.AppVersion` and tagging a third-party image with AiSOC's
+  version renders perfectly and pulls a tag that does not exist. Two of
+  them need storage, so they are StatefulSets with volume claims.
+
+  **Restore covers backup.** The two scripts already agreed on all six
+  components; nothing held them that way, and a component added to one
+  and not the other is discovered during an incident. Now compared in
+  both directions.
+
+  **Leader election.** The scheduler adds one job per connector
+  instance in process, so two replicas each polled every vendor on every
+  cycle — and on a rate-limited API the second replica's poll is the one
+  that gets throttled, which looks exactly like expired credentials. A
+  Postgres lease (migration `112`), not a Kubernetes Lease: the
+  scheduler also runs under Compose and systemd, and an election that
+  only works on Kubernetes is off wherever most first runs happen. The
+  mechanism is `UPDATE ... WHERE expires_at < now()`, proved by two
+  **explicitly interleaved** transactions rather than a race — a race
+  between coroutines on one loop passes under a SELECT-then-UPDATE too,
+  which this phase measured on its own lake-job claim. A follower
+  *removes* its poll jobs rather than declining to add more.
+
+  Gated by `scripts/check_deployment_completeness.py` (self-test: nine
+  injected violations, one per rule, plus a refusal on both an absent
+  and an empty tree) wired into `ci.yml :: python-lint`, and by
+  `scheduler-lease-live.yml`. 13 live lease tests; matrix 311 rows, 308
+  GATED.
+
+  **`[~]`, for three things that could not be verified from here**,
+  named rather than implied:
+
+  1. **No managed-Kubernetes run.** The plan already says this one waits
+     on the maintainer providing a cluster. No managed cluster is
+     reachable from this machine, so `docs/perf/` gains no row.
+  2. **`helm install` has not been run on a cluster.** `helm lint` is
+     clean and `helm template` renders 14 workload components, which is
+     static evidence that the chart is well-formed — not evidence that
+     it comes up. The kind install the plan's "Done when" names is the
+     open half of this item.
+  3. **`scripts/check_published_images.py` could not reach GHCR**
+     ("ghcr.io unreachable: The read operation timed out") and correctly
+     refused a vacuous pass rather than reporting the tree clean. So the
+     three new third-party image references and the three new
+     first-party ones are **not** confirmed to resolve in the registry.
 
 ## Phase 5: Response that finishes
 
@@ -647,6 +702,7 @@ invented fields on the first run of the gate.
 | 2026-10-07 | 0.3 | `make up` and `make smoke` (10/10) pass. Injection suite and load-harness baselines committed. `make up-full` deferred (D2) and hosted model rows blocked (D3). Fixing D1 was a precondition for the load-harness baseline. |
 | 2026-10-09 | 3.3 | Identity privilege (18 rules) and a per-tenant first-seen store (2) built; 5 rules were never unreachable (gate operator drift, D9); 18 retired with a reason (D10). `MAX_UNREACHABLE` 45 → 2, the two remaining both needing the 3.4 baseline. Two matcher operators three shipped rules already used were implemented. |
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
+| 2026-10-11 | 4.5 | Three of four bullets closed. Reproduced: `check_deployment_completeness.py` on the pre-fix tree reported six CORE services the chart renders no workload for. Added them (three in `.Values.services`, three as their own templates because a third-party image must not inherit `.Chart.AppVersion` and two need volumes), compared restore against backup in both directions, and built Postgres leader election for the connector scheduler (migration `112`). Negative control: removing the lease's expiry predicate makes both interleaved transactions lead and three live cases go red. **Not verified here:** no managed-cluster run, no `helm install` on a cluster, and `check_published_images.py` could not reach GHCR and refused to pass vacuously. |
 | 2026-10-11 | 4.4 | Every parity 6.9 bullet closed; the cloud-hardware run is not possible from here and is recorded as unmeasured rather than implied. Rule index on required fields (lossless, proven by replaying every fixture both ways; 68.3% fewer candidates, 2.6x on evaluation), entity partition key held equal to the correlation key, per-entity concurrent triage, lag-based scale hint derived from the published run. The realistic mix found that eight of twelve connector profiles are category 2 and are promoted unconditionally, so on those connectors no event can be routine — the first run measured a routine alert rate of 1.00. ADR-0011; matrix 309 rows, 306 GATED. |
 | 2026-10-11 | 4.3 | Third bullet closed. Reproduced: `check_retention_window.py` with the new rules reported no cold-query estimator, no job surface and no job table on the pre-fix tree. Built `lake_cold_query.py` (EXPLAIN ESTIMATE + system.parts + system.processes, no invented throughput or price), `lake_query_runner.py` and migration `111`. Negative control: removing the `status = 'queued'` predicate makes both interleaved transactions claim one job and the live suite goes red. The first version of that test — five gathered claims — passed under the broken implementation and was replaced. 26 pure + 12 live tests; matrix 306 rows, 303 GATED. |
 | 2026-10-11 | 4.2 | Reproduced: `check_standard_inputs.py` against the pre-fix tree reported no OTLP package, no Kafka input and no TAXII server — the only TAXII-shaped route being a demo-gated sample list. Built all three, after moving the consumer-health classifier out of `graph_ws` into `streamhealth` so the new Kafka consumer shares the table rather than copying it. Negative controls recorded in the PR: a timestamp-only TAXII cursor loses an indicator in the single-row pagination walk (measured — 3 of 4), and nineteen gate injections each go red. Writing it found four defects, including an OTLP template nobody could mint a token for and a gate rule that read an error message instead of the behaviour. Ingest Go suite green; api projection suite 37; live TAXII suite 15. |
