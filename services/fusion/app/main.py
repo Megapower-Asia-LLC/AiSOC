@@ -21,6 +21,7 @@ from app.services.deduplicator import Deduplicator
 from app.services.detection_engine import DetectionEngine
 from app.services.dlq_sink import PostgresDLQ
 from app.services.entity_risk import EntityRiskEngine
+from app.services.ai_asset_recorder import AiAssetRecorder
 from app.services.first_seen import FirstSeenStore
 from app.services.fusion_engine import FusionEngine
 from app.services.ioc_match import TenantIocMatcher
@@ -136,6 +137,14 @@ async def lifespan(app: FastAPI):
     # capture None and drop every dead letter.
     dlq = PostgresDLQ(lambda: sink._pool) if sink is not None else None
 
+    # Depth 6.1 — the observed AI estate. Shares the alert sink's pool for
+    # the same reason the dead-letter queue does: one Postgres connection
+    # pool per service, opened by `sink.start()` during `worker.start()`.
+    # Passed as a callable because that happens after this point, and
+    # capturing `sink._pool` eagerly would capture None and silently drop
+    # every sighting for the life of the process.
+    ai_assets = AiAssetRecorder(lambda: sink._pool) if sink is not None else None
+
     worker = FusionWorker(
         engine,
         sink=sink,
@@ -150,6 +159,7 @@ async def lifespan(app: FastAPI):
         # in the console kept receiving its alerts.
         overlays=OverlayCache(_overlay_pool()),
         ueba_cache=ueba_cache,
+        ai_assets=ai_assets,
     )
     set_worker(worker)
 

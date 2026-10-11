@@ -87,6 +87,12 @@ VALID_SCOPES: frozenset[str] = frozenset(
         "elevation:read",
         "elevation:request",
         "elevation:approve",
+        # Depth 6.1. Mintable so a tenant can pull its own AI-estate
+        # inventory into a CMDB or a governance report without a wildcard
+        # key. Listed here widens nothing by itself: the grant check below
+        # still refuses a scope the minter does not hold.
+        "ai_estate:read",
+        "ai_estate:write",
         "access_conditions:read",
         "access_conditions:write",
         "workload_identities:read",

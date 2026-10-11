@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin_users,
     agent_tools,
     agents,
+    ai_assets,
     airgap,
     alert_explain,
     alert_writeback,
@@ -162,6 +163,10 @@ api_router.include_router(plugins.router)
 api_router.include_router(community.router)
 api_router.include_router(marketplace.router)
 api_router.include_router(mcp_servers.router)
+# Depth 6.1: the observed AI estate. `mcp_servers` above is what an operator
+# declared; this is what AiSOC saw running, and the interesting row is the
+# one present in the second and absent from the first.
+api_router.include_router(ai_assets.router)
 # Gap-closure Phase 6.1 and 6.2: tenant-authored investigation skills:
 # authored in YAML, validated against the tools this tenant's agent can
 # actually call, backtested through the Phase 1 replay with and without the

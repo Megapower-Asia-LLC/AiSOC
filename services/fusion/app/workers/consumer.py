@@ -15,6 +15,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from app.core.config import settings
 from app.core.kafka_security import kafka_client_kwargs
 from app.models.alert import FusionDecision, RawAlert
+from app.services.ai_asset_recorder import AiAssetRecorder
 from app.services.alert_sink import AlertSink, PersistOutcome, PersistResult
 from app.services.detection_engine import DetectionEngine
 from app.services.dlq import DeadLetter, DeadLetterQueue, LoggingDLQ, safe_record
@@ -42,6 +43,7 @@ _METRICS = {
     "detected": 0,
     "dead_lettered": 0,
     "errors": 0,
+    "ai_assets_observed": 0,
 }
 
 
@@ -59,6 +61,7 @@ class FusionWorker:
         first_seen: Any | None = None,
         ueba_cache: UebaSignalCache | None = None,
         overlays: OverlayCache | None = None,
+        ai_assets: AiAssetRecorder | None = None,
     ) -> None:
         self._engine = engine
         self._sink = sink
@@ -67,6 +70,10 @@ class FusionWorker:
         self._windowed = windowed_detector
         self._first_seen = first_seen
         self._ueba_cache = ueba_cache
+        #: Depth 6.1 — the observed AI estate. Optional in the same sense the
+        #: lake writer is: a deployment that passes nothing behaves exactly
+        #: as before, and `main.py` passes one on every profile.
+        self._ai_assets = ai_assets
         #: Per-tenant detection tuning (parity 5.4). Optional, so a
         #: deployment that passes nothing behaves exactly as before.
         self._overlays = overlays
@@ -149,6 +156,8 @@ class FusionWorker:
                 await asyncio.sleep(interval)
                 if self._lake is not None:
                     await self._lake.flush_if_stale()
+                if self._ai_assets is not None:
+                    await self._ai_assets.flush_if_stale()
         except asyncio.CancelledError:  # pragma: no cover — shutdown path
             pass
 
@@ -167,6 +176,10 @@ class FusionWorker:
             await self._sink.stop()
         if self._lake is not None:
             await self._lake.stop()
+        # Flush the inventory buffer on the way out, so a clean shutdown does
+        # not discard up to 30 seconds of sightings.
+        if self._ai_assets is not None:
+            await self._ai_assets.flush()
         logger.info("Fusion worker stopped", metrics=_METRICS)
 
     async def _consume_loop(self) -> None:
@@ -290,6 +303,15 @@ class FusionWorker:
             # Medium event still has to be queryable via /lake/sql.
             if self._lake is not None and await self._lake.write_event(payload):
                 _METRICS["laked"] += 1
+
+            # Depth 6.1 — the observed AI estate is built here rather than by
+            # a separate worker reading the lake, for one reason: this is the
+            # branch every normalized event already travels on the default
+            # profile. A reader of the lake would be a second service CORE
+            # does not start, and the inventory page would be empty on the
+            # deployment most likely to have an ungoverned AI estate.
+            if self._ai_assets is not None:
+                _METRICS["ai_assets_observed"] += await self._ai_assets.observe(payload)
 
             # Resolved once and shared by both engines. Parity 5.4: without
             # the overlay the stateless engine evaluated the shared corpus and
