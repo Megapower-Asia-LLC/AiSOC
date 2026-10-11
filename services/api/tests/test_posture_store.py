@@ -307,8 +307,16 @@ async def test_providers_version_independently(db) -> None:
     gh = await _save(db, _snapshot(5), provider="github", connector_id="github")
     await _save(db, _snapshot(4))
 
-    assert (await live_snapshot(db, tenant_id=TENANT, provider="github")).id == gh.id
-    assert (await live_snapshot(db, tenant_id=TENANT, provider="aws")).id != aws.id
+    # Bound and asserted non-None first: `live_snapshot` returns Optional,
+    # and dereferencing it inline would report "NoneType has no attribute
+    # id" when the real failure is that no live row exists at all.
+    live_github = await live_snapshot(db, tenant_id=TENANT, provider="github")
+    live_aws = await live_snapshot(db, tenant_id=TENANT, provider="aws")
+    assert live_github is not None, "github has no live snapshot"
+    assert live_aws is not None, "aws has no live snapshot"
+
+    assert live_github.id == gh.id
+    assert live_aws.id != aws.id
 
 
 @pytest.mark.asyncio

@@ -416,7 +416,13 @@ class AwsIamResolver(Resolver):
 
         identity_capped = identity_allow
         boundary_blocked: set[str] = set()
-        if boundary_allowed is not None:
+        # Both, not just `boundary_allowed`. The two are equivalent by
+        # construction -- `boundary_allowed` is assigned only inside the
+        # `boundary is not None` branch above -- but that invariant lives
+        # fifteen lines away and nothing enforces it, so a later edit that
+        # assigns `boundary_allowed` anywhere else turns the `boundary.get`
+        # below into an AttributeError on a path an analyst reaches.
+        if boundary_allowed is not None and boundary is not None and boundary_id:
             identity_capped = identity_allow & boundary_allowed
             boundary_blocked = identity_allow - boundary_allowed
             if boundary_allow or boundary_blocked:
