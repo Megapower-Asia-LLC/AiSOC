@@ -421,7 +421,30 @@ invented fields on the first run of the gate.
 - [ ] **9.2** Semantic memory (parity 6.5)
 - [ ] **9.3** Case depth (parity 5.6 remainder)
 - [ ] **9.4** War rooms
-- [ ] **9.5** Hunt to report
+- [x] **9.5** Hunt to report. A natural-language hunt or a retro-hunt
+  sighting becomes a stored report answering what, how, where and when, with
+  ledger citations, readable as JSON or HTML and exportable as PDF through
+  the **same WeasyPrint path and the same unavailability error** the weekly
+  digest uses — one renderer, because two drift and the PDF stops matching
+  the page somebody approved. Three refusals carry the item: a hunt that has
+  never run is refused (a report about an unexecuted query is a statement
+  about the query, not the estate), an **uncited report is refused at
+  persist time** (an uncited report is an assertion), and a section that
+  cannot be derived stays **empty** and renders as "not recorded" rather
+  than as a confident sentence about nothing. The retro-hunt builder
+  computes the gap between when intelligence arrived and when the estate
+  first saw the indicator, which is the number a retro-hunt exists to
+  produce and which a reader would otherwise get by subtracting two
+  timestamps. Graded by `.github/workflows/hunt-report-live.yml` against a
+  real Postgres with three negative controls. 14 new tests. The live suite
+  earned its keep three times on its first run: `alerts` has no singular
+  `affected_host` (it is `affected_hosts`, a JSONB array, and `entities` is
+  what fusion actually writes), `investigation_events` has **no `case_id` at
+  all** so the ledger is only reachable by joining `investigation_runs`, and
+  that table's `case_id` is TEXT rather than UUID so binding a UUID raises
+  in asyncpg instead of coercing. Each would have shipped under a SQLite
+  stand-in, and the middle one would have cited an empty set on every
+  report.
 - [ ] **9.6** Native responder
 
 ## Phase 10: Close the books
@@ -433,6 +456,7 @@ invented fields on the first run of the gate.
 
 | Date | Item | What happened |
 |---|---|---|
+| 2026-10-11 | 9.5 | Reproduced: `grep -n hunt` across `app/services/report_builder.py` and `app/api/v1/endpoints/reports.py` returned nothing — the report surface and the hunt surface did not know about each other, so a hunt produced rows and a retro-hunt produced a sightings row and neither produced anything a person could read or forward. Built the four-section report, the citation rule, the two builders and the JSON/HTML/PDF export. Three negative controls in the live workflow: allowing an uncited report, filling an empty section with a sentence, and reporting a hunt that never ran each have to turn the suite red. The live run found three schema facts a stand-in would have hidden, recorded in the item above. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |
 | 2026-10-09 | 4.3 | Reproduced: `check_retention_window.py` on the unmodified tree reported six problems — the lake deleting at 90 days against a 3,650-day cap, no `MODIFY TTL` migration, tiering deleting at 90, and the purge worker calling neither `alerts_under_legal_hold` nor `may_purge` and reporting nothing withheld. Fixed all but the cold-query bullet. Four negative controls recorded in the PR, including the positive control: a purge stuck closed withholds every tenant and fails four of the eight hold tests, which is the only thing that separates a working control from commendable caution. One pre-existing test (`test_storage_tiering.py`) pinned the 90-day tiering DELETE and now reads the shared constant; `test_retention_worker.py`'s session double could not answer the new holds query, so the worker failed closed and five of its cases failed — the double was taught the query rather than the fail-closed behaviour relaxed. |
