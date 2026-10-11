@@ -261,9 +261,7 @@ class BaselineStore:
 
     # -- rarity -----------------------------------------------------------
 
-    async def observe_value(
-        self, tenant: str, subject: str, attribute: str, value: str
-    ) -> tuple[int, int] | None:
+    async def observe_value(self, tenant: str, subject: str, attribute: str, value: str) -> tuple[int, int] | None:
         """Count one sighting; return (times seen, total for this attribute).
 
         None means the store could not answer. The pair is returned rather
@@ -307,9 +305,7 @@ class BaselineStore:
 
     # -- volume -----------------------------------------------------------
 
-    async def observe_volume(
-        self, tenant: str, subject: str, kind: str, *, now: float | None = None
-    ) -> float | None:
+    async def observe_volume(self, tenant: str, subject: str, kind: str, *, now: float | None = None) -> float | None:
         """Count one event into this hour; return the z-score of the *previous* hour.
 
         Scoring the hour in progress would compare a partial count against
@@ -348,9 +344,7 @@ class BaselineStore:
 
     # -- peer group -------------------------------------------------------
 
-    async def observe_peer(
-        self, tenant: str, group: str, subject: str, value: float
-    ) -> float | None:
+    async def observe_peer(self, tenant: str, group: str, subject: str, value: float) -> float | None:
         """Fold one member's observation into the group; return its deviation.
 
         The member count is tracked as a set rather than inferred from the
@@ -380,9 +374,7 @@ class BaselineStore:
 
     # -- the engine's entry point ----------------------------------------
 
-    async def derived_fields(
-        self, tenant: str, event: dict[str, Any], *, now: float | None = None
-    ) -> dict[str, Any]:
+    async def derived_fields(self, tenant: str, event: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         """The baseline fields this event produces, for the detection engine.
 
         Mirrors `FirstSeenStore.derived_fields` deliberately: one awaited
@@ -433,9 +425,7 @@ class BaselineStore:
 
         return out
 
-    async def signals(
-        self, tenant: str, event: dict[str, Any], *, now: float | None = None
-    ) -> list[AnomalySignal]:
+    async def signals(self, tenant: str, event: dict[str, Any], *, now: float | None = None) -> list[AnomalySignal]:
         """The same observations as typed signals, for consumers that want them.
 
         Depth plan 3.4 requires each anomaly to be *a typed signal, not an
@@ -455,9 +445,7 @@ class BaselineStore:
                 value = _first_present(event, PEER_GROUP_FIELDS) or ""
             else:
                 kind, attribute = "volume", field
-                value = principal if field == "baseline_principal_volume_z" else (
-                    _first_present(event, OAUTH_APP_FIELDS) or ""
-                )
+                value = principal if field == "baseline_principal_volume_z" else (_first_present(event, OAUTH_APP_FIELDS) or "")
             out.append(
                 AnomalySignal(
                     kind=kind,

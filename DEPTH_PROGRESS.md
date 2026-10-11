@@ -64,9 +64,9 @@ is written. Next free at capture: migration `095`, ADR `0010`
 | migration `107` | 9.4 — `107_case_war_rooms.sql` | claimed |
 | migration `108` | 9.5 — `108_hunt_reports.sql` | claimed |
 | migration `109` | 9.6 — `109_push_devices.sql` | claimed |
-| migration `110` | 3.4 — `110_entity_baselines.sql` | claimed |
+| ~~migration `110`~~ | ~~3.4 — `110_entity_baselines.sql`~~ | **released**, ADR-0011 put the baselines in the Redis fusion already runs, so there is no table |
 | migration `111` | 3.7 — `111_detection_coverage.sql` | claimed |
-| ADR `0011` | 3.4 — behavioural baselines in CORE | claimed |
+| ADR `0011` | 3.4 — behavioural baselines in CORE | **landed**, `docs/decisions/0011-behavioural-baselines-in-core.md`, accepted |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
 so `095`--`101` were taken by sibling lanes between the capture above and this
@@ -305,6 +305,117 @@ Instead, every selector field, `group-by` and `distinct_by` is checked
 against the emitted-field namespace with **no ceiling**, which caught three
 invented fields on the first run of the gate.
 
+### D9 -- Five of the 45 "unreachable" rules were never unreachable
+
+`scripts/check_detection_fields.py` carries its own copy of the matcher's
+operator suffixes, under a comment saying it mirrors
+`detection_matcher.OPERATORS`. It did not. `neq` had been added to the
+matcher and not to the gate, so `approver_role_neq: "codeowner"` — which the
+engine reads correctly as `approver_role` with `!=` — was reported as a rule
+naming a field called `approver_role_neq`. Five rules were counted against
+the ratchet for a defect that had already been fixed.
+
+The same comparison in the other direction found a worse one: the gate
+listed `not_startswith_any` and `not_endswith`, which the **matcher** did not
+implement. Three shipped rules use `path_not_startswith_any`, so the matcher
+read the whole string as a field name and all three could never fire — while
+the gate, stripping a suffix nothing implemented, reported them reachable.
+Both operators are now implemented in the vendored matcher and the canonical
+one, the fixture synthesiser knows them, and
+`test_the_gate_and_the_matcher_agree_on_every_operator` compares the two
+lists in both directions.
+
+### D10 -- 18 rules are retired rather than fixed, and why each one is
+
+The plan says of one family: "build them where cheap, otherwise quarantine
+with a reason". Applied to all three families, that leaves 18 rules that need
+work belonging to another item, recorded individually in
+`scripts/enrichment_decisions.py`:
+
+| kind | n | needs |
+|---|---|---|
+| `needs-connector-field` | 9 | a field the vendor has and no connector surfaces — depth plan 2.2 |
+| `needs-external-source` | 6 | a registry, a credential report or a factor record — 2.5 and beyond |
+| `needs-inventory` | 3 | an inventory this platform does not hold (DC machine accounts, privileged OAuth scopes) |
+
+`scripts/check_enrichment_decisions.py` is what stops this being a way to
+move the ratchet: it fails if a retired rule's fields are all resolvable.
+Proved by retiring a working rule and watching it fail.
+
+The line that mattered most was refusing a plausible substitute.
+`domain_age_days` wants a domain's registration age from a registry; the
+first-seen store could have answered "when this deployment first saw it" and
+the number would have looked right in a diff. It would also have fired the
+rule on most of the internet. Five such age-of-a-thing fields are named in a
+test that forbids the first-seen store from ever growing them.
+
+### D11 -- Identity privilege reads a table a tenant must populate
+
+The `*_priv` booleans resolve from `identity_nodes.privilege_tier >= 2`, the
+column migration 018 created for the question. The table's only writer is
+`POST /api/v1/identity-graph/nodes`, so a tenant that has imported no
+directory gets **no key at all** and those 18 rules stay silent — they are
+reachable "when the tenant has identity data", the same standard this gate
+already applies to a vendor-payload field. That is weaker than "reachable on
+any deployment" and is stated rather than glossed. Depth plan 2.5's posture
+collectors are what will populate it automatically.
+
+Four booleans in the same family are deliberately **not** computed —
+`scope_priv`, `act_as_user_priv`, `gpo_link_priv` and `account_is_dc` — and
+are among the 18 above. Each has no subject field any source emits, and
+guessing a subject would produce a boolean that is confidently wrong rather
+than absent.
+
+### D12 -- The "behavioural baseline" family named the wrong piece of work
+
+`check_detection_fields.py` classified an unreachable field into a family so
+the headline number would be actionable. Its behavioural pattern was
+`_baseline|_deviation|^active_|_is_first_`, and `^active_` is not a
+behavioural shape at all. It matched the only two rules left on the ratchet:
+
+| rule | field | what it actually needs |
+|---|---|---|
+| `det-endpoint-146` | `active_state` | a systemd unit state from a host agent |
+| `det-identity-015` | `active_p0_or_p1_incident` | the tenant's ITSM incident queue |
+
+So the gate reported "2 rules need depth plan 3.4" when the true answer was
+**zero**, and building 3.4 exactly as specified would not have moved the
+number by one. A gate pointing at the wrong piece of work is worse than one
+pointing at none, because the named thing gets built and the next reader
+concludes the fix failed.
+
+The pattern now matches the shape `baselines.py` actually produces
+(`^baseline_|_baseline$|_deviation$`), and a new `external system context`
+family carries the ITSM rule. `MAX_UNREACHABLE` stays at **2** — this is a
+reclassification and not a fix, and lowering a ceiling on the strength of
+relabelling is the move this file exists to refuse.
+
+Two consequences worth stating. The behavioural family is now genuinely
+empty, so 3.4 closes no unreachable rule and is not credited with any; it
+earns its place by making 3.5's rules possible, which is a different claim.
+And D9's lesson repeated one level up: a gate that keeps its own description
+of another component drifts from it, and here the drift was in the
+classifier rather than in the operator list.
+
+### D13 -- D9, D10 and D11 were written, merged, and lost on `main`
+
+PR #1226 (depth 3.3) added three deviation sections. None of them is on
+`main`. The item log still cites "(gate operator drift, D9)" and "18 retired
+with a reason (D10)", so the tracker has spent two days pointing at
+explanations a reader could not find, and the same merge truncated 3.2's
+checklist paragraph mid-sentence and left a stale unchecked duplicate
+beneath it.
+
+Nothing was wrong with the branch; the loss happened in a conflict
+resolution that took `main`'s side of this file wholesale. That is the
+documented failure mode for a file several lanes write to at once, and the
+documented remedy — keep both sides' paragraphs, never take one side whole —
+is the one that would have prevented it.
+
+All three are restored here verbatim from the merge commit rather than
+rewritten from memory, which is why D11 keeps its original number and this
+phase's own new deviations take D12 and D13.
+
 ## Phase 1: Verdict quality you can publish
 
 - [x] **1.1** Balanced, labelled verdict corpus
@@ -349,7 +460,23 @@ invented fields on the first run of the gate.
   `MAX_UNREACHABLE` 45 → 2, and the two that remain both need the 3.4
   baseline, so they are named rather than hidden. Two matcher operators that
   three shipped rules already used were implemented.
-- [ ] **3.4** Behavioural baselines in CORE
+- [x] **3.4** Behavioural baselines in CORE — the scoring core moved into
+  fusion as `services/fusion/app/services/baselines.py` rather than UEBA
+  moving into CORE, measured and recorded in ADR-0011: the UEBA image is
+  145.4 MB on disk with a 63.3 MiB import floor, against zero new
+  containers and a measured 2,412 bytes of Redis per principal (200
+  principals over 10,000 events, `used_memory` read before and after
+  against a real Redis 7). All three families the plan names are there —
+  per-principal rarity of actions, resources, client families and
+  locations; peer-group deviation; volume per principal and per OAuth app —
+  each a typed `AnomalySignal`, never an alert on its own. Wired into
+  `DetectionEngine.evaluate_async` beside the 3.3 first-seen store, so a
+  CORE install computes them with no `full` service running. 21 tests. The
+  reachability gate's "behavioural baseline" family was **narrowed**: it
+  matched `^active_`, which swept in a systemd unit state and an ITSM
+  lookup and reported both as blocked on a baseline that would never have
+  helped either (D12). `MAX_UNREACHABLE` stays at 2, now with accurate
+  reasons.
 - [ ] **3.5** Threat-and-anomaly condition rules
 - [ ] **3.6** 395 → at least 800 cloud, identity, SaaS and code conditions
 - [ ] **3.7** Detection engineering agent (gap-closure Phase 9 / parity 6.2)
