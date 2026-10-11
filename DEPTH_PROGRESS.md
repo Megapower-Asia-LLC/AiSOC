@@ -519,7 +519,77 @@ invented fields on the first run of the gate.
   rather than only its own subjects, because both purges are bulk
   statements. Narrowing that needs a per-subject predicate on each store
   and is follow-up.
-- [ ] **4.4** Throughput (parity 6.9) and a cloud-hardware run
+- [~] **4.4** Throughput (parity 6.9) and a cloud-hardware run. **Every
+  parity 6.9 bullet is closed; the cloud-hardware run is not, and cannot
+  be from here.**
+
+  **Rules indexed — on required fields, not log source.** The engine ran
+  every rule against every event, and its own docstring already recorded
+  why a log-source index could not be the fix: connector product names
+  do not line up with spec products, a product-based pre-filter was
+  tried once and reverted for silently dropping real matches, and a
+  mapping table leaves every new connector one missing entry away from a
+  detection that stops firing. `match_when` is an AND at the top level,
+  so a rule that requires a field the event does not carry cannot match
+  it — strictly more selective than log source and provably lossless.
+  "Required" is decided by **running the real matcher against an empty
+  event**, which is how writing the test found that `neq` requires its
+  field in this matcher despite reading like a negation; a hand-written
+  operator list would have been wrong in the direction that drops
+  detections. Measured: 2,511 rules, 1,751 indexed (69.74%), 797
+  candidates for a routine cloud event (68.3% fewer), 2.760 → 1.066
+  ms/event over 2,000 iterations.
+
+  **Ordering per entity.** Ingest keyed every message `tenant:event_id`,
+  unique per event, so nothing about one entity was ordered relative to
+  anything — while fusion correlates on `{tenant}:{entity}:{tactic}`.
+  Now `tenant:entity` in the same precedence the correlation key uses,
+  held equal by a test, because a partition key disagreeing with the
+  correlation key routes an entity's events to a partition and then
+  correlates them under a different name.
+
+  **Concurrent triage.** Auto-triage awaited one LLM call at a time.
+  Concurrency is per entity, not global: alerts about one host are the
+  ones most likely to be one incident and triage reads memory earlier
+  triages of that entity wrote, so racing them turns a deterministic
+  verdict into a coin toss. Offsets commit only after the in-flight
+  window drains, with a time bound as well as a count.
+
+  **Lag hints.** `GET /scale-hint` publishes the backlog and a suggested
+  replica count. AiSOC does not act on it — ADR-0011 records why — and
+  the per-replica budget is derived from the published realistic-mix run
+  rather than chosen, with a test that reads the committed result file
+  and fails if the two drift.
+
+  **Realistic mix.** `--alert-every N` sends one alerting event every
+  Nth and routine telemetry in between. Published run: 6,000 events
+  saturating at 1-in-100, **0 of 5,940 routine events raised an alert**,
+  0 missing, 0 duplicates, p95 event-to-alert 1,195 ms, ingest 122.6
+  events/s.
+
+  **The first attempt at that run measured a routine alert rate of
+  1.00** — every "benign" event became an alert. Not the corpus firing:
+  the load path sends an undeclared connector type, the ingest
+  normalizer's generic fallback files it as class 2001 Security Finding,
+  and the promoter promotes OCSF category 2 unconditionally. **Eight of
+  the twelve declared profiles are category 2**, so on those connectors
+  no event can be routine whatever it contains. Also fixed: "missing
+  events" was counted against every accepted event, so a perfect mix run
+  reported losing 99% of its traffic.
+
+  ADR `0011`. 51 new tests (12 index, 8 partition key, 18 entity lanes,
+  13 scale hint). Three claim rows; matrix 309 rows, 306 GATED.
+
+  **`[~]` and not `[x]`, for one reason: there is no cloud-hardware
+  run.** No cloud instance has been provisioned for this project, so
+  every figure on the performance page comes from a laptop or from a
+  kind cluster on it. The plan's 5,000 events/s at p95 under 2 s target
+  is therefore an aim rather than a result, and the page says so, with
+  the exact command that would close it once an instance exists. A
+  second, smaller caveat recorded there too: the published mix run went
+  through the **published images**, not a build of this branch, so it is
+  not a measurement of the rule index — that is measured separately and
+  in process.
 - [ ] **4.5** Deployment completeness (parity 6.8)
 
 ## Phase 5: Response that finishes
@@ -577,6 +647,7 @@ invented fields on the first run of the gate.
 | 2026-10-07 | 0.3 | `make up` and `make smoke` (10/10) pass. Injection suite and load-harness baselines committed. `make up-full` deferred (D2) and hosted model rows blocked (D3). Fixing D1 was a precondition for the load-harness baseline. |
 | 2026-10-09 | 3.3 | Identity privilege (18 rules) and a per-tenant first-seen store (2) built; 5 rules were never unreachable (gate operator drift, D9); 18 retired with a reason (D10). `MAX_UNREACHABLE` 45 → 2, the two remaining both needing the 3.4 baseline. Two matcher operators three shipped rules already used were implemented. |
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
+| 2026-10-11 | 4.4 | Every parity 6.9 bullet closed; the cloud-hardware run is not possible from here and is recorded as unmeasured rather than implied. Rule index on required fields (lossless, proven by replaying every fixture both ways; 68.3% fewer candidates, 2.6x on evaluation), entity partition key held equal to the correlation key, per-entity concurrent triage, lag-based scale hint derived from the published run. The realistic mix found that eight of twelve connector profiles are category 2 and are promoted unconditionally, so on those connectors no event can be routine — the first run measured a routine alert rate of 1.00. ADR-0011; matrix 309 rows, 306 GATED. |
 | 2026-10-11 | 4.3 | Third bullet closed. Reproduced: `check_retention_window.py` with the new rules reported no cold-query estimator, no job surface and no job table on the pre-fix tree. Built `lake_cold_query.py` (EXPLAIN ESTIMATE + system.parts + system.processes, no invented throughput or price), `lake_query_runner.py` and migration `111`. Negative control: removing the `status = 'queued'` predicate makes both interleaved transactions claim one job and the live suite goes red. The first version of that test — five gathered claims — passed under the broken implementation and was replaced. 26 pure + 12 live tests; matrix 306 rows, 303 GATED. |
 | 2026-10-11 | 4.2 | Reproduced: `check_standard_inputs.py` against the pre-fix tree reported no OTLP package, no Kafka input and no TAXII server — the only TAXII-shaped route being a demo-gated sample list. Built all three, after moving the consumer-health classifier out of `graph_ws` into `streamhealth` so the new Kafka consumer shares the table rather than copying it. Negative controls recorded in the PR: a timestamp-only TAXII cursor loses an indicator in the single-row pagination walk (measured — 3 of 4), and nineteen gate injections each go red. Writing it found four defects, including an OTLP template nobody could mint a token for and a gate rule that read an error message instead of the behaviour. Ingest Go suite green; api projection suite 37; live TAXII suite 15. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |

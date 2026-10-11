@@ -251,6 +251,57 @@ measured values: GitHub runners are shared, throttled and noisy, and a gate
 that fires on runner jitter gets disabled within a week. **A passing perf job
 is not evidence that any number on this page still holds on your hardware.**
 
+## Scaling on lag
+
+`GET /scale-hint` on the fusion service publishes the consumer backlog
+and a suggested replica count. AiSOC does not scale itself — an
+autoscaler belongs to the cluster, would need write access to the
+orchestrator, and would fight whatever scaler you already run. ADR-0011
+records that decision.
+
+```json
+{
+  "status": "ok",
+  "lag_messages": 31204,
+  "lag_measured": true,
+  "replica_eps": 122.56,
+  "drain_target_seconds": 120.0,
+  "suggested_replicas": 3,
+  "basis": "31204 message(s) backlog, cleared in 120s at 122.6 events/s per replica"
+}
+```
+
+`replica_eps` defaults to the ingest rate measured in the realistic-mix
+run above, which is a laptop's figure. Set `AISOC_FUSION_REPLICA_EPS` to
+your own and the hint is derived from that instead;
+`AISOC_FUSION_DRAIN_TARGET_SECONDS` changes how fast you want a backlog
+cleared.
+
+`lag_measured: false` means the backlog could not be read — no partition
+assignment yet, or a broker that did not answer. It is **not** zero
+backlog, and a scaler should treat it as no signal rather than as an
+all-clear.
+
+A KEDA `ScaledObject` consuming it:
+
+```yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: aisoc-fusion
+spec:
+  scaleTargetRef:
+    name: aisoc-fusion
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  triggers:
+    - type: metrics-api
+      metadata:
+        targetValue: "1"
+        url: "http://aisoc-fusion:8000/scale-hint"
+        valueLocation: "suggested_replicas"
+```
+
 ## No cloud-hardware run exists yet, and that is a gap
 
 The depth plan asks for a run on stated cloud hardware, aiming at a
