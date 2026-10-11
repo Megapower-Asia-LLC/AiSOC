@@ -728,7 +728,53 @@ async def get_audit_chain_health(
         .all()
     )
     replay = [dict(r) for r in reversed(rows)]
-    breaks = verify_chain_breaks(replay)
+
+    # What the first replayed row should name as its predecessor.
+    #
+    # The replay can only verify the links *between the rows it fetched*,
+    # and the link from the first of them to whatever came before is
+    # unverifiable unless that predecessor is genesis. There are two ways
+    # it is not genesis, and both used to be reported as tampering:
+    #
+    # * **The window.** `window` is 500, so any tenant with more chained
+    #   rows than that starts the replay mid-chain and the first row names
+    #   a predecessor nobody fetched. Every such tenant reported
+    #   `prev_hash mismatch` at index 0 — a healthy chain, read as broken,
+    #   which is the one answer this surface must never give by accident.
+    # * **The retention window.** Depth 8.1 gave `audit_days` a purge
+    #   (migration `111`), so the oldest retained row can legitimately
+    #   name a predecessor that was lawfully removed. The checkpoint
+    #   written in the same transaction records which hash that was.
+    #
+    # Anchoring on the checkpoint is a *verification*: the survivor must
+    # name the hash the truncation recorded. Anchoring on the row's own
+    # `prev_hash` is an *acknowledgement* that this window cannot check
+    # that link, and `replay_anchor` below says which of the two happened
+    # rather than leaving a reader to infer it.
+    truncation = (
+        (
+            await db.execute(
+                text(
+                    "SELECT first_retained_prev_hash FROM aisoc_audit_checkpoints WHERE tenant_id = :tid ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"tid": user.tenant_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    chained_total = int(counts["chained"] or 0)
+    if replay and chained_total > len(replay):
+        anchor_prev_hash = replay[0].get("prev_hash")
+        replay_anchor = "window"
+    elif truncation is not None:
+        anchor_prev_hash = truncation["first_retained_prev_hash"]
+        replay_anchor = "retention_checkpoint"
+    else:
+        anchor_prev_hash = None
+        replay_anchor = "genesis"
+
+    breaks = verify_chain_breaks(replay, anchor_prev_hash=anchor_prev_hash)
     tail_break = verify_chain_tail(replay, dict(head) if head else None)
     intact = not breaks and tail_break is None
     bad_index = int(breaks[0]["index"]) if breaks else None
@@ -753,6 +799,11 @@ async def get_audit_chain_health(
         "oldest_unchained_at": counts["oldest_unchained"].isoformat() if counts["oldest_unchained"] else None,
         "newest_unchained_at": counts["newest_unchained"].isoformat() if counts["newest_unchained"] else None,
         "replay_window": len(replay),
+        # `genesis`, `retention_checkpoint`, or `window`. Only the first
+        # two mean the oldest link in this replay was checked; `window`
+        # means the chain is longer than the replay and the link below it
+        # was taken on trust.
+        "replay_anchor": replay_anchor,
         # Deleting the newest rows leaves every remaining link valid; only the
         # stored head shows the chain used to be longer.
         "tail_intact": tail_break is None,
