@@ -62,10 +62,10 @@ from app.interactions import (
     handle_action_decision,
 )
 from app.notify import router as notify_router
-from app.war_room import router as war_room_router
 from app.services.aisoc_clients import AisocActionsClient, AisocApiClient
 from app.services.approval_audit import StructlogAuditSink
 from app.services.approval_timeout import ApprovalTimeoutScheduler
+from app.war_room import router as war_room_router
 
 # Configure structlog before anything else so module-level loggers
 # (httpx, slack_bolt, …) inherit the JSON renderer.
