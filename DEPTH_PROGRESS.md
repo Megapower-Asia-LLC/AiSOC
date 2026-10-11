@@ -429,9 +429,12 @@ invented fields on the first run of the gate.
   contains `classes.dex` (a green build that produced nothing is a shape
   this repository has shipped) and uploads it — an APK that installs on a
   handset, not store-signable, which needs a Google Play account. iOS
-  compiles for the **simulator** on a macOS runner, which proves the native
-  project configures and builds; a device build needs an Apple developer
-  account. *Voice:* `apps/mobile/src/lib/voice.ts` takes a recogniser that
+  compiles **and links** for the simulator on a macOS runner — the Expo
+  config generates a valid Xcode project, the pods resolve and every native
+  module builds. It deliberately does not run Metro's bundle phase, which
+  dies on that runner inside one of expo-router's PNGs for a Metro/Node
+  reason unrelated to this app; the Android job bundles, so that half is
+  still graded. A device build needs an Apple developer account. *Voice:* `apps/mobile/src/lib/voice.ts` takes a recogniser that
   returns a **string**, so no audio type appears anywhere in the module and
   there is nothing for a later edit to upload; a device with no offline
   model is **refused** rather than silently using the platform's cloud
