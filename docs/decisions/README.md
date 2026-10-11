@@ -24,6 +24,7 @@ ADRs are immutable once accepted. If a decision changes, write a new ADR that su
 | [ADR-0008](./0008-scim-trust-boundary.md) | SCIM is a third-party write surface into identity, and is scoped by its credential | accepted | 2026-09-27 |
 | [ADR-0009](./0009-auto-close-without-an-earned-grant.md) | Whether a tenant with no closure policy may auto-close | proposed | 2026-10-04 |
 | [ADR-0010](./0010-entity-and-session-context-in-core.md) | Entity and session context in CORE is a Postgres store; Neo4j stays in `full` | accepted | 2026-10-11 |
+| [ADR-0011](./0011-truncating-a-hash-chained-audit-log.md) | Truncating a hash-chained audit log without making an intact chain look tampered with | accepted | 2026-10-11 |
 
 ## Authoring conventions
 
