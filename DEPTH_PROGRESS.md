@@ -64,6 +64,10 @@ is written. Next free at capture: migration `095`, ADR `0010`
 | migration `107` | 9.4 — `107_case_war_rooms.sql` | claimed |
 | migration `108` | 9.5 — `108_hunt_reports.sql` | claimed |
 | migration `109` | 9.6 — `109_push_devices.sql` | claimed |
+| migration `110` | 4.2 — `110_stream_inputs.sql` (Kafka customer topics, TAXII collections) | claimed |
+| migration `111` | 4.3 — `111_lake_query_jobs.sql` (cold-query cost estimate and progress state) | claimed |
+| migration `112` | 4.5 — `112_scheduler_leases.sql` (connector-scheduler leader election) | claimed |
+| ADR `0011` | 4.4 — partitioning fusion by entity rather than by alert | claimed |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
 so `095`--`101` were taken by sibling lanes between the capture above and this
@@ -74,6 +78,13 @@ Phase 9 re-read `services/api/migrations/` on 2026-10-11 before claiming:
 and `103` were already spoken for in the table above, so Phase 9 takes `104`
 through `109`, one per item. A number left unused at the end of the phase is
 released by striking its row rather than by silently leaving a gap.
+
+Phase 4 (items 4.2--4.5) re-read the directory on 2026-10-11 immediately
+before claiming: `101_audit_immutable_nullify.sql` is still the highest file
+on `main`, `102`--`109` are spoken for above, so this lane takes `110`--`112`
+and ADR `0011`. The numbers are claimed before any file is written, because
+two lanes recently picked `102`/`103` within minutes of each other and one
+had to renumber. Unused numbers are struck at the end of the phase.
 
 ## Phase 0: Kickoff
 
