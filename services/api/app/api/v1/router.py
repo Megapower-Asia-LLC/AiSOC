@@ -57,6 +57,7 @@ from app.api.v1.endpoints import (
     llm_credentials,
     llm_status,
     marketplace,
+    mcp_access,
     mcp_servers,
     metrics,
     mfa,
@@ -162,6 +163,12 @@ api_router.include_router(plugins.router)
 api_router.include_router(community.router)
 api_router.include_router(marketplace.router)
 api_router.include_router(mcp_servers.router)
+# Depth 9.1 (parity 6.6): the *inbound* MCP surface. `mcp_servers` above is
+# the outbound registry -- third-party servers the agent may call. These
+# routes are the authority behind AiSOC's own MCP server once it is on the
+# network: per-tenant tool grants, an approval queue for anything that is
+# not a read, and the audit row for every call including the reads.
+api_router.include_router(mcp_access.router)
 # Gap-closure Phase 6.1 and 6.2: tenant-authored investigation skills:
 # authored in YAML, validated against the tools this tenant's agent can
 # actually call, backtested through the Phase 1 replay with and without the
