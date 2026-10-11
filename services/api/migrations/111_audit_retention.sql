@@ -67,11 +67,30 @@ CREATE INDEX IF NOT EXISTS aisoc_audit_checkpoints_tenant_idx
 -- unconditionally, because on DELETE there is no NEW and `RETURN NEW`
 -- returns NULL, which in a BEFORE trigger silently *cancels* the statement
 -- and reports "DELETE 0" as success.
+--
+-- The one exception is the cascade from `tenants`. The foreign key above
+-- declares `ON DELETE CASCADE`, and an unconditional refusal here would
+-- make that declaration a lie: the tenant delete would raise instead of
+-- cascading, so the row could never be removed by any means at all.
+--
+-- A cascade is told apart from a direct DELETE by whether the parent is
+-- still there. PostgreSQL implements `ON DELETE CASCADE` as an AFTER
+-- trigger on the parent, so by the time this BEFORE trigger runs on the
+-- child the tenant row is already gone; a caller deleting checkpoints
+-- directly still has their tenant. Measured both ways rather than assumed.
+--
+-- That is a narrow hole and deliberately an expensive one: erasing the
+-- record of a truncation means destroying the entire tenant, which takes
+-- every alert, case and credential with it. Selective erasure -- the thing
+-- this table exists to prevent -- is still refused.
 CREATE OR REPLACE FUNCTION public.audit_checkpoint_immutable()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
 BEGIN
+    IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM tenants WHERE id = OLD.tenant_id) THEN
+        RETURN OLD;
+    END IF;
     RAISE EXCEPTION 'aisoc_audit_checkpoints rows are immutable (attempted %)', TG_OP;
 END;
 $fn$;
