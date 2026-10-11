@@ -306,6 +306,127 @@ async def passkey_register_finish(
 # --------------------------------------------------------------------------- #
 
 
+# --------------------------------------------------------------------------- #
+# Second-factor use, for the desktop console
+# --------------------------------------------------------------------------- #
+#
+# Depth 8.1. These two are the only WebAuthn code the console MFA path
+# calls, and they live here rather than in `mfa.py` so there is exactly
+# one verifier in the tree. Two implementations of
+# `verify_authentication_response` is two things that can come to
+# different conclusions about one signature, and the one that is wrong is
+# not necessarily the one that gets fixed.
+#
+# They are plain functions rather than routes: the routes are in `mfa.py`
+# because the thing they guard is a console sign-in, not a passkey.
+
+
+async def webauthn_second_factor_options(db: Any, *, user_id: uuid.UUID, tenant_id: uuid.UUID) -> dict[str, Any] | None:
+    """Assertion options restricted to *user_id*'s own credentials.
+
+    Returns `None` when the user holds none, so the caller can say so
+    rather than offering a challenge no authenticator can answer.
+
+    `allow_credentials` is never empty-and-therefore-discoverable here.
+    That is the difference from `passkey_authenticate_begin`, where a
+    discoverable assertion is the point: this discharges a challenge for
+    one known person, so any other authenticator must simply not be
+    offered.
+    """
+    webauthn, _ = _import_webauthn()
+
+    cred_rows = (
+        (
+            await db.execute(
+                select(PasskeyCredential).where(
+                    PasskeyCredential.user_id == user_id,
+                    PasskeyCredential.revoked_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not cred_rows:
+        return None
+
+    options = webauthn.generate_authentication_options(
+        rp_id=settings.PASSKEY_RP_ID,
+        allow_credentials=[
+            {"id": _b64url_decode(c.credential_id), "type": "public-key", "transports": c.transports or None}
+            for c in cred_rows
+        ],
+    )
+    encoded_challenge = await _store_challenge(
+        db,
+        purpose="authenticate",
+        challenge=options.challenge,
+        user_id=user_id,
+        tenant_id=tenant_id,
+    )
+    return {"publicKey": json.loads(webauthn.options_to_json(options)), "challenge": encoded_challenge}
+
+
+async def verify_second_factor_assertion(
+    db: Any,
+    *,
+    user_id: uuid.UUID,
+    challenge: str,
+    credential: dict[str, Any],
+) -> str | None:
+    """Verify an assertion **and** that it came from *user_id*'s own key.
+
+    Returns the credential's device name on success and `None` on any
+    failure, so a caller cannot mistake a falsy result for a pass.
+
+    The `user_id` predicate on the credential lookup is the control.
+    Without it, an attacker who has verified a password for one account
+    could discharge its challenge with their own enrolled authenticator —
+    the signature would be perfectly valid and belong to somebody else.
+    """
+    webauthn, _ = _import_webauthn()
+
+    raw_credential_id = credential.get("id") or credential.get("rawId")
+    if not isinstance(raw_credential_id, str):
+        return None
+
+    await _consume_challenge(db, encoded=challenge, purpose="authenticate")
+
+    cred_row = (
+        await db.execute(
+            select(PasskeyCredential).where(
+                PasskeyCredential.credential_id == raw_credential_id,
+                PasskeyCredential.user_id == user_id,
+                PasskeyCredential.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if cred_row is None:
+        return None
+
+    try:
+        verified = webauthn.verify_authentication_response(
+            credential=credential,
+            expected_challenge=_b64url_decode(challenge),
+            expected_rp_id=settings.PASSKEY_RP_ID,
+            expected_origin=settings.PASSKEY_RP_ORIGINS,
+            credential_public_key=_b64url_decode(cred_row.public_key),
+            credential_current_sign_count=cred_row.sign_count,
+            # Not negotiable, and the reason this credential counts as a
+            # *second* factor at all: without user verification an
+            # assertion proves possession of a device and nothing about
+            # who is holding it.
+            require_user_verification=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - any verification failure is a refusal
+        logger.warning("mfa.webauthn_verification_failed: %s", exc)
+        return None
+
+    cred_row.sign_count = int(verified.new_sign_count)
+    cred_row.last_used_at = _now()
+    return str(cred_row.device_name)
+
+
 @router.post("/authenticate/begin")
 async def passkey_authenticate_begin(
     body: AuthenticateBeginRequest,
