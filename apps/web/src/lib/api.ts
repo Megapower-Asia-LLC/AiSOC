@@ -29,14 +29,14 @@
  * api.tryaisoc.com) from bypassing the proxy and triggering CORS blocks.
  */
 function safeBase(url: string): string {
-  if (!url) return '';
-  if (typeof window === 'undefined') return url; // SSR — let Next.js rewrites decide
+  if (!url) return "";
+  if (typeof window === "undefined") return url; // SSR — let Next.js rewrites decide
   try {
     const envOrigin = new URL(url).origin;
     if (envOrigin !== window.location.origin) {
       // Cross-origin base detected. Fall back to same-origin so the Next.js
       // rewrite proxy can handle the request without CORS issues.
-      return '';
+      return "";
     }
   } catch {
     // Relative URL or invalid — use as-is (same-origin path is fine)
@@ -44,14 +44,14 @@ function safeBase(url: string): string {
   return url;
 }
 
-export const API_BASE = safeBase(process.env.NEXT_PUBLIC_API_URL || '');
-const AGENTS_BASE = safeBase(process.env.NEXT_PUBLIC_AGENTS_URL || '');
-const ACTIONS_BASE = safeBase(process.env.NEXT_PUBLIC_ACTIONS_URL || '');
-const FUSION_BASE = safeBase(process.env.NEXT_PUBLIC_FUSION_URL || '');
-const THREATINTEL_BASE = safeBase(process.env.NEXT_PUBLIC_THREATINTEL_URL || '');
-const ENRICHMENT_BASE = safeBase(process.env.NEXT_PUBLIC_ENRICHMENT_URL || '');
-const REALTIME_BASE = safeBase(process.env.NEXT_PUBLIC_REALTIME_URL || '');
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || ''; // WS handled separately by wsOrigin()
+export const API_BASE = safeBase(process.env.NEXT_PUBLIC_API_URL || "");
+const AGENTS_BASE = safeBase(process.env.NEXT_PUBLIC_AGENTS_URL || "");
+const ACTIONS_BASE = safeBase(process.env.NEXT_PUBLIC_ACTIONS_URL || "");
+const FUSION_BASE = safeBase(process.env.NEXT_PUBLIC_FUSION_URL || "");
+const THREATINTEL_BASE = safeBase(process.env.NEXT_PUBLIC_THREATINTEL_URL || "");
+const ENRICHMENT_BASE = safeBase(process.env.NEXT_PUBLIC_ENRICHMENT_URL || "");
+const REALTIME_BASE = safeBase(process.env.NEXT_PUBLIC_REALTIME_URL || "");
+const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || ""; // WS handled separately by wsOrigin()
 
 /**
  * Compute the WebSocket origin at call time.
@@ -66,16 +66,14 @@ const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || ''; // WS handled separately b
  */
 function wsOrigin(): string {
   if (WS_BASE) return WS_BASE;
-  if (typeof window !== 'undefined') {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.host}`;
   }
-  return '';
+  return "";
 }
 
-const TENANT_ID =
-  process.env.NEXT_PUBLIC_TENANT_ID ||
-  '00000000-0000-0000-0000-000000000001';
+const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "00000000-0000-0000-0000-000000000001";
 
 export const API_BASES = {
   api: API_BASE,
@@ -106,10 +104,10 @@ export const DEFAULT_TENANT_ID = TENANT_ID;
 // `NEXT_PUBLIC_TENANT_ID` remains the floor so demo and SSR contexts keep
 // working when no user is logged in.
 
-export const ACTIVE_TENANT_KEY = 'aisoc.activeTenantId';
+export const ACTIVE_TENANT_KEY = "aisoc.activeTenantId";
 
 export function getActiveTenantId(): string {
-  if (typeof window === 'undefined') return TENANT_ID;
+  if (typeof window === "undefined") return TENANT_ID;
   try {
     const override = window.localStorage.getItem(ACTIVE_TENANT_KEY);
     if (override) return override;
@@ -125,7 +123,7 @@ export function getActiveTenantId(): string {
 }
 
 export function setActiveTenantId(tenantId: string | null): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     if (tenantId) {
       window.localStorage.setItem(ACTIVE_TENANT_KEY, tenantId);
@@ -148,7 +146,7 @@ export class ApiError extends Error {
 
   constructor(message: string, status: number, body: string) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.status = status;
     this.body = body;
   }
@@ -169,12 +167,12 @@ export class ApiError extends Error {
  */
 export function apiHeaders(extra?: HeadersInit): Record<string, string> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Tenant-Id': getActiveTenantId(),
+    "Content-Type": "application/json",
+    "X-Tenant-Id": getActiveTenantId(),
     ...(extra as Record<string, string> | undefined),
   };
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     try {
       if (!headers.Authorization && !headers.authorization) {
         const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
@@ -188,7 +186,6 @@ export function apiHeaders(extra?: HeadersInit): Record<string, string> {
   return headers;
 }
 
-
 /**
  * Whether a JWT's `exp` has passed. True when it cannot be read.
  *
@@ -197,13 +194,13 @@ export function apiHeaders(extra?: HeadersInit): Record<string, string> {
  * for real, and a forged token simply 401s there.
  */
 export function isTokenExpired(token: string, nowSeconds?: number): boolean {
-  const parts = token.split('.');
+  const parts = token.split(".");
   if (parts.length !== 3) return true;
   try {
-    const payload = JSON.parse(
-      atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')),
-    ) as { exp?: number };
-    if (typeof payload.exp !== 'number') return false;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))) as {
+      exp?: number;
+    };
+    if (typeof payload.exp !== "number") return false;
     // A small skew, so a token that expires mid-request does not bounce
     // the user out of a page that was working a second ago.
     const now = nowSeconds ?? Math.floor(Date.now() / 1000);
@@ -226,7 +223,7 @@ export function isTokenExpired(token: string, nowSeconds?: number): boolean {
  * for a route that does not exist is dead weight that reads like a
  * promise.
  */
-const AUTH_EXEMPT_PATHS = ['/api/v1/auth/login', '/api/v1/auth/refresh'];
+const AUTH_EXEMPT_PATHS = ["/api/v1/auth/login", "/api/v1/auth/refresh"];
 
 /**
  * Clear a dead session and send the user to sign in again.
@@ -236,10 +233,10 @@ const AUTH_EXEMPT_PATHS = ['/api/v1/auth/login', '/api/v1/auth/refresh'];
  * fail with no explanation and no way to recover.
  */
 function handleUnauthorized(path: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   if (AUTH_EXEMPT_PATHS.some((exempt) => path.startsWith(exempt))) return;
   // Already on the sign-in page: clearing is right, navigating would loop.
-  const onLogin = window.location.pathname.startsWith('/login');
+  const onLogin = window.location.pathname.startsWith("/login");
   try {
     window.localStorage.removeItem(AUTH_TOKEN_KEY);
     window.localStorage.removeItem(AUTH_REFRESH_KEY);
@@ -260,7 +257,7 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
   if (params) {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
+      if (value !== undefined && value !== null && value !== "") {
         searchParams.set(key, String(value));
       }
     });
@@ -275,18 +272,14 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
     response = await fetch(url, {
       ...fetchOptions,
       headers,
-      cache: 'no-store',
+      cache: "no-store",
     });
   } catch (err) {
-    throw new ApiError(
-      `Network error talking to ${url}: ${(err as Error).message}`,
-      0,
-      '',
-    );
+    throw new ApiError(`Network error talking to ${url}: ${(err as Error).message}`, 0, "");
   }
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
+    const errorText = await response.text().catch(() => "");
     if (response.status === 401) {
       // Self-heal rather than leaving the user on a page where every
       // panel fails silently and nothing offers a way back.
@@ -295,7 +288,7 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
     throw new ApiError(
       `API ${response.status} ${response.statusText} — ${path}`,
       response.status,
-      errorText,
+      errorText
     );
   }
 
@@ -346,16 +339,19 @@ export async function apiFetch(path: string, options: FetchOptions = {}): Promis
   if (params) {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
+      if (value !== undefined && value !== null && value !== "") {
         searchParams.set(key, String(value));
       }
     });
     const qs = searchParams.toString();
     if (qs) url += `?${qs}`;
   }
-  return fetch(url, { ...fetchOptions, headers: apiHeaders(fetchOptions.headers), cache: 'no-store' });
+  return fetch(url, {
+    ...fetchOptions,
+    headers: apiHeaders(fetchOptions.headers),
+    cache: "no-store",
+  });
 }
-
 
 // ─── Onboarding ──────────────────────────────────────────────────────────────
 
@@ -392,16 +388,16 @@ export interface SampleDataResult {
  * through the API or deletes their last one.
  */
 export const onboardingApi = {
-  status: () => request<OnboardingStatus>('/api/v1/onboarding/status'),
+  status: () => request<OnboardingStatus>("/api/v1/onboarding/status"),
   loadSampleData: () =>
-    request<SampleDataResult>('/api/v1/onboarding/sample-data', { method: 'POST' }),
+    request<SampleDataResult>("/api/v1/onboarding/sample-data", { method: "POST" }),
 };
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
-export const AUTH_TOKEN_KEY = 'aisoc.responder.accessToken';
-export const AUTH_REFRESH_KEY = 'aisoc.responder.refreshToken';
-export const AUTH_USER_KEY = 'aisoc.responder.user';
+export const AUTH_TOKEN_KEY = "aisoc.responder.accessToken";
+export const AUTH_REFRESH_KEY = "aisoc.responder.refreshToken";
+export const AUTH_USER_KEY = "aisoc.responder.user";
 
 export interface AuthUser {
   id: string;
@@ -439,11 +435,11 @@ export interface MfaChallenge {
 }
 
 export function isMfaChallenge(result: LoginResult | MfaChallenge): result is MfaChallenge {
-  return 'mfa_token' in result && !('user' in result);
+  return "mfa_token" in result && !("user" in result);
 }
 
 function persistAuth(tokens: TokenResponse, user: AuthUser): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(AUTH_TOKEN_KEY, tokens.access_token);
     if (tokens.refresh_token) {
@@ -462,11 +458,21 @@ export const authApi = {
    * no provider internals; a failure reads as "no SSO" rather than an
    * error state, so a status outage never blocks the password form.
    */
-  ssoStatus: async (): Promise<{ sso_enabled: boolean; provider: string; login_label: string; local_login_enabled: boolean }> => {
+  ssoStatus: async (): Promise<{
+    sso_enabled: boolean;
+    provider: string;
+    login_label: string;
+    local_login_enabled: boolean;
+  }> => {
     try {
-      return await request('/api/v1/auth/sso/status');
+      return await request("/api/v1/auth/sso/status");
     } catch {
-      return { sso_enabled: false, provider: 'oidc', login_label: 'Continue with SSO', local_login_enabled: true };
+      return {
+        sso_enabled: false,
+        provider: "oidc",
+        login_label: "Continue with SSO",
+        local_login_enabled: true,
+      };
     }
   },
 
@@ -481,8 +487,8 @@ export const authApi = {
    * + mobile.
    */
   async login(email: string, password: string): Promise<LoginResult | MfaChallenge> {
-    const tokens = await request<TokenResponse & Partial<MfaChallenge>>('/api/v1/auth/login', {
-      method: 'POST',
+    const tokens = await request<TokenResponse & Partial<MfaChallenge>>("/api/v1/auth/login", {
+      method: "POST",
       body: JSON.stringify({ email, password }),
     });
     // HTTP 202: the password was accepted and no session was issued. The
@@ -498,20 +504,20 @@ export const authApi = {
     }
     // Stash the access token now so the `me` request flows through the
     // standard `Authorization: Bearer …` path in `request()`.
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       try {
         window.localStorage.setItem(AUTH_TOKEN_KEY, tokens.access_token);
       } catch {
         /* ignore */
       }
     }
-    const user = await request<AuthUser>('/api/v1/auth/me');
+    const user = await request<AuthUser>("/api/v1/auth/me");
     persistAuth(tokens, user);
     return { ...tokens, user };
   },
 
   logout(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     try {
       window.localStorage.removeItem(AUTH_TOKEN_KEY);
       window.localStorage.removeItem(AUTH_REFRESH_KEY);
@@ -522,7 +528,7 @@ export const authApi = {
   },
 
   currentUser(): AuthUser | null {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === "undefined") return null;
     try {
       const raw = window.localStorage.getItem(AUTH_USER_KEY);
       return raw ? (JSON.parse(raw) as AuthUser) : null;
@@ -545,7 +551,7 @@ export const authApi = {
    * lockout.
    */
   isAuthenticated(): boolean {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === "undefined") return false;
     try {
       const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
       if (!token) return false;
@@ -565,23 +571,28 @@ export const authApi = {
    * tokens do not linger in the address bar or browser session history.
    */
   async completeSsoHandoff(): Promise<boolean> {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === "undefined") return false;
     try {
       const hash = window.location.hash;
-      if (!hash.includes('access_token=')) return false;
-      const params = new URLSearchParams(hash.replace(/^#/, ''));
-      const accessToken = params.get('access_token');
+      if (!hash.includes("access_token=")) return false;
+      const params = new URLSearchParams(hash.replace(/^#/, ""));
+      const accessToken = params.get("access_token");
       if (!accessToken) return false;
-      const refreshToken = params.get('refresh_token') || '';
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      const refreshToken = params.get("refresh_token") || "";
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
       const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!res.ok) return false;
       const user = await res.json();
       persistAuth(
-        { access_token: accessToken, refresh_token: refreshToken, token_type: 'bearer', expires_in: 0 },
-        user,
+        {
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          token_type: "bearer",
+          expires_in: 0,
+        },
+        user
       );
       return true;
     } catch {
@@ -597,18 +608,18 @@ export const authApi = {
    * telling the console which it is.
    */
   async completeMfa(mfaToken: string, code: string): Promise<LoginResult> {
-    const tokens = await request<TokenResponse>('/api/v1/auth/mfa/verify', {
-      method: 'POST',
+    const tokens = await request<TokenResponse>("/api/v1/auth/mfa/verify", {
+      method: "POST",
       body: JSON.stringify({ mfa_token: mfaToken, code }),
     });
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       try {
         window.localStorage.setItem(AUTH_TOKEN_KEY, tokens.access_token);
       } catch {
         /* ignore */
       }
     }
-    const user = await request<AuthUser>('/api/v1/auth/me');
+    const user = await request<AuthUser>("/api/v1/auth/me");
     persistAuth(tokens, user);
     return { ...tokens, user };
   },
@@ -621,17 +632,22 @@ export const authApi = {
    * to authenticate a second time with a code they just proved.
    */
   async adoptSession(accessToken: string, refreshToken: string): Promise<AuthUser> {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       try {
         window.localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
       } catch {
         /* ignore */
       }
     }
-    const user = await request<AuthUser>('/api/v1/auth/me');
+    const user = await request<AuthUser>("/api/v1/auth/me");
     persistAuth(
-      { access_token: accessToken, refresh_token: refreshToken, token_type: 'bearer', expires_in: 0 },
-      user,
+      {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        token_type: "bearer",
+        expires_in: 0,
+      },
+      user
     );
     return user;
   },
@@ -639,16 +655,18 @@ export const authApi = {
   /** Merge user preferences on the server (theme, layout, etc.). */
   async updateUserPreferences(preferences: Record<string, unknown>): Promise<AuthUser> {
     const response = await fetch(`${API_BASE}/api/v1/auth/me/preferences`, {
-      method: 'PATCH',
+      method: "PATCH",
       headers: apiHeaders(),
       body: JSON.stringify({ preferences }),
     });
-    if (!response.ok) throw new Error('Failed to update preferences');
+    if (!response.ok) throw new Error("Failed to update preferences");
     const user = (await response.json()) as AuthUser;
     // Keep locally-cached user in sync
     try {
       window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return user;
   },
 };
@@ -664,6 +682,13 @@ export interface MfaStatus {
   enrolled: boolean;
   tenant_requires_totp: boolean;
   recovery_codes_remaining: number;
+  /** Which factor, not just whether there is one: a holder of only a
+   *  security key must not be offered "enter the code from your app". */
+  has_totp: boolean;
+  has_webauthn: boolean;
+  /** Roles the tenant enforces, and whether the caller's own is one. */
+  require_for_roles: string[];
+  required_for_me: boolean;
 }
 
 export interface MfaEnrollment {
@@ -678,41 +703,71 @@ export interface MfaConfirmed {
 }
 
 export const mfaApi = {
-  status: (): Promise<MfaStatus> => request('/api/v1/auth/mfa/status'),
+  status: (): Promise<MfaStatus> => request("/api/v1/auth/mfa/status"),
 
   enrollBegin: (mfaToken?: string): Promise<MfaEnrollment> =>
-    request('/api/v1/auth/mfa/enroll/begin', {
-      method: 'POST',
+    request("/api/v1/auth/mfa/enroll/begin", {
+      method: "POST",
       body: JSON.stringify(mfaToken ? { mfa_token: mfaToken } : {}),
     }),
 
   enrollConfirm: (code: string, mfaToken?: string): Promise<MfaConfirmed> =>
-    request('/api/v1/auth/mfa/enroll/confirm', {
-      method: 'POST',
+    request("/api/v1/auth/mfa/enroll/confirm", {
+      method: "POST",
       body: JSON.stringify(mfaToken ? { code, mfa_token: mfaToken } : { code }),
     }),
 
   /** Remove your own factor. The API requires a current code, so a stolen
    *  session cannot strip the thing protecting it. */
   disable: (code: string): Promise<void> =>
-    request('/api/v1/auth/mfa', { method: 'DELETE', body: JSON.stringify({ code }) }),
+    request("/api/v1/auth/mfa", { method: "DELETE", body: JSON.stringify({ code }) }),
 
   /** Administrative reset for a colleague who lost their phone. Audited
    *  with the reason, which is why the reason is required here too. */
   reset: (userId: string, reason: string): Promise<{ status: string }> =>
     request(`/api/v1/auth/mfa/reset/${encodeURIComponent(userId)}`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ reason }),
     }),
 
-  policy: (): Promise<{ require_totp: boolean }> => request('/api/v1/auth/mfa/policy'),
+  policy: (): Promise<MfaPolicy> => request("/api/v1/auth/mfa/policy"),
 
-  setPolicy: (requireTotp: boolean): Promise<{ require_totp: boolean }> =>
-    request('/api/v1/auth/mfa/policy', {
-      method: 'PUT',
-      body: JSON.stringify({ require_totp: requireTotp }),
+  /** The whole policy, both halves at once. The role list is *replaced*,
+   *  not merged, so clearing a role here actually clears it. */
+  setPolicy: (requireTotp: boolean, requireForRoles: string[] = []): Promise<MfaPolicy> =>
+    request("/api/v1/auth/mfa/policy", {
+      method: "PUT",
+      body: JSON.stringify({ require_totp: requireTotp, require_for_roles: requireForRoles }),
+    }),
+
+  /** Assertion options for a sign-in that owes a second factor. The user
+   *  comes from the signed challenge, never from this call. */
+  webauthnChallenge: (mfaToken: string): Promise<WebAuthnChallenge> =>
+    request("/api/v1/auth/mfa/webauthn/challenge", {
+      method: "POST",
+      body: JSON.stringify({ mfa_token: mfaToken }),
+    }),
+
+  webauthnVerify: (
+    mfaToken: string,
+    challenge: string,
+    credential: Record<string, unknown>
+  ): Promise<{ access_token: string; refresh_token: string }> =>
+    request("/api/v1/auth/mfa/webauthn/verify", {
+      method: "POST",
+      body: JSON.stringify({ mfa_token: mfaToken, challenge, credential }),
     }),
 };
+
+export interface MfaPolicy {
+  require_totp: boolean;
+  require_for_roles: string[];
+}
+
+export interface WebAuthnChallenge {
+  publicKey: Record<string, unknown>;
+  challenge: string;
+}
 
 // ─── Tenants & MSSP ─────────────────────────────────────────────────────────
 //
@@ -732,7 +787,7 @@ export interface MyTenant {
   name: string;
   // mssp_role and parent_tenant_id come from the lightweight identity
   // endpoint and are present for any tenant (null for standalone tenants).
-  mssp_role?: 'parent' | 'child' | null;
+  mssp_role?: "parent" | "child" | null;
   parent_tenant_id?: string | null;
 }
 
@@ -753,7 +808,7 @@ export interface FullTenant {
   is_active: boolean;
   settings: Record<string, unknown>;
   limits: Record<string, unknown>;
-  mssp_role?: 'parent' | 'child' | null;
+  mssp_role?: "parent" | "child" | null;
   parent_tenant_id?: string | null;
   created_at: string;
 }
@@ -796,7 +851,7 @@ export interface Branding {
 export const brandingApi = {
   /** Readable by any authenticated member; the console calls it per page load. */
   async get(): Promise<Branding> {
-    return request<Branding>('/api/v1/branding');
+    return request<Branding>("/api/v1/branding");
   },
 
   /**
@@ -813,10 +868,10 @@ export const brandingApi = {
     const headers = apiHeaders();
     // A GET for image bytes; the JSON content type `apiHeaders` sets by
     // default describes a body this request does not have.
-    delete headers['Content-Type'];
+    delete headers["Content-Type"];
     const response = await fetch(`${API_BASE}${path}`, { headers });
     if (!response.ok) {
-      throw new ApiError(`branding logo request failed`, response.status, '');
+      throw new ApiError(`branding logo request failed`, response.status, "");
     }
     return response.blob();
   },
@@ -842,7 +897,7 @@ export const retroHuntsApi = {
    * state with a correct answer.
    */
   async getSettings(): Promise<RetroHuntSettings> {
-    return request<RetroHuntSettings>('/api/v1/retro-hunts/settings');
+    return request<RetroHuntSettings>("/api/v1/retro-hunts/settings");
   },
 
   /**
@@ -854,8 +909,8 @@ export const retroHuntsApi = {
     lookback_days: number;
     include_federated: boolean;
   }): Promise<RetroHuntSettings> {
-    return request<RetroHuntSettings>('/api/v1/retro-hunts/settings', {
-      method: 'PUT',
+    return request<RetroHuntSettings>("/api/v1/retro-hunts/settings", {
+      method: "PUT",
       body: JSON.stringify(body),
     });
   },
@@ -920,34 +975,51 @@ export interface AdminUserPage {
  */
 export const rbacApi = {
   async listRoles(): Promise<RbacRole[]> {
-    return request<RbacRole[]>('/api/v1/rbac/roles');
+    return request<RbacRole[]>("/api/v1/rbac/roles");
   },
 
   async listPermissions(): Promise<RbacPermissionLite[]> {
-    return request<RbacPermissionLite[]>('/api/v1/rbac/permissions');
+    return request<RbacPermissionLite[]>("/api/v1/rbac/permissions");
   },
 
-  async seedRoles(): Promise<{ seeded: boolean; permissions: number; roles: number; role_permissions: number; user_roles: number }> {
-    return request('/api/v1/rbac/roles/seed', { method: 'POST' });
+  async seedRoles(): Promise<{
+    seeded: boolean;
+    permissions: number;
+    roles: number;
+    role_permissions: number;
+    user_roles: number;
+  }> {
+    return request("/api/v1/rbac/roles/seed", { method: "POST" });
   },
 
-  async createRole(body: { name: string; label?: string; description?: string | null; permission_names: string[] }): Promise<RbacRole> {
-    return request<RbacRole>('/api/v1/rbac/roles', { method: 'POST', body: JSON.stringify(body) });
+  async createRole(body: {
+    name: string;
+    label?: string;
+    description?: string | null;
+    permission_names: string[];
+  }): Promise<RbacRole> {
+    return request<RbacRole>("/api/v1/rbac/roles", { method: "POST", body: JSON.stringify(body) });
   },
 
   /** Update label/description and (optionally) replace the permission set. */
-  async updateRole(roleId: string, body: { label?: string; description?: string | null; permission_names?: string[] }): Promise<RbacRole> {
-    return request<RbacRole>(`/api/v1/rbac/roles/${roleId}`, { method: 'PATCH', body: JSON.stringify(body) });
+  async updateRole(
+    roleId: string,
+    body: { label?: string; description?: string | null; permission_names?: string[] }
+  ): Promise<RbacRole> {
+    return request<RbacRole>(`/api/v1/rbac/roles/${roleId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
   },
 
   async deleteRole(roleId: string): Promise<void> {
-    await apiFetch(`/api/v1/rbac/roles/${roleId}`, { method: 'DELETE' });
+    await apiFetch(`/api/v1/rbac/roles/${roleId}`, { method: "DELETE" });
   },
 
   /** Replace a user's primary role. Takes effect on their next request. */
   async setPrimaryRole(userId: string, roleName: string, reason: string): Promise<UserRoleOut> {
     return request<UserRoleOut>(`/api/v1/rbac/users/${userId}/role`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify({ role_name: roleName, reason }),
     });
   },
@@ -958,21 +1030,23 @@ export const rbacApi = {
  * role changes revoke the target's sessions and take effect immediately.
  */
 export const adminUsersApi = {
-  async listUsers(params: {
-    search?: string;
-    role?: string;
-    status?: 'active' | 'disabled';
-    sort?: 'name' | 'email' | 'status' | 'created' | 'last_login';
-    order?: 'asc' | 'desc';
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<AdminUserPage> {
+  async listUsers(
+    params: {
+      search?: string;
+      role?: string;
+      status?: "active" | "disabled";
+      sort?: "name" | "email" | "status" | "created" | "last_login";
+      order?: "asc" | "desc";
+      limit?: number;
+      offset?: number;
+    } = {}
+  ): Promise<AdminUserPage> {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
     });
     const suffix = qs.toString();
-    return request<AdminUserPage>(`/api/v1/admin/users${suffix ? `?${suffix}` : ''}`);
+    return request<AdminUserPage>(`/api/v1/admin/users${suffix ? `?${suffix}` : ""}`);
   },
 
   async getUser(userId: string): Promise<AdminUserRow> {
@@ -981,37 +1055,39 @@ export const adminUsersApi = {
 
   async setRoles(userId: string, roleNames: string[], reason: string): Promise<AdminUserRow> {
     return request<AdminUserRow>(`/api/v1/admin/users/${userId}/roles`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify({ role_names: roleNames, reason }),
     });
   },
 
   async addRole(userId: string, roleName: string, reason: string): Promise<AdminUserRow> {
     return request<AdminUserRow>(`/api/v1/admin/users/${userId}/roles`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ role_name: roleName, reason }),
     });
   },
 
   async removeRole(userId: string, roleName: string, reason: string): Promise<AdminUserRow> {
-    const qs = reason ? `?reason=${encodeURIComponent(reason)}` : '';
-    return request<AdminUserRow>(`/api/v1/admin/users/${userId}/roles/${encodeURIComponent(roleName)}${qs}`, {
-      method: 'DELETE',
-    });
+    const qs = reason ? `?reason=${encodeURIComponent(reason)}` : "";
+    return request<AdminUserRow>(
+      `/api/v1/admin/users/${userId}/roles/${encodeURIComponent(roleName)}${qs}`,
+      {
+        method: "DELETE",
+      }
+    );
   },
 
   async setStatus(userId: string, isActive: boolean, reason: string): Promise<AdminUserRow> {
     return request<AdminUserRow>(`/api/v1/admin/users/${userId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ is_active: isActive, reason }),
     });
   },
 
   async deleteUser(userId: string, reason: string): Promise<void> {
-    await request<void>(
-      `/api/v1/admin/users/${userId}?reason=${encodeURIComponent(reason)}`,
-      { method: 'DELETE' },
-    );
+    await request<void>(`/api/v1/admin/users/${userId}?reason=${encodeURIComponent(reason)}`, {
+      method: "DELETE",
+    });
   },
 };
 
@@ -1025,17 +1101,17 @@ export const tenantsApi = {
    * settings configuration.
    */
   async me(): Promise<MyTenant> {
-    return request<MyTenant>('/api/v1/tenants/me/identity');
+    return request<MyTenant>("/api/v1/tenants/me/identity");
   },
 
   /** Full tenant record (plan, limits, settings) for the Workspace settings panel. */
   async getFull(): Promise<FullTenant> {
-    return request<FullTenant>('/api/v1/tenants/me');
+    return request<FullTenant>("/api/v1/tenants/me");
   },
 
   /** All users in the current tenant, for the Workspace settings panel. */
   async listUsers(): Promise<TenantUser[]> {
-    return request<TenantUser[]>('/api/v1/tenants/me/users');
+    return request<TenantUser[]>("/api/v1/tenants/me/users");
   },
 };
 
@@ -1138,7 +1214,7 @@ export interface PortfolioAlert {
 
 export const msspApi = {
   async listChildren(): Promise<ChildTenant[]> {
-    return request<ChildTenant[]>('/api/v1/mssp/children');
+    return request<ChildTenant[]>("/api/v1/mssp/children");
   },
 
   /**
@@ -1149,12 +1225,14 @@ export const msspApi = {
    * reads simply are not theirs to make — so callers should branch on it.
    */
   async getPortfolio(): Promise<Portfolio> {
-    return request<Portfolio>('/api/v1/mssp/portfolio');
+    return request<Portfolio>("/api/v1/mssp/portfolio");
   },
 
   /** Open alerts across the portfolio. Excludes seeded demo rows by default. */
-  async listPortfolioAlerts(params: { severity?: string; limit?: number } = {}): Promise<PortfolioAlert[]> {
-    return request<PortfolioAlert[]>('/api/v1/mssp/portfolio/alerts', {
+  async listPortfolioAlerts(
+    params: { severity?: string; limit?: number } = {}
+  ): Promise<PortfolioAlert[]> {
+    return request<PortfolioAlert[]>("/api/v1/mssp/portfolio/alerts", {
       params: { severity: params.severity, limit: params.limit ?? 25 },
     });
   },
@@ -1162,13 +1240,8 @@ export const msspApi = {
 
 // ─── Alerts ─────────────────────────────────────────────────────────────────
 
-export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-export type AlertStatus =
-  | 'new'
-  | 'triaged'
-  | 'investigating'
-  | 'resolved'
-  | 'false_positive';
+export type AlertSeverity = "critical" | "high" | "medium" | "low" | "info";
+export type AlertStatus = "new" | "triaged" | "investigating" | "resolved" | "false_positive";
 
 export interface MitreAttack {
   tactic: string;
@@ -1182,7 +1255,7 @@ export interface AlertIOC {
   malicious?: boolean;
 }
 
-export type ConfidenceLabel = 'high' | 'medium' | 'low';
+export type ConfidenceLabel = "high" | "medium" | "low";
 
 export interface ConfidenceFactor {
   factor: string;
@@ -1204,7 +1277,7 @@ export interface ConfidenceFactor {
  * can be opened in the AttackGraphView.
  */
 export interface RelatedEntity {
-  kind: 'principal' | 'network' | 'workflow' | 'tenant';
+  kind: "principal" | "network" | "workflow" | "tenant";
   type: string;
   value: string;
   label?: string | null;
@@ -1226,7 +1299,7 @@ export interface MiniTimelineEvent {
   description?: string | null;
   actor?: string | null;
   /** ``case_timeline`` or ``audit_log`` — surfaced as a small badge. */
-  source: 'case_timeline' | 'audit_log';
+  source: "case_timeline" | "audit_log";
 }
 
 /**
@@ -1237,7 +1310,7 @@ export interface MiniTimelineEvent {
  * shape uniformly.
  */
 export interface RecommendedAction {
-  priority: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  priority: "critical" | "high" | "medium" | "low" | "info";
   action: string;
   rationale?: string | null;
   risk?: string | null;
@@ -1278,7 +1351,7 @@ export interface Alert {
   confidenceRationale?: ConfidenceFactor[];
   ledgerRunId?: string;
   /** Analyst-corrected verdict (Tier 1.5 override loop). */
-  disposition?: 'true_positive' | 'false_positive' | 'benign' | 'escalate' | null;
+  disposition?: "true_positive" | "false_positive" | "benign" | "escalate" | null;
   // ─── Investigation Rail envelope (W6) ─────────────────────────────────────
   //
   // The list endpoint never populates these — they're only present
@@ -1333,11 +1406,11 @@ function normalizeAlert(raw: unknown): Alert {
 
   const pickStr = (snake: string, camel: string): string | undefined => {
     const v = r[snake] ?? r[camel];
-    return typeof v === 'string' ? v : undefined;
+    return typeof v === "string" ? v : undefined;
   };
   const pickNum = (snake: string, camel: string): number | undefined => {
     const v = r[snake] ?? r[camel];
-    return typeof v === 'number' ? v : undefined;
+    return typeof v === "number" ? v : undefined;
   };
   const pickArr = <T = unknown>(snake: string, camel: string): T[] | undefined => {
     const v = r[snake] ?? r[camel];
@@ -1353,12 +1426,10 @@ function normalizeAlert(raw: unknown): Alert {
     tags = tagsRaw.map((t) => String(t));
   } else if (
     tagsRaw &&
-    typeof tagsRaw === 'object' &&
+    typeof tagsRaw === "object" &&
     Array.isArray((tagsRaw as Record<string, unknown>).labels)
   ) {
-    tags = ((tagsRaw as Record<string, unknown>).labels as unknown[]).map((t) =>
-      String(t),
-    );
+    tags = ((tagsRaw as Record<string, unknown>).labels as unknown[]).map((t) => String(t));
   }
 
   // MITRE: the API can return either ``mitre_attack`` (already
@@ -1368,16 +1439,16 @@ function normalizeAlert(raw: unknown): Alert {
   const mitreStructured = r.mitre_attack ?? r.mitreAttack;
   if (Array.isArray(mitreStructured)) {
     mitreAttack = (mitreStructured as Array<Record<string, unknown>>).map((m) => ({
-      tactic: String(m.tactic ?? ''),
-      technique: String(m.technique ?? ''),
-      techniqueId: String(m.technique_id ?? m.techniqueId ?? ''),
+      tactic: String(m.tactic ?? ""),
+      technique: String(m.technique ?? ""),
+      techniqueId: String(m.technique_id ?? m.techniqueId ?? ""),
     }));
   } else {
-    const techniques = pickArr<string>('mitre_techniques', 'mitreTechniques');
-    const tactics = pickArr<string>('mitre_tactics', 'mitreTactics');
+    const techniques = pickArr<string>("mitre_techniques", "mitreTechniques");
+    const tactics = pickArr<string>("mitre_tactics", "mitreTactics");
     if (techniques && techniques.length > 0) {
       mitreAttack = techniques.map((t, i) => ({
-        tactic: tactics?.[i] ? String(tactics[i]) : '',
+        tactic: tactics?.[i] ? String(tactics[i]) : "",
         technique: String(t),
         techniqueId: String(t),
       }));
@@ -1387,8 +1458,8 @@ function normalizeAlert(raw: unknown): Alert {
   const rationaleRaw = r.confidence_rationale ?? r.confidenceRationale;
   const confidenceRationale = Array.isArray(rationaleRaw)
     ? (rationaleRaw as Array<Record<string, unknown>>).map((f) => ({
-        factor: String(f.factor ?? ''),
-        label: String(f.label ?? ''),
+        factor: String(f.factor ?? ""),
+        label: String(f.label ?? ""),
         value: Number(f.value ?? 0),
         contribution: Number(f.contribution ?? 0),
         weight: Number(f.weight ?? 0),
@@ -1408,8 +1479,8 @@ function normalizeAlert(raw: unknown): Alert {
   // Normalised here, once, to the canonical 0-100 integer. The scale is
   // decided by the *key*, never by the magnitude: a genuine confidence of 1
   // is indistinguishable from a raw score of 1.0 by value alone.
-  const canonicalConfidence = pickNum('confidence', 'confidence');
-  const rawConfidenceScore = pickNum('confidence_score', 'confidenceScore');
+  const canonicalConfidence = pickNum("confidence", "confidence");
+  const rawConfidenceScore = pickNum("confidence_score", "confidenceScore");
   const confidenceScore =
     canonicalConfidence !== undefined
       ? canonicalConfidence
@@ -1433,12 +1504,12 @@ function normalizeAlert(raw: unknown): Alert {
   const relatedRaw = r.related_entities ?? r.relatedEntities;
   const relatedEntities = Array.isArray(relatedRaw)
     ? (relatedRaw as Array<Record<string, unknown>>).map((e) => ({
-        kind: (e.group ?? e.kind ?? 'principal') as RelatedEntity['kind'],
+        kind: (e.group ?? e.kind ?? "principal") as RelatedEntity["kind"],
         // `type` prefers its own spelling so a legacy `{kind: 'principal',
         // type: 'host'}` payload still reports the concrete type, and falls
         // back to `kind` for the current `{group, kind}` shape.
-        type: String(e.type ?? e.kind ?? ''),
-        value: String(e.value ?? ''),
+        type: String(e.type ?? e.kind ?? ""),
+        value: String(e.value ?? ""),
         label: (e.label as string | null | undefined) ?? null,
         pivotPath:
           (e.pivot as string | null | undefined) ??
@@ -1451,31 +1522,28 @@ function normalizeAlert(raw: unknown): Alert {
   const timelineRaw = r.mini_timeline ?? r.miniTimeline;
   const miniTimeline = Array.isArray(timelineRaw)
     ? (timelineRaw as Array<Record<string, unknown>>).map((e) => ({
-        id: String(e.id ?? ''),
-        timestamp: String(e.timestamp ?? ''),
-        type: String(e.type ?? ''),
-        title: String(e.title ?? ''),
+        id: String(e.id ?? ""),
+        timestamp: String(e.timestamp ?? ""),
+        type: String(e.type ?? ""),
+        title: String(e.title ?? ""),
         description: (e.description as string | null | undefined) ?? null,
         actor: (e.actor as string | null | undefined) ?? null,
-        source: (e.source ?? 'audit_log') as MiniTimelineEvent['source'],
+        source: (e.source ?? "audit_log") as MiniTimelineEvent["source"],
       }))
     : undefined;
 
   const recommendedRaw =
-    r.recommended_actions ??
-    r.recommendedActions ??
-    r.ai_recommendations ??
-    r.aiRecommendations;
+    r.recommended_actions ?? r.recommendedActions ?? r.ai_recommendations ?? r.aiRecommendations;
   let recommendedActions: RecommendedAction[] | undefined;
   if (Array.isArray(recommendedRaw)) {
     recommendedActions = (recommendedRaw as unknown[]).map((item) => {
-      if (typeof item === 'string') {
-        return { priority: 'medium', action: item };
+      if (typeof item === "string") {
+        return { priority: "medium", action: item };
       }
       const o = (item ?? {}) as Record<string, unknown>;
       return {
-        priority: (o.priority ?? 'medium') as RecommendedAction['priority'],
-        action: String(o.action ?? ''),
+        priority: (o.priority ?? "medium") as RecommendedAction["priority"],
+        action: String(o.action ?? ""),
         rationale: (o.rationale as string | null | undefined) ?? null,
         risk: (o.risk as string | null | undefined) ?? null,
       };
@@ -1502,68 +1570,62 @@ function normalizeAlert(raw: unknown): Alert {
   // none of these keys is unscored, and "nobody scored this" is not "scored
   // zero risk". The rail already guards on `typeof riskScore === 'number'` to
   // omit the chip, and the default made that guard unreachable.
-  const unitScaleRisk =
-    pickNum('risk_score', 'risk_score') ?? pickNum('ai_score', 'aiScore');
-  const alreadyNormalisedRisk = pickNum('riskScore', 'riskScore');
+  const unitScaleRisk = pickNum("risk_score", "risk_score") ?? pickNum("ai_score", "aiScore");
+  const alreadyNormalisedRisk = pickNum("riskScore", "riskScore");
   const riskScore =
     unitScaleRisk !== undefined
       ? Math.round(unitScaleRisk * 100)
       : (alreadyNormalisedRisk ?? canonicalConfidence);
 
   return {
-    id: String(r.id ?? ''),
-    title: String(r.title ?? ''),
-    description: String(r.description ?? ''),
-    severity: ((r.severity as string) ?? 'medium') as AlertSeverity,
-    status: ((r.status as string) ?? 'new') as AlertStatus,
-    source:
-      pickStr('source', 'source') ??
-      pickStr('connector_type', 'connectorType') ??
-      'unknown',
-    sourceRef: pickStr('source_ref', 'sourceRef'),
-    tenantId: pickStr('tenant_id', 'tenantId') ?? '',
+    id: String(r.id ?? ""),
+    title: String(r.title ?? ""),
+    description: String(r.description ?? ""),
+    severity: ((r.severity as string) ?? "medium") as AlertSeverity,
+    status: ((r.status as string) ?? "new") as AlertStatus,
+    source: pickStr("source", "source") ?? pickStr("connector_type", "connectorType") ?? "unknown",
+    sourceRef: pickStr("source_ref", "sourceRef"),
+    tenantId: pickStr("tenant_id", "tenantId") ?? "",
     riskScore,
     mitreAttack,
-    iocs: pickArr<AlertIOC>('iocs', 'iocs'),
+    iocs: pickArr<AlertIOC>("iocs", "iocs"),
     rawEvent:
       (r.raw_event as Record<string, unknown> | undefined) ??
       (r.rawEvent as Record<string, unknown> | undefined),
     wazuhLocator:
       (r.wazuh_locator as Record<string, unknown> | undefined) ??
       (r.wazuhLocator as Record<string, unknown> | undefined),
-    assignee: pickStr('assignee', 'assignee'),
-    caseId: pickStr('case_id', 'caseId'),
+    assignee: pickStr("assignee", "assignee"),
+    caseId: pickStr("case_id", "caseId"),
     tags,
     createdAt:
-      pickStr('created_at', 'createdAt') ??
-      pickStr('first_seen', 'firstSeen') ??
+      pickStr("created_at", "createdAt") ??
+      pickStr("first_seen", "firstSeen") ??
       new Date().toISOString(),
     updatedAt:
-      pickStr('updated_at', 'updatedAt') ??
-      pickStr('last_seen', 'lastSeen') ??
+      pickStr("updated_at", "updatedAt") ??
+      pickStr("last_seen", "lastSeen") ??
       new Date().toISOString(),
-    resolvedAt: pickStr('resolved_at', 'resolvedAt'),
-    confidenceLabel: (r.confidence_label ?? r.confidenceLabel) as
-      | ConfidenceLabel
-      | undefined,
+    resolvedAt: pickStr("resolved_at", "resolvedAt"),
+    confidenceLabel: (r.confidence_label ?? r.confidenceLabel) as ConfidenceLabel | undefined,
     confidenceScore,
     confidenceRationale,
-    ledgerRunId: pickStr('ledger_run_id', 'ledgerRunId'),
-    disposition: (r.disposition ?? null) as Alert['disposition'],
+    ledgerRunId: pickStr("ledger_run_id", "ledgerRunId"),
+    disposition: (r.disposition ?? null) as Alert["disposition"],
     narrative: (r.narrative as string | null | undefined) ?? null,
     relatedEntities,
     miniTimeline,
     recommendedActions,
-    aiScore: pickNum('ai_score', 'aiScore'),
-    aiSummary: pickStr('ai_summary', 'aiSummary'),
+    aiScore: pickNum("ai_score", "aiScore"),
+    aiSummary: pickStr("ai_summary", "aiSummary"),
     // `?? null` and not `?? undefined`: the column is nullable because NULL
     // means "not assessed", and collapsing that into absent loses the
     // distinction the schema comment exists to preserve.
     triageGroundedness:
-      typeof (r.triage_groundedness ?? r.triageGroundedness) === 'number'
+      typeof (r.triage_groundedness ?? r.triageGroundedness) === "number"
         ? ((r.triage_groundedness ?? r.triageGroundedness) as number)
         : null,
-    triageUngrounded: pickArr<string>('triage_ungrounded', 'triageUngrounded'),
+    triageUngrounded: pickArr<string>("triage_ungrounded", "triageUngrounded"),
   };
 }
 
@@ -1595,11 +1657,11 @@ export interface AlertFacets {
 }
 
 function countMap(raw: unknown): Record<string, number> {
-  if (!raw || typeof raw !== 'object') return {};
+  if (!raw || typeof raw !== "object") return {};
   return Object.fromEntries(
     Object.entries(raw as Record<string, unknown>).filter(
-      (entry): entry is [string, number] => typeof entry[1] === 'number',
-    ),
+      (entry): entry is [string, number] => typeof entry[1] === "number"
+    )
   );
 }
 
@@ -1610,13 +1672,13 @@ function countMap(raw: unknown): Record<string, number> {
  * counted".
  */
 function normalizeAlertFacets(raw: unknown): AlertFacets | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
+  if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
   const unresolved = r.unresolved;
   return {
     bySeverity: countMap(r.by_severity ?? r.bySeverity),
     byStatus: countMap(r.by_status ?? r.byStatus),
-    unresolved: typeof unresolved === 'number' ? unresolved : 0,
+    unresolved: typeof unresolved === "number" ? unresolved : 0,
   };
 }
 
@@ -1637,7 +1699,7 @@ export interface AlertFilters {
    * the console asks for `priority` so a noisy low-severity source cannot
    * push a critical off page one.
    */
-  sort?: 'newest' | 'priority';
+  sort?: "newest" | "priority";
 }
 
 /**
@@ -1674,7 +1736,7 @@ export const alertsApi = {
       page_size?: number;
       pageSize?: number;
       facets?: unknown;
-    }>('/api/v1/alerts', {
+    }>("/api/v1/alerts", {
       params: filters as Record<string, string>,
     });
     // `AlertListResponse` puts the rows under `items`, not `alerts`
@@ -1682,19 +1744,15 @@ export const alertsApi = {
     // resolved every page to [] while `total` reported the real count, so
     // the queue rendered "1,247 alerts" above an empty table. `alerts` is
     // still accepted because the mobile responder routes emit that shape.
-    const rows = Array.isArray(raw.items)
-      ? raw.items
-      : Array.isArray(raw.alerts)
-        ? raw.alerts
-        : [];
+    const rows = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.alerts) ? raw.alerts : [];
     return {
       alerts: rows.map(normalizeAlert),
-      total: typeof raw.total === 'number' ? raw.total : 0,
-      page: typeof raw.page === 'number' ? raw.page : 1,
+      total: typeof raw.total === "number" ? raw.total : 0,
+      page: typeof raw.page === "number" ? raw.page : 1,
       pageSize:
-        typeof raw.pageSize === 'number'
+        typeof raw.pageSize === "number"
           ? raw.pageSize
-          : typeof raw.page_size === 'number'
+          : typeof raw.page_size === "number"
             ? raw.page_size
             : 50,
       facets: normalizeAlertFacets(raw.facets),
@@ -1708,19 +1766,15 @@ export const alertsApi = {
 
   update: async (id: string, data: AlertUpdate) => {
     const raw = await request<unknown>(`/api/v1/alerts/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
     return normalizeAlert(raw);
   },
 
-  bulkAction: (
-    ids: string[],
-    action: string,
-    data?: Record<string, unknown>,
-  ) =>
-    request<{ updated: number }>('/api/v1/alerts/bulk', {
-      method: 'POST',
+  bulkAction: (ids: string[], action: string, data?: Record<string, unknown>) =>
+    request<{ updated: number }>("/api/v1/alerts/bulk", {
+      method: "POST",
       body: JSON.stringify({ ids, action, ...data }),
     }),
 
@@ -1743,7 +1797,7 @@ export const alertsApi = {
    */
   explain: (alertId: string, signal?: AbortSignal) =>
     request<AlertExplanation>(`/api/v1/alerts/${alertId}/explain`, {
-      method: 'POST',
+      method: "POST",
       signal,
     }),
 };
@@ -1763,10 +1817,10 @@ export const alertsApi = {
 // one-by-one on the queue. See ``services/api/app/services/alert_queue.py``
 // for the full contract.
 
-export type QueueOwner = 'me' | 'unassigned' | 'all';
-export type QueuePeriod = '24h' | '7d' | '30d' | 'all';
-export type QueueBucket = 'mine' | 'unassigned';
-export type QueueRisk = 'low' | 'medium' | 'high';
+export type QueueOwner = "me" | "unassigned" | "all";
+export type QueuePeriod = "24h" | "7d" | "30d" | "all";
+export type QueueBucket = "mine" | "unassigned";
+export type QueueRisk = "low" | "medium" | "high";
 
 export interface QueueAsset {
   /** ``host`` | ``user`` | ``ip`` | ``asset`` — chosen by the backend. */
@@ -1845,7 +1899,7 @@ export const queueApi = {
    * for every row.
    */
   list: (filters: QueueFilters = {}) =>
-    request<QueueResponse>('/api/v1/alerts/queue', {
+    request<QueueResponse>("/api/v1/alerts/queue", {
       params: filters as Record<string, string | number>,
     }),
 
@@ -1858,7 +1912,7 @@ export const queueApi = {
    */
   claim: (alertId: string) =>
     request<Alert>(`/api/v1/alerts/${alertId}/claim`, {
-      method: 'POST',
+      method: "POST",
     }),
 
   /**
@@ -1870,7 +1924,7 @@ export const queueApi = {
    */
   assign: (alertId: string, assignee: string | null) =>
     request<Alert>(`/api/v1/alerts/${alertId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ assignee }),
     }),
 
@@ -1879,12 +1933,9 @@ export const queueApi = {
    * a specific timestamp. The alert re-enters the queue automatically
    * once ``snoozed_until`` passes.
    */
-  snooze: (
-    alertId: string,
-    body: { duration_minutes?: number; until?: string; reason?: string },
-  ) =>
+  snooze: (alertId: string, body: { duration_minutes?: number; until?: string; reason?: string }) =>
     request<Alert>(`/api/v1/alerts/${alertId}/snooze`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body),
     }),
 };
@@ -1899,7 +1950,7 @@ export const queueApi = {
 // live on the fusion service (port 8082) and are proxied same-origin via
 // next.config.js → ``/api/v1/fusion/*``.
 
-export type EntityType = 'user' | 'host' | 'ip' | 'domain';
+export type EntityType = "user" | "host" | "ip" | "domain";
 
 /** A single alert that contributed risk to an entity. */
 export interface EntityRiskContribution {
@@ -1972,7 +2023,7 @@ export interface EntityRiskStats {
  * rewrites (`/api/v1/fusion/*` → ``${FUSION_HOST}/*``) so the bundle
  * stays same-origin.
  */
-const FUSION_PATH = '/api/v1/fusion';
+const FUSION_PATH = "/api/v1/fusion";
 
 // The tenant is no longer sent by default. It used to be, resolved from the
 // build-time `NEXT_PUBLIC_TENANT_ID` when nothing better was cached — and the
@@ -1985,16 +2036,18 @@ const FUSION_PATH = '/api/v1/fusion';
 // customer, and naming a tenant outside their scope is refused server-side.
 export const entityRiskApi = {
   /** Top-N entities by current decayed risk score. */
-  queue: (params: {
-    tenantId?: string;
-    limit?: number;
-    promotedOnly?: boolean;
-  } = {}) =>
+  queue: (
+    params: {
+      tenantId?: string;
+      limit?: number;
+      promotedOnly?: boolean;
+    } = {}
+  ) =>
     request<EntityRiskQueueResponse>(`${FUSION_PATH}/entity-risk/queue`, {
       params: {
         tenant_id: params.tenantId,
         limit: params.limit ?? 25,
-        promoted_only: params.promotedOnly ? 'true' : undefined,
+        promoted_only: params.promotedOnly ? "true" : undefined,
       },
     }),
 
@@ -2006,10 +2059,10 @@ export const entityRiskApi = {
 
   /** Full risk record for a single entity (drawer detail). */
   get: (entityType: EntityType, entityValue: string, tenantId?: string) => {
-    const pathType = entityType === 'ip' ? 'src_ip' : entityType;
+    const pathType = entityType === "ip" ? "src_ip" : entityType;
     return request<EntityRiskRecord>(
       `${FUSION_PATH}/entity-risk/${pathType}/${encodeURIComponent(entityValue)}`,
-      { params: { tenant_id: tenantId } },
+      { params: { tenant_id: tenantId } }
     );
   },
 };
@@ -2030,22 +2083,16 @@ export const entityRiskApi = {
  * values the API refuses.
  */
 export const CASE_STATUSES = [
-  'new',
-  'triaged',
-  'investigating',
-  'contained',
-  'resolved',
-  'closed',
+  "new",
+  "triaged",
+  "investigating",
+  "contained",
+  "resolved",
+  "closed",
 ] as const;
 
-export type CaseStatus =
-  | 'new'
-  | 'triaged'
-  | 'investigating'
-  | 'contained'
-  | 'resolved'
-  | 'closed';
-export type CaseSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type CaseStatus = "new" | "triaged" | "investigating" | "contained" | "resolved" | "closed";
+export type CaseSeverity = "critical" | "high" | "medium" | "low";
 
 export interface CaseTimelineEvent {
   id: string;
@@ -2059,7 +2106,7 @@ export interface CaseTimelineEvent {
 export interface CaseTask {
   id: string;
   title: string;
-  status: 'todo' | 'in_progress' | 'done';
+  status: "todo" | "in_progress" | "done";
   assignee?: string;
   dueAt?: string;
   createdAt: string;
@@ -2108,9 +2155,9 @@ export interface Case {
 // states now have their own label and colour, which is more information
 // than the collapsed model carried anyway.
 function toUiStatus(raw: unknown): CaseStatus {
-  if (typeof raw !== 'string') return 'new';
+  if (typeof raw !== "string") return "new";
   const known: readonly string[] = CASE_STATUSES;
-  return known.includes(raw) ? (raw as CaseStatus) : 'new';
+  return known.includes(raw) ? (raw as CaseStatus) : "new";
 }
 
 export interface CasesResponse {
@@ -2238,12 +2285,10 @@ function normalizeCase(raw: unknown): Case {
     tags = tagsRaw.map((t) => String(t));
   } else if (
     tagsRaw &&
-    typeof tagsRaw === 'object' &&
+    typeof tagsRaw === "object" &&
     Array.isArray((tagsRaw as Record<string, unknown>).labels)
   ) {
-    tags = ((tagsRaw as Record<string, unknown>).labels as unknown[]).map((t) =>
-      String(t),
-    );
+    tags = ((tagsRaw as Record<string, unknown>).labels as unknown[]).map((t) => String(t));
   }
 
   const alertIds = Array.isArray(r.alert_ids)
@@ -2265,26 +2310,22 @@ function normalizeCase(raw: unknown): Case {
     new Date().toISOString();
 
   const updatedAt =
-    (r.updated_at as string | undefined) ??
-    (r.updatedAt as string | undefined) ??
-    createdAt;
+    (r.updated_at as string | undefined) ?? (r.updatedAt as string | undefined) ?? createdAt;
 
   const caseNumber =
-    (r.case_number as string | undefined) ??
-    (r.caseNumber as string | undefined) ??
-    undefined;
+    (r.case_number as string | undefined) ?? (r.caseNumber as string | undefined) ?? undefined;
 
   return {
-    id: String(r.id ?? ''),
+    id: String(r.id ?? ""),
     caseNumber,
-    title: String(r.title ?? ''),
+    title: String(r.title ?? ""),
     description: (r.description as string | undefined) ?? undefined,
     status: toUiStatus(r.status),
-    severity: (r.severity as Case['severity']) ?? 'medium',
-    priority: (r.priority as Case['severity'] | undefined) ?? (r.severity as Case['severity'] | undefined),
+    severity: (r.severity as Case["severity"]) ?? "medium",
+    priority:
+      (r.priority as Case["severity"] | undefined) ?? (r.severity as Case["severity"] | undefined),
     assignee: (r.assignee as string | null | undefined) ?? undefined,
-    tenantId:
-      (r.tenant_id as string | undefined) ?? (r.tenantId as string | undefined),
+    tenantId: (r.tenant_id as string | undefined) ?? (r.tenantId as string | undefined),
     alertIds,
     alertCount:
       (r.alert_count as number | undefined) ??
@@ -2293,8 +2334,7 @@ function normalizeCase(raw: unknown): Case {
     tags,
     mitre,
     resolution: (r.resolution as string | undefined) ?? undefined,
-    createdBy:
-      (r.created_by as string | undefined) ?? (r.createdBy as string | undefined),
+    createdBy: (r.created_by as string | undefined) ?? (r.createdBy as string | undefined),
     createdAt,
     updatedAt,
     closedAt:
@@ -2305,9 +2345,7 @@ function normalizeCase(raw: unknown): Case {
       (r.sla_due_at as string | null | undefined) ??
       (r.dueAt as string | null | undefined) ??
       undefined,
-    timeline: Array.isArray(r.timeline)
-      ? (r.timeline as CaseTimelineEvent[])
-      : undefined,
+    timeline: Array.isArray(r.timeline) ? (r.timeline as CaseTimelineEvent[]) : undefined,
     tasks: Array.isArray(r.tasks) ? (r.tasks as CaseTask[]) : undefined,
   };
 }
@@ -2324,17 +2362,15 @@ export function normalizeCasesResponse(raw: unknown, filters: CaseFilters = {}):
     };
   }
   const r = (raw ?? {}) as Record<string, unknown>;
-  const list = Array.isArray(r.cases)
-    ? (r.cases as unknown[]).map(normalizeCase)
-    : [];
+  const list = Array.isArray(r.cases) ? (r.cases as unknown[]).map(normalizeCase) : [];
   return {
     cases: list,
-    total: typeof r.total === 'number' ? (r.total as number) : list.length,
-    page: typeof r.page === 'number' ? (r.page as number) : (filters.page ?? 1),
+    total: typeof r.total === "number" ? (r.total as number) : list.length,
+    page: typeof r.page === "number" ? (r.page as number) : (filters.page ?? 1),
     pageSize:
-      typeof r.pageSize === 'number'
+      typeof r.pageSize === "number"
         ? (r.pageSize as number)
-        : typeof r.page_size === 'number'
+        : typeof r.page_size === "number"
           ? (r.page_size as number)
           : (filters.pageSize ?? list.length),
   };
@@ -2345,10 +2381,10 @@ export const casesApi = {
    * forward-only and answers 422 on backwards transitions). */
   async reopen(
     caseId: string,
-    opts: { reason: string; status?: 'new' | 'triaged' | 'investigating' },
+    opts: { reason: string; status?: "new" | "triaged" | "investigating" }
   ): Promise<Case> {
     const raw = await request<unknown>(`/api/v1/cases/${encodeURIComponent(caseId)}/reopen`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(opts),
     });
     return normalizeCase(raw);
@@ -2360,10 +2396,10 @@ export const casesApi = {
     // at all and mapped it onto `investigating` on the way back.
     const params: Record<string, string> = {};
     for (const [key, value] of Object.entries(filters)) {
-      if (value === undefined || value === null || value === '') continue;
+      if (value === undefined || value === null || value === "") continue;
       params[key] = String(value);
     }
-    const raw = await request<unknown>('/api/v1/cases', { params });
+    const raw = await request<unknown>("/api/v1/cases", { params });
     return normalizeCasesResponse(raw, filters);
   },
 
@@ -2385,8 +2421,8 @@ export const casesApi = {
     if (data.alertIds !== undefined) body.alert_ids = data.alertIds;
     if (data.mitre !== undefined) body.mitre_techniques = data.mitre;
     if (data.dueAt !== undefined) body.sla_due_at = data.dueAt;
-    const raw = await request<unknown>('/api/v1/cases', {
-      method: 'POST',
+    const raw = await request<unknown>("/api/v1/cases", {
+      method: "POST",
       body: JSON.stringify(body),
     });
     return normalizeCase(raw);
@@ -2394,26 +2430,23 @@ export const casesApi = {
 
   update: async (id: string, data: Partial<Case>) => {
     const raw = await request<unknown>(`/api/v1/cases/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
     return normalizeCase(raw);
   },
 
   addComment: (id: string, comment: string) =>
-    request<{ id: string; comment: string; createdAt: string }>(
-      `/api/v1/cases/${id}/comments`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ comment }),
-      },
-    ),
+    request<{ id: string; comment: string; createdAt: string }>(`/api/v1/cases/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ comment }),
+    }),
 
   linkAlerts: async (id: string, alertIds: string[]) => {
     // Backend AddAlertsRequest expects snake_case `alert_ids`; sending
     // `alertIds` raised a 422 and the alert was never attached to the case.
     const raw = await request<unknown>(`/api/v1/cases/${id}/alerts`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ alert_ids: alertIds }),
     });
     return normalizeCase(raw);
@@ -2424,13 +2457,13 @@ export const casesApi = {
 
   addTask: (id: string, task: Partial<CaseTask>) =>
     request<CaseTask>(`/api/v1/cases/${id}/tasks`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(task),
     }),
 
   updateTask: (caseId: string, taskId: string, task: Partial<CaseTask>) =>
     request<CaseTask>(`/api/v1/cases/${caseId}/tasks/${taskId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(task),
     }),
 
@@ -2438,9 +2471,9 @@ export const casesApi = {
     request<{ run_id: string; case_id: string; status: string; message: string }>(
       `/api/v1/cases/${caseId}/investigate`,
       {
-        method: 'POST',
-        body: JSON.stringify({ alert_summary: alertSummary ?? '' }),
-      },
+        method: "POST",
+        body: JSON.stringify({ alert_summary: alertSummary ?? "" }),
+      }
     ),
 
   getInvestigation: (caseId: string, runId: string) =>
@@ -2470,13 +2503,13 @@ export const casesApi = {
    */
   getAttackChain: async (
     caseId: string,
-    options: { window?: AttackChainWindow } = {},
+    options: { window?: AttackChainWindow } = {}
   ): Promise<AttackChainTimeline | null> => {
     const params: Record<string, string> = {};
     if (options.window) params.window = options.window;
     const raw = await request<BackendAttackChainResponse>(
       `/api/v1/cases/${encodeURIComponent(caseId)}/attack-chain`,
-      { params },
+      { params }
     );
     if (!raw.seed_alert_id) return null;
     return {
@@ -2485,7 +2518,7 @@ export const casesApi = {
       window: raw.window,
       seedAlertId: raw.seed_alert_id,
       chainSignature: raw.chain_signature ?? null,
-      confidence: typeof raw.confidence === 'number' ? raw.confidence : 0,
+      confidence: typeof raw.confidence === "number" ? raw.confidence : 0,
       generatedAt: raw.generated_at ?? new Date().toISOString(),
       chain: (raw.chain ?? []).map((link) => ({
         alertId: link.alert_id,
@@ -2509,16 +2542,19 @@ export const casesApi = {
 
   /** Trigger a browser download of the PDF report. */
   downloadReportPdf: async (caseId: string, runId: string): Promise<void> => {
-    const resp = await fetch(`${API_BASE}/api/v1/cases/${caseId}/investigations/${runId}/report.pdf`, {
-      headers: apiHeaders(),
-    });
+    const resp = await fetch(
+      `${API_BASE}/api/v1/cases/${caseId}/investigations/${runId}/report.pdf`,
+      {
+        headers: apiHeaders(),
+      }
+    );
     if (!resp.ok) {
       const err = await resp.text().catch(() => resp.statusText);
       throw new Error(err);
     }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `aisoc-report-${runId}.pdf`;
     document.body.appendChild(a);
@@ -2535,7 +2571,7 @@ export const casesApi = {
   /** Fetch the structured per-case auto-summary payload. */
   getAutoSummary: (caseId: string) =>
     request<CaseAutoSummary>(`/api/v1/cases/${caseId}/summary`, {
-      params: { format: 'json' },
+      params: { format: "json" },
     }),
 
   /**
@@ -2548,25 +2584,25 @@ export const casesApi = {
    * report surfaces behave consistently in the PWA.
    */
   openAutoSummaryHtml: async (caseId: string): Promise<void> => {
-    const headers = apiHeaders({ Accept: 'text/html' });
+    const headers = apiHeaders({ Accept: "text/html" });
 
     const url = `${API_BASE}/api/v1/cases/${caseId}/summary?format=html`;
-    const response = await fetch(url, { headers, cache: 'no-store' });
+    const response = await fetch(url, { headers, cache: "no-store" });
     if (!response.ok) {
-      const detail = await response.text().catch(() => '');
+      const detail = await response.text().catch(() => "");
       throw new ApiError(
         `API ${response.status} ${response.statusText} — /cases/${caseId}/summary`,
         response.status,
-        detail,
+        detail
       );
     }
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);
     // Use a transient anchor so the print-ready page lands in its own tab.
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = objectUrl;
-    a.target = '_blank';
-    a.rel = 'noopener';
+    a.target = "_blank";
+    a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2584,7 +2620,7 @@ export const casesApi = {
 export interface LedgerRunSummary {
   id: string;
   case_id: string;
-  status: 'running' | 'completed' | 'failed' | string;
+  status: "running" | "completed" | "failed" | string;
   model_used: string | null;
   iterations: number;
   total_tokens: number;
@@ -2671,7 +2707,7 @@ export interface LedgerExplain {
 export const ledgerApi = {
   /** List investigation runs for the current tenant (optionally scoped to a case). */
   listRuns: (params?: { caseId?: string; status?: string; limit?: number }) =>
-    request<LedgerRunSummary[]>('/api/v1/investigations', {
+    request<LedgerRunSummary[]>("/api/v1/investigations", {
       params: {
         case_id: params?.caseId,
         status: params?.status,
@@ -2680,8 +2716,7 @@ export const ledgerApi = {
     }),
 
   /** Run summary + counts of attached events/artifacts. */
-  getRun: (runId: string) =>
-    request<LedgerRunDetail>(`/api/v1/investigations/${runId}`),
+  getRun: (runId: string) => request<LedgerRunDetail>(`/api/v1/investigations/${runId}`),
 
   /** Paginated event timeline. Use `since` to tail. */
   listEvents: (runId: string, params?: { since?: number; limit?: number }) =>
@@ -2703,21 +2738,17 @@ export const ledgerApi = {
 
   /** Artifact list for a run. */
   listArtifacts: (runId: string) =>
-    request<LedgerArtifactSummary[]>(
-      `/api/v1/investigations/${runId}/artifacts`,
-    ),
+    request<LedgerArtifactSummary[]>(`/api/v1/investigations/${runId}/artifacts`),
 
   /** Single artifact (full inlined content). */
   getArtifact: (runId: string, artifactId: string) =>
-    request<LedgerArtifactDetail>(
-      `/api/v1/investigations/${runId}/artifacts/${artifactId}`,
-    ),
+    request<LedgerArtifactDetail>(`/api/v1/investigations/${runId}/artifacts/${artifactId}`),
 };
 
 // ─── Metrics / Dashboard ─────────────────────────────────────────────────────
 
 export interface DashboardMetrics {
-  period?: '1h' | '24h' | '7d' | '30d';
+  period?: "1h" | "24h" | "7d" | "30d";
   alerts: {
     total: number;
     new: number;
@@ -2761,7 +2792,7 @@ export interface DashboardMetrics {
  * ``FunnelKpiBar`` and ``EfficiencyReport`` widgets on the dashboard.
  */
 export interface FunnelMetrics {
-  period: '1h' | '24h' | '7d' | '30d';
+  period: "1h" | "24h" | "7d" | "30d";
   events_of_interest: number;
   correlation_instances: number;
   alerts_generated: number;
@@ -2803,11 +2834,11 @@ export interface FunnelMetrics {
  * ``PipelineHealth`` strip on /dashboard.
  */
 export interface PipelineStage {
-  stage: 'ingest' | 'normalize' | 'fuse' | 'correlate' | 'alert';
+  stage: "ingest" | "normalize" | "fuse" | "correlate" | "alert";
   backlog: number;
   p95_latency_ms: number;
   error_rate: number;
-  status: 'unknown' | 'green' | 'yellow' | 'red';
+  status: "unknown" | "green" | "yellow" | "red";
   /**
    * Numeric fields above that this stage could not measure. They still carry
    * `0` on the wire; render them as `n/a`, never as a value. Optional because
@@ -2820,7 +2851,7 @@ export interface PipelineStage {
 
 export interface PipelineHealth {
   /** Worst stage status, surfaced at the top of the pipeline rail. */
-  overall_status: 'unknown' | 'green' | 'yellow' | 'red';
+  overall_status: "unknown" | "green" | "yellow" | "red";
   stages: PipelineStage[];
   /** ISO-8601 server timestamp. */
   generated_at: string;
@@ -2914,7 +2945,7 @@ export interface CostAggregate {
  * server-side and `TIME_WINDOWS` in `lib/timeWindow.ts`. Named once so the
  * four call sites below cannot drift apart from each other.
  */
-export type TimeWindowParam = '1h' | '24h' | '7d' | '30d';
+export type TimeWindowParam = "1h" | "24h" | "7d" | "30d";
 
 export const metricsApi = {
   /**
@@ -2925,24 +2956,20 @@ export const metricsApi = {
    * header and fetched nothing. Defaulted rather than required so no existing
    * caller changes behaviour by omission.
    */
-  getDashboard: (period: TimeWindowParam = '24h') =>
-    request<DashboardMetrics>('/api/v1/metrics/dashboard', { params: { period } }),
+  getDashboard: (period: TimeWindowParam = "24h") =>
+    request<DashboardMetrics>("/api/v1/metrics/dashboard", { params: { period } }),
 
   getAlertTrend: (period: TimeWindowParam) =>
-    request<{ data: Array<{ timestamp: string; count: number }> }>(
-      `/api/v1/metrics/alerts/trend`,
-      {
-        params: { period },
-      },
-    ),
+    request<{ data: Array<{ timestamp: string; count: number }> }>(`/api/v1/metrics/alerts/trend`, {
+      params: { period },
+    }),
 
   /** Funnel KPIs (events → correlations → alerts) with deltas. */
-  getFunnel: (period: TimeWindowParam = '24h') =>
-    request<FunnelMetrics>('/api/v1/metrics/funnel', { params: { period } }),
+  getFunnel: (period: TimeWindowParam = "24h") =>
+    request<FunnelMetrics>("/api/v1/metrics/funnel", { params: { period } }),
 
   /** Per-stage pipeline health (ingest → normalize → fuse → correlate → alert). */
-  getPipelineHealth: () =>
-    request<PipelineHealth>('/api/v1/health/pipeline'),
+  getPipelineHealth: () => request<PipelineHealth>("/api/v1/health/pipeline"),
 
   /**
    * SOC Performance KPIs + ATT&CK heatmap + calibration curve.
@@ -2950,8 +2977,8 @@ export const metricsApi = {
    * Tenant-scoped server-side; the client just needs the bearer token
    * and X-Tenant-Id header that `request()` already attaches.
    */
-  getSOC: (period: TimeWindowParam = '24h') =>
-    request<SOCMetrics>('/api/v1/metrics/soc', { params: { period } }),
+  getSOC: (period: TimeWindowParam = "24h") =>
+    request<SOCMetrics>("/api/v1/metrics/soc", { params: { period } }),
 };
 
 // ─── Operational health: connector fleet, rejected events, alert posture ─────
@@ -2961,7 +2988,7 @@ export const metricsApi = {
 // absence of alerts means the estate is quiet or the pipeline stopped.
 
 /** How a connector is doing against *its own* configured poll cadence. */
-export type FleetHealthState = 'healthy' | 'degraded' | 'failed' | 'unproven' | 'disabled';
+export type FleetHealthState = "healthy" | "degraded" | "failed" | "unproven" | "disabled";
 
 export interface FleetConnectorHealth {
   connector_id: string;
@@ -3023,16 +3050,16 @@ export const operationsApi = {
    * Staleness is judged per connector against its own cadence, so a daily
    * connector is not reported as failing eleven hours in.
    */
-  fleetHealth: () => request<FleetHealth>('/api/v1/health/fleet'),
+  fleetHealth: () => request<FleetHealth>("/api/v1/health/fleet"),
 
   /** Events the pipeline refused, and why. */
   deadLetters: (params: { hours?: number; limit?: number } = {}) =>
-    request<DeadLetters>('/api/v1/health/dead-letters', {
+    request<DeadLetters>("/api/v1/health/dead-letters", {
       params: params as Record<string, string>,
     }),
 
   /** Severity / status distribution plus the two counters worth paging on. */
-  alertStats: () => request<AlertStats>('/api/v1/alerts/stats'),
+  alertStats: () => request<AlertStats>("/api/v1/alerts/stats"),
 };
 
 // ─── Investigations ─────────────────────────────────────────────────────────
@@ -3043,7 +3070,7 @@ export const investigationsApi = {
    * Backs the Cost Telemetry panel on /dashboard.
    */
   getCostAggregate: (windowDays: number = 30) =>
-    request<CostAggregate>('/api/v1/investigations/costs/aggregate', {
+    request<CostAggregate>("/api/v1/investigations/costs/aggregate", {
       params: { window_days: windowDays },
     }),
 };
@@ -3055,7 +3082,7 @@ export const investigationsApi = {
 // optional delta_pct (null when there's no prior data), and a 24-bucket
 // sparkline. The page re-fetches on every `insights_updated` WebSocket poke.
 
-export type InsightsWindow = '24h' | '7d' | '30d';
+export type InsightsWindow = "24h" | "7d" | "30d";
 
 export interface InsightSparkline {
   points: number[];
@@ -3072,7 +3099,7 @@ export interface InsightTile {
    * predates the field is handled without a cast.
    */
   sample_count?: number;
-  unit: 'hours' | 'pct' | 'count' | 'usd' | 'hours_saved';
+  unit: "hours" | "pct" | "count" | "usd" | "hours_saved";
   previous_value: number;
   delta_pct: number | null;
   sparkline: InsightSparkline;
@@ -3095,18 +3122,14 @@ export const insightsApi = {
    * filter doesn't show stale numbers from the previous range.
    */
   getSOC: (window: InsightsWindow) =>
-    request<SOCInsightsResponse>('/api/v1/insights/soc', {
+    request<SOCInsightsResponse>("/api/v1/insights/soc", {
       params: { window },
     }),
 };
 
 // ─── Connectors ──────────────────────────────────────────────────────────────
 
-export type ConnectorStatus =
-  | 'active'
-  | 'inactive'
-  | 'error'
-  | 'configuring';
+export type ConnectorStatus = "active" | "inactive" | "error" | "configuring";
 
 export interface Connector {
   id: string;
@@ -3159,7 +3182,7 @@ export interface Connector {
    * duplication so a future cadence change ships in one place.
    */
   freshness?: {
-    status: 'green' | 'yellow' | 'red' | 'unknown';
+    status: "green" | "yellow" | "red" | "unknown";
     expected_cadence_seconds: number;
     seconds_since_last_event: number | null;
     category: string;
@@ -3174,7 +3197,7 @@ export interface ConnectorsResponse {
 /** A single config field surfaced by ``BaseConnector.schema()`` on the backend. */
 export interface ConnectorSchemaField {
   name: string;
-  type: 'string' | 'secret' | 'select' | 'textarea' | 'boolean' | 'number';
+  type: "string" | "secret" | "select" | "textarea" | "boolean" | "number";
   label: string;
   required?: boolean;
   default?: string | number | boolean | null;
@@ -3252,7 +3275,7 @@ interface BackendConnectorResponse {
   // emits an ``unknown`` verdict, but defensive null-handling lets the
   // UI degrade gracefully if the field is ever stripped).
   freshness?: {
-    status: 'green' | 'yellow' | 'red' | 'unknown';
+    status: "green" | "yellow" | "red" | "unknown";
     expected_cadence_seconds: number;
     seconds_since_last_event: number | null;
     category: string;
@@ -3285,18 +3308,18 @@ export interface ConnectorHealthSummary {
  * last health check.
  */
 function deriveConnectorStatus(row: BackendConnectorResponse): ConnectorStatus {
-  if (!row.is_enabled) return 'inactive';
+  if (!row.is_enabled) return "inactive";
   switch (row.health_status) {
-    case 'healthy':
-      return 'active';
-    case 'unhealthy':
-    case 'error':
-      return 'error';
-    case 'unknown':
-    case '':
-      return 'configuring';
+    case "healthy":
+      return "active";
+    case "unhealthy":
+    case "error":
+      return "error";
+    case "unknown":
+    case "":
+      return "configuring";
     default:
-      return 'configuring';
+      return "configuring";
   }
 }
 
@@ -3402,56 +3425,45 @@ export const connectorsApi = {
    * camelCase frontend shape so views never have to reach into raw API rows.
    */
   list: async (): Promise<ConnectorsResponse> => {
-    const rows = await request<BackendConnectorResponse[]>(
-      '/api/v1/connectors',
-    );
+    const rows = await request<BackendConnectorResponse[]>("/api/v1/connectors");
     const connectors = rows.map(mapBackendConnector);
     return { connectors, total: connectors.length };
   },
 
   /** Catalog of available connector types (one entry per registered class). */
-  catalog: () =>
-    request<ConnectorCatalogResponse>('/api/v1/connectors/catalog'),
+  catalog: () => request<ConnectorCatalogResponse>("/api/v1/connectors/catalog"),
 
   get: async (id: string): Promise<Connector> => {
-    const row = await request<BackendConnectorResponse>(
-      `/api/v1/connectors/${id}`,
-    );
+    const row = await request<BackendConnectorResponse>(`/api/v1/connectors/${id}`);
     return mapBackendConnector(row);
   },
 
   create: async (data: CreateConnectorPayload): Promise<Connector> => {
-    const row = await request<BackendConnectorResponse>('/api/v1/connectors', {
-      method: 'POST',
+    const row = await request<BackendConnectorResponse>("/api/v1/connectors", {
+      method: "POST",
       body: JSON.stringify(data),
     });
     return mapBackendConnector(row);
   },
 
-  update: async (
-    id: string,
-    data: UpdateConnectorPayload,
-  ): Promise<Connector> => {
-    const row = await request<BackendConnectorResponse>(
-      `/api/v1/connectors/${id}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      },
-    );
+  update: async (id: string, data: UpdateConnectorPayload): Promise<Connector> => {
+    const row = await request<BackendConnectorResponse>(`/api/v1/connectors/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
     return mapBackendConnector(row);
   },
 
   /** Run "Test connection" against a saved instance. */
   test: (id: string) =>
     request<ConnectorTestResult>(`/api/v1/connectors/${id}/test`, {
-      method: 'POST',
+      method: "POST",
     }),
 
   /** Run "Test connection" with un-saved credentials from the wizard. */
   testInline: (payload: TestConnectorPayload) =>
-    request<ConnectorTestResult>('/api/v1/connectors/test', {
-      method: 'POST',
+    request<ConnectorTestResult>("/api/v1/connectors/test", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 
@@ -3463,8 +3475,8 @@ export const connectorsApi = {
    * "Likely cause / fix steps / docs" callout in the modal.
    */
   troubleshoot: (payload: TroubleshootRequest) =>
-    request<TroubleshootResponse>('/api/v1/connectors/troubleshoot', {
-      method: 'POST',
+    request<TroubleshootResponse>("/api/v1/connectors/troubleshoot", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 
@@ -3476,8 +3488,7 @@ export const connectorsApi = {
    * landed (with `data_flowing=false`) so the polling loop can have
    * stable shape rather than a 404.
    */
-  lastEvent: (id: string) =>
-    request<ConnectorLastEvent>(`/api/v1/connectors/${id}/last_event_at`),
+  lastEvent: (id: string) => request<ConnectorLastEvent>(`/api/v1/connectors/${id}/last_event_at`),
 
   /**
    * Generate or rotate the per-connector push-ingest token.
@@ -3488,11 +3499,10 @@ export const connectorsApi = {
    */
   refreshIngestToken: (id: string) =>
     request<IngestTokenResponse>(`/api/v1/connectors/${id}/push/refresh`, {
-      method: 'POST',
+      method: "POST",
     }),
 
-  delete: (id: string) =>
-    request<void>(`/api/v1/connectors/${id}`, { method: 'DELETE' }),
+  delete: (id: string) => request<void>(`/api/v1/connectors/${id}`, { method: "DELETE" }),
 
   /**
    * Aggregated health summary for the connectors fleet.
@@ -3513,7 +3523,7 @@ export const connectorsApi = {
       last_drift_at: string | null;
       total_events_ingested: number;
       total_events_dropped: number;
-    }>('/api/v1/connectors/health');
+    }>("/api/v1/connectors/health");
     return {
       total: raw.total,
       healthy: raw.healthy,
@@ -3578,18 +3588,18 @@ export interface MintInboxTokenPayload {
 
 export const inboxApi = {
   /** List vendor templates the operator can mint inbox URLs for. */
-  templates: () => request<InboxTemplate[]>('/api/v1/inbox/templates'),
+  templates: () => request<InboxTemplate[]>("/api/v1/inbox/templates"),
 
   /** List the calling tenant's inbox tokens (revoked filtered out). */
   list: (params?: { include_revoked?: boolean }) => {
-    const qs = params?.include_revoked ? '?include_revoked=true' : '';
+    const qs = params?.include_revoked ? "?include_revoked=true" : "";
     return request<InboxTokenListItem[]>(`/api/v1/inbox/tokens${qs}`);
   },
 
   /** Mint a new inbox token. Plaintext returned exactly once. */
   mint: (payload: MintInboxTokenPayload) =>
-    request<InboxTokenSecret>('/api/v1/inbox/tokens', {
-      method: 'POST',
+    request<InboxTokenSecret>("/api/v1/inbox/tokens", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 
@@ -3598,17 +3608,13 @@ export const inboxApi = {
    * / HMAC, revokes the old. Returns the new plaintext exactly once.
    */
   rotate: (fingerprint: string) =>
-    request<InboxTokenSecret>(
-      `/api/v1/inbox/tokens/${encodeURIComponent(fingerprint)}/rotate`,
-      { method: 'POST' },
-    ),
+    request<InboxTokenSecret>(`/api/v1/inbox/tokens/${encodeURIComponent(fingerprint)}/rotate`, {
+      method: "POST",
+    }),
 
   /** Permanently revoke an inbox token. */
   revoke: (fingerprint: string) =>
-    request<void>(
-      `/api/v1/inbox/tokens/${encodeURIComponent(fingerprint)}`,
-      { method: 'DELETE' },
-    ),
+    request<void>(`/api/v1/inbox/tokens/${encodeURIComponent(fingerprint)}`, { method: "DELETE" }),
 };
 
 // ─── Hosted OAuth (Workstream 2) ──────────────────────────────────────────────
@@ -3685,32 +3691,21 @@ export const oauthApi = {
    * until the operator has called `upsertApp()` at least once.
    */
   getApp: (connectorType: string) =>
-    request<OAuthAppView>(
-      `/api/v1/oauth/app/${encodeURIComponent(connectorType)}`,
-    ),
+    request<OAuthAppView>(`/api/v1/oauth/app/${encodeURIComponent(connectorType)}`),
 
   /**
    * Register or rotate the tenant's OAuth client for a connector class.
    * The backend encrypts `client_secret` at rest via the credential vault.
    */
-  upsertApp: (
-    connectorType: string,
-    payload: OAuthAppRegistrationPayload,
-  ) =>
-    request<OAuthAppView>(
-      `/api/v1/oauth/app/${encodeURIComponent(connectorType)}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      },
-    ),
+  upsertApp: (connectorType: string, payload: OAuthAppRegistrationPayload) =>
+    request<OAuthAppView>(`/api/v1/oauth/app/${encodeURIComponent(connectorType)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
 
   /** Unregister the tenant's OAuth client for a connector class. */
   deleteApp: (connectorType: string) =>
-    request<void>(
-      `/api/v1/oauth/app/${encodeURIComponent(connectorType)}`,
-      { method: 'DELETE' },
-    ),
+    request<void>(`/api/v1/oauth/app/${encodeURIComponent(connectorType)}`, { method: "DELETE" }),
 
   /**
    * Build the `/api/v1/oauth/start?...` URL. The caller does
@@ -3723,12 +3718,12 @@ export const oauthApi = {
    */
   startUrl: (opts: OAuthStartOptions): string => {
     const params = new URLSearchParams();
-    params.set('connector_type', opts.connectorType);
-    if (opts.connectorId) params.set('connector_id', opts.connectorId);
-    if (opts.returnTo) params.set('return_to', opts.returnTo);
-    if (opts.name) params.set('name', opts.name);
+    params.set("connector_type", opts.connectorType);
+    if (opts.connectorId) params.set("connector_id", opts.connectorId);
+    if (opts.returnTo) params.set("return_to", opts.returnTo);
+    if (opts.name) params.set("name", opts.name);
     if (opts.extras && Object.keys(opts.extras).length > 0) {
-      params.set('extras', JSON.stringify(opts.extras));
+      params.set("extras", JSON.stringify(opts.extras));
     }
     return `${API_BASE}/api/v1/oauth/start?${params.toString()}`;
   },
@@ -3741,7 +3736,7 @@ export const oauthApi = {
   startJson: (opts: OAuthStartOptions) => {
     const params: Record<string, string> = {
       connector_type: opts.connectorType,
-      response_mode: 'json',
+      response_mode: "json",
     };
     if (opts.connectorId) params.connector_id = opts.connectorId;
     if (opts.returnTo) params.return_to = opts.returnTo;
@@ -3749,13 +3744,13 @@ export const oauthApi = {
     if (opts.extras && Object.keys(opts.extras).length > 0) {
       params.extras = JSON.stringify(opts.extras);
     }
-    return request<OAuthStartResponse>('/api/v1/oauth/start', { params });
+    return request<OAuthStartResponse>("/api/v1/oauth/start", { params });
   },
 };
 
 // ─── Threat Intel ─────────────────────────────────────────────────────────────
 
-export type IndicatorType = 'ip' | 'domain' | 'hash' | 'url' | 'email';
+export type IndicatorType = "ip" | "domain" | "hash" | "url" | "email";
 
 /**
  * A canonical threat indicator surfaced by the threatintel service.
@@ -3799,9 +3794,9 @@ export interface IOCLookup extends ThreatIndicator {
  * every lookup took that branch and the panel had only ever said "clean".
  */
 export type IOCLookupOutcome =
-  | { status: 'match'; indicator: ThreatIndicator }
-  | { status: 'clean' }
-  | { status: 'failed'; reason: string };
+  | { status: "match"; indicator: ThreatIndicator }
+  | { status: "clean" }
+  | { status: "failed"; reason: string };
 
 export const threatIntelApi = {
   /**
@@ -3822,28 +3817,28 @@ export const threatIntelApi = {
       reason?: string;
     };
     try {
-      response = await request('/api/v1/threat-intel/indicators', { params: { q: ioc } });
+      response = await request("/api/v1/threat-intel/indicators", { params: { q: ioc } });
     } catch (err) {
       const status = err instanceof ApiError ? err.status : undefined;
       // status 0 is `request`'s own marker for "never reached the server".
       const detail =
         status === undefined || status === 0
-          ? 'the threat-intel service could not be reached'
+          ? "the threat-intel service could not be reached"
           : `the threat-intel service answered HTTP ${status}`;
-      return { status: 'failed', reason: detail };
+      return { status: "failed", reason: detail };
     }
 
     if (response.degraded) {
       return {
-        status: 'failed',
-        reason: response.reason?.trim() || 'the threat-intel store answered from a degraded source',
+        status: "failed",
+        reason: response.reason?.trim() || "the threat-intel store answered from a degraded source",
       };
     }
 
     const match = (response.indicators ?? []).find(
-      (candidate) => candidate.value?.toLowerCase() === ioc.toLowerCase(),
+      (candidate) => candidate.value?.toLowerCase() === ioc.toLowerCase()
     );
-    return match ? { status: 'match', indicator: match } : { status: 'clean' };
+    return match ? { status: "match", indicator: match } : { status: "clean" };
   },
 
   // `bulkLookup` used to live here. It posted `{ iocs: [...] }` to
@@ -3878,7 +3873,7 @@ export const threatIntelApi = {
       bounded?: boolean;
       degraded?: boolean;
       reason?: string;
-    }>('/api/v1/threat-intel/indicators', { params: filters as Record<string, string> }),
+    }>("/api/v1/threat-intel/indicators", { params: filters as Record<string, string> }),
 };
 
 // ─── AI Agents ────────────────────────────────────────────────────────────────
@@ -3886,7 +3881,7 @@ export const threatIntelApi = {
 export interface AgentInvestigation {
   id: string;
   alertId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: "pending" | "running" | "completed" | "failed";
   findings?: string;
   recommendations?: string[];
   actions?: Array<{ type: string; target: string; status: string }>;
@@ -3904,10 +3899,10 @@ export const agentsApi = {
    */
   explainStream: (
     payload: { alert: Record<string, unknown>; alertId?: string },
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ) =>
     fetch(`${AGENTS_BASE}/api/v1/explain`, {
-      method: 'POST',
+      method: "POST",
       headers: apiHeaders(),
       body: JSON.stringify({
         alert: payload.alert,
@@ -3925,19 +3920,19 @@ export const agentsApi = {
 // section, subsequent typed frames fill it, and `done` closes the stream.
 
 export interface ExplainSectionFrame {
-  kind: 'section';
-  id: 'summary' | 'ocsf' | 'mitre' | 'evidence' | 'next';
+  kind: "section";
+  id: "summary" | "ocsf" | "mitre" | "evidence" | "next";
   title: string;
 }
 
 export interface ExplainDeltaFrame {
-  kind: 'delta';
-  section: 'summary';
+  kind: "delta";
+  section: "summary";
   text: string;
 }
 
 export interface ExplainOcsfFrame {
-  kind: 'ocsf';
+  kind: "ocsf";
   category: string;
   category_uid: number;
   class: string;
@@ -3947,7 +3942,7 @@ export interface ExplainOcsfFrame {
 }
 
 export interface ExplainMitreFrame {
-  kind: 'mitre';
+  kind: "mitre";
   id: string;
   name: string;
   tactic_names: string[];
@@ -3957,26 +3952,26 @@ export interface ExplainMitreFrame {
 }
 
 export interface ExplainEvidenceFrame {
-  kind: 'evidence';
+  kind: "evidence";
   label: string;
   value: string;
   annotation: string;
 }
 
 export interface ExplainNextStepFrame {
-  kind: 'next_step';
+  kind: "next_step";
   title: string;
   rationale: string;
   playbook_id: string | null;
 }
 
 export interface ExplainDoneFrame {
-  kind: 'done';
+  kind: "done";
   alert_id: string;
 }
 
 export interface ExplainErrorFrame {
-  kind: 'error';
+  kind: "error";
   error: string;
 }
 
@@ -4019,13 +4014,13 @@ export interface RuleLineage {
   rule_language: string | null;
   is_builtin: boolean;
   /** Confidence in the lineage *match itself*, not the rule's own confidence. */
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
   /**
    * How the lineage was resolved. `none` means we couldn't match any rule.
    * `raw_event` / `tags` are deterministic; `mitre_overlap` and `category`
    * are best-effort guesses.
    */
-  match_method: 'raw_event' | 'tags' | 'mitre_overlap' | 'category' | 'none';
+  match_method: "raw_event" | "tags" | "mitre_overlap" | "category" | "none";
 }
 
 /** Live false-positive rate for the matched rule (or fallback scope). */
@@ -4035,7 +4030,7 @@ export interface HistoricalFpRate {
   false_positives: number;
   lookback_days: number;
   /** Which scope was used. Narrower = more relevant; broader = more samples. */
-  scope: 'rule' | 'category' | 'technique' | 'tenant';
+  scope: "rule" | "category" | "technique" | "tenant";
   /** Human-readable description of which scope was used and why. */
   notes: string;
 }
@@ -4046,7 +4041,7 @@ export interface SuggestedAction {
   rationale: string;
   /** ID of a playbook the user can launch directly, or null if N/A. */
   playbook_id: string | null;
-  priority: 'immediate' | 'soon' | 'fyi';
+  priority: "immediate" | "soon" | "fyi";
 }
 
 /** A single signal from the raw event that contributed to the alert. */
@@ -4089,7 +4084,7 @@ export interface AlertExplanation {
 
 export interface HuntQuery {
   query: string;
-  language?: 'kql' | 'lucene' | 'sql' | 'esql';
+  language?: "kql" | "lucene" | "sql" | "esql";
   startTime?: string;
   endTime?: string;
   limit?: number;
@@ -4145,28 +4140,26 @@ export const huntApi = {
    * parameter here.
    */
   runAgentHunt: (hypothesis: string) =>
-    request<AgentHuntResponse>('/api/v1/agents/hunt', {
-      method: 'POST',
+    request<AgentHuntResponse>("/api/v1/agents/hunt", {
+      method: "POST",
       body: JSON.stringify({ hypothesis }),
     }),
 
   search: (query: HuntQuery) =>
-    request<HuntResponse>('/api/v1/hunt/search', {
-      method: 'POST',
+    request<HuntResponse>("/api/v1/hunt/search", {
+      method: "POST",
       body: JSON.stringify(query),
     }),
 
-  listSaved: () =>
-    request<{ searches: SavedSearch[] }>('/api/v1/hunt/saved'),
+  listSaved: () => request<{ searches: SavedSearch[] }>("/api/v1/hunt/saved"),
 
-  saveSearch: (data: Pick<SavedSearch, 'name' | 'query' | 'language'>) =>
-    request<SavedSearch>('/api/v1/hunt/saved', {
-      method: 'POST',
+  saveSearch: (data: Pick<SavedSearch, "name" | "query" | "language">) =>
+    request<SavedSearch>("/api/v1/hunt/saved", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
 
-  deleteSaved: (id: string) =>
-    request<void>(`/api/v1/hunt/saved/${id}`, { method: 'DELETE' }),
+  deleteSaved: (id: string) => request<void>(`/api/v1/hunt/saved/${id}`, { method: "DELETE" }),
 };
 
 // ─── Event lake (Phase A1/C1) ────────────────────────────────────────────────
@@ -4209,12 +4202,12 @@ export interface LakeSchemaResponse {
 
 export const lakeApi = {
   sql: (body: LakeQueryRequest) =>
-    request<LakeQueryResponse>('/api/v1/lake/sql', {
-      method: 'POST',
+    request<LakeQueryResponse>("/api/v1/lake/sql", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
-  schema: () => request<LakeSchemaResponse>('/api/v1/lake/schema'),
+  schema: () => request<LakeSchemaResponse>("/api/v1/lake/schema"),
 };
 
 // ─── Federated SIEM search ───────────────────────────────────────────────────
@@ -4233,28 +4226,19 @@ export const lakeApi = {
 
 /** Operator vocabulary accepted by `Indicator` in the connectors service. */
 export type FederatedOperator =
-  | 'eq'
-  | 'ne'
-  | 'contains'
-  | 'starts_with'
-  | 'ends_with'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte'
-  | 'in';
+  "eq" | "ne" | "contains" | "starts_with" | "ends_with" | "gt" | "gte" | "lt" | "lte" | "in";
 
 export const FEDERATED_OPERATORS: readonly FederatedOperator[] = [
-  'eq',
-  'ne',
-  'contains',
-  'starts_with',
-  'ends_with',
-  'gt',
-  'gte',
-  'lt',
-  'lte',
-  'in',
+  "eq",
+  "ne",
+  "contains",
+  "starts_with",
+  "ends_with",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "in",
 ] as const;
 
 /** One `field <op> value` triple. Stacking indicators implies AND. */
@@ -4284,7 +4268,7 @@ export interface FederatedSourceVerdict {
   connector_id: string;
   connector_name: string;
   connector_type: string;
-  status: 'ok' | 'error' | 'unsupported';
+  status: "ok" | "error" | "unsupported";
   row_count: number;
   duration_ms: number;
   error: string | null;
@@ -4329,8 +4313,8 @@ export interface FederatedBackendsResponse {
  */
 export class FederatedSearchDisabledError extends Error {
   constructor() {
-    super('Federated search is disabled on this deployment (AISOC_FEATURE_FED_SEARCH).');
-    this.name = 'FederatedSearchDisabledError';
+    super("Federated search is disabled on this deployment (AISOC_FEATURE_FED_SEARCH).");
+    this.name = "FederatedSearchDisabledError";
   }
 }
 
@@ -4353,9 +4337,7 @@ export const federatedApi = {
   /** Connector instances `search()` would fan out to, with their health. */
   listBackends: async (): Promise<FederatedBackendsResponse> => {
     try {
-      const raw = await request<Partial<FederatedBackendsResponse>>(
-        '/api/v1/federated/backends',
-      );
+      const raw = await request<Partial<FederatedBackendsResponse>>("/api/v1/federated/backends");
       return { backends: Array.isArray(raw.backends) ? raw.backends : [] };
     } catch (err) {
       return asFederatedError(err);
@@ -4364,14 +4346,14 @@ export const federatedApi = {
 
   search: async (body: FederatedSearchRequest): Promise<FederatedSearchResponse> => {
     try {
-      const raw = await request<Partial<FederatedSearchResponse>>(
-        '/api/v1/federated/search',
-        { method: 'POST', body: JSON.stringify(body) },
-      );
+      const raw = await request<Partial<FederatedSearchResponse>>("/api/v1/federated/search", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
       const rows = Array.isArray(raw.rows) ? raw.rows : [];
       return {
         rows,
-        row_count: typeof raw.row_count === 'number' ? raw.row_count : rows.length,
+        row_count: typeof raw.row_count === "number" ? raw.row_count : rows.length,
         sources: Array.isArray(raw.sources) ? raw.sources : [],
         truncated: raw.truncated === true,
       };
@@ -4403,14 +4385,14 @@ export interface NlQueryTranslateResponse {
   kql: string;
   explanation: string;
   created_at: string;
-  engine: 'deterministic' | 'llm';
+  engine: "deterministic" | "llm";
   grammar_validated: boolean;
 }
 
 export const nlQueryApi = {
   translate: (data: NlQueryTranslateRequest) =>
-    request<NlQueryTranslateResponse>('/api/v1/nl-query/translate', {
-      method: 'POST',
+    request<NlQueryTranslateResponse>("/api/v1/nl-query/translate", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
 };
@@ -4423,7 +4405,7 @@ export const nlQueryApi = {
 // authored, separate page). Wire shape mirrors
 // `services/api/app/api/v1/endpoints/saved_hunts.py`.
 
-export type HuntLanguage = 'esql' | 'kql' | 'spl';
+export type HuntLanguage = "esql" | "kql" | "spl";
 
 export interface TranslatedQueryEnvelope {
   esql: string;
@@ -4461,18 +4443,17 @@ export interface RunSavedHuntResponse {
 }
 
 export const savedHuntsApi = {
-  list: () => request<SavedHunt[]>('/api/v1/saved-hunts'),
+  list: () => request<SavedHunt[]>("/api/v1/saved-hunts"),
 
   get: (id: string) => request<SavedHunt>(`/api/v1/saved-hunts/${id}`),
 
   create: (data: CreateSavedHuntRequest) =>
-    request<SavedHunt>('/api/v1/saved-hunts', {
-      method: 'POST',
+    request<SavedHunt>("/api/v1/saved-hunts", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
 
-  remove: (id: string) =>
-    request<void>(`/api/v1/saved-hunts/${id}`, { method: 'DELETE' }),
+  remove: (id: string) => request<void>(`/api/v1/saved-hunts/${id}`, { method: "DELETE" }),
 
   /**
    * Re-translate the saved NL question and stamp `last_run_at`. The endpoint
@@ -4482,23 +4463,23 @@ export const savedHuntsApi = {
    */
   run: (id: string) =>
     request<RunSavedHuntResponse>(`/api/v1/saved-hunts/${id}/run`, {
-      method: 'POST',
+      method: "POST",
     }),
 };
 
 // ─── Attack Graph (Neo4j) ────────────────────────────────────────────────────
 
 export type GraphNodeKind =
-  | 'host'
-  | 'user'
-  | 'ip'
-  | 'domain'
-  | 'hash'
-  | 'process'
-  | 'technique'
-  | 'tactic'
-  | 'alert'
-  | 'asset';
+  | "host"
+  | "user"
+  | "ip"
+  | "domain"
+  | "hash"
+  | "process"
+  | "technique"
+  | "tactic"
+  | "alert"
+  | "asset";
 
 export interface GraphNode {
   id: string;
@@ -4604,10 +4585,10 @@ interface BackendCaseAttackPathResponse {
 // power different tabs in the case workspace.
 
 /** Severity ladder mirrors the backend five-tier scale exactly. */
-export type AttackChainSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
+export type AttackChainSeverity = "info" | "low" | "medium" | "high" | "critical";
 
 /** Allowed lookback windows. The backend rejects anything else with 400. */
-export type AttackChainWindow = '1h' | '6h' | '24h' | '72h' | '7d' | '30d';
+export type AttackChainWindow = "1h" | "6h" | "24h" | "72h" | "7d" | "30d";
 
 /**
  * A single link in the chain — one related alert plus the metadata that
@@ -4702,12 +4683,11 @@ interface BackendAttackChainResponse {
 
 export const graphApi = {
   getOverview: (filters: { entity?: string; depth?: number } = {}) =>
-    request<AttackGraph>('/api/v1/graph', {
+    request<AttackGraph>("/api/v1/graph", {
       params: filters as Record<string, string | number>,
     }),
 
-  getMitreCoverage: () =>
-    request<MitreCoverage>('/api/v1/graph/mitre/coverage'),
+  getMitreCoverage: () => request<MitreCoverage>("/api/v1/graph/mitre/coverage"),
 
   /**
    * Fetch the reconstructed attack-path graph for a single case.
@@ -4717,14 +4697,14 @@ export const graphApi = {
    */
   getCaseAttackPath: async (
     caseId: string,
-    options: { maxDepth?: number } = {},
+    options: { maxDepth?: number } = {}
   ): Promise<CaseAttackPath | null> => {
     try {
       const raw = await request<BackendCaseAttackPathResponse>(
         `/api/v1/graph/attack-path/${encodeURIComponent(caseId)}`,
         {
           params: options.maxDepth ? { max_depth: options.maxDepth } : {},
-        },
+        }
       );
       return {
         caseId: raw.case_id,
@@ -4744,18 +4724,18 @@ export const graphApi = {
 // ─── Detection Rules ─────────────────────────────────────────────────────────
 
 export type DetectionLanguage =
-  | 'sigma'
-  | 'yara'
-  | 'kql'
-  | 'eql'
-  | 'lucene'
-  | 'regex'
+  | "sigma"
+  | "yara"
+  | "kql"
+  | "eql"
+  | "lucene"
+  | "regex"
   /**
    * The compiled ``match_when`` spec the fusion detection engine evaluates.
    * Deliberately not one of the six the rule IDE can execute: the body is
    * read-only and the engine, not the API, is what runs it.
    */
-  | 'aisoc-match';
+  | "aisoc-match";
 
 export interface DetectionRule {
   id: string;
@@ -4816,7 +4796,7 @@ export interface DetectionRuleListParams {
   category?: string;
   mitre?: string;
   enabled?: boolean;
-  source?: 'all' | 'builtin' | 'custom';
+  source?: "all" | "builtin" | "custom";
   limit?: number;
   offset?: number;
 }
@@ -4968,59 +4948,49 @@ export const detectionApi = {
   list: (params: DetectionRuleListParams = {}) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null && value !== '') {
+      if (value !== undefined && value !== null && value !== "") {
         query.set(key, String(value));
       }
     }
-    const suffix = query.toString() ? `?${query.toString()}` : '';
-    return request<DetectionRuleListResult>(
-      `/api/v1/detection/rules${suffix}`,
-    );
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<DetectionRuleListResult>(`/api/v1/detection/rules${suffix}`);
   },
 
   get: (id: string) => request<DetectionRule>(`/api/v1/detection/rules/${id}`),
 
   // Wave 2 (W2.3) — backtest a saved rule over the last N days of real lake
   // events. Returns exactly how many events would have fired + sample matches.
-  backtest: (
-    id: string,
-    body: { window_days?: number; limit?: number; source?: string | null },
-  ) =>
+  backtest: (id: string, body: { window_days?: number; limit?: number; source?: string | null }) =>
     request<DetectionBacktestResult>(`/api/v1/rules/${id}/backtest`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
   create: (rule: Partial<DetectionRule>) =>
-    request<DetectionRule>('/api/v1/detection/rules', {
-      method: 'POST',
+    request<DetectionRule>("/api/v1/detection/rules", {
+      method: "POST",
       body: JSON.stringify(rule),
     }),
 
   update: (id: string, rule: Partial<DetectionRule>) =>
     request<DetectionRule>(`/api/v1/detection/rules/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(rule),
     }),
 
-  delete: (id: string) =>
-    request<void>(`/api/v1/detection/rules/${id}`, { method: 'DELETE' }),
+  delete: (id: string) => request<void>(`/api/v1/detection/rules/${id}`, { method: "DELETE" }),
 
-  test: (rule: Pick<DetectionRule, 'language' | 'body'> & { sample?: string }) =>
-    request<{ matches: number; preview: HuntResult[] }>(
-      '/api/v1/detection/test',
-      {
-        method: 'POST',
-        body: JSON.stringify(rule),
-      },
-    ),
+  test: (rule: Pick<DetectionRule, "language" | "body"> & { sample?: string }) =>
+    request<{ matches: number; preview: HuntResult[] }>("/api/v1/detection/test", {
+      method: "POST",
+      body: JSON.stringify(rule),
+    }),
 
   // ─── WS-B3 management endpoints ──────────────────────────────────────────
 
-  coverage: () =>
-    request<DetectionCoverage>('/api/v1/detection/coverage'),
+  coverage: () => request<DetectionCoverage>("/api/v1/detection/coverage"),
 
-  drift: () => request<DetectionDrift>('/api/v1/detection/drift'),
+  drift: () => request<DetectionDrift>("/api/v1/detection/drift"),
 
   /**
    * Confidence distribution + per-tactic averages + worst/best rules.
@@ -5028,7 +4998,7 @@ export const detectionApi = {
    * snapshot histogram + ranked tables since rule confidence isn't
    * captured historically yet.
    */
-  confidence: () => request<DetectionConfidence>('/api/v1/detection/confidence'),
+  confidence: () => request<DetectionConfidence>("/api/v1/detection/confidence"),
 
   /**
    * Enable or disable many rules in one round-trip. Built-in /
@@ -5036,8 +5006,8 @@ export const detectionApi = {
    * the ``skipped`` array of the response so the UI can surface them.
    */
   bulkToggle: (ruleIds: string[], enabled: boolean) =>
-    request<DetectionBulkToggleResult>('/api/v1/detection/rules/bulk-toggle', {
-      method: 'POST',
+    request<DetectionBulkToggleResult>("/api/v1/detection/rules/bulk-toggle", {
+      method: "POST",
       body: JSON.stringify({ ruleIds, enabled }),
     }),
 };
@@ -5051,13 +5021,7 @@ export const detectionApi = {
 // blocks approval / merge.
 
 export type DetectionProposalStatus =
-  | 'proposed'
-  | 'in_review'
-  | 'eval_passed'
-  | 'eval_failed'
-  | 'approved'
-  | 'rejected'
-  | 'promoted';
+  "proposed" | "in_review" | "eval_passed" | "eval_failed" | "approved" | "rejected" | "promoted";
 
 export interface DetectionProposalEvalVerdict {
   ran_at?: string;
@@ -5126,16 +5090,13 @@ export interface DetectionEvalBaseline {
 export const detectionProposalsApi = {
   list: (params?: { status?: DetectionProposalStatus; limit?: number }) => {
     const qs = new URLSearchParams();
-    if (params?.status) qs.set('status', params.status);
-    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
-    const suffix = qs.toString() ? `?${qs.toString()}` : '';
-    return request<DetectionProposal[]>(
-      `/api/v1/detection-proposals${suffix}`,
-    );
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<DetectionProposal[]>(`/api/v1/detection-proposals${suffix}`);
   },
 
-  get: (id: string) =>
-    request<DetectionProposal>(`/api/v1/detection-proposals/${id}`),
+  get: (id: string) => request<DetectionProposal>(`/api/v1/detection-proposals/${id}`),
 
   create: (proposal: {
     name: string;
@@ -5150,23 +5111,23 @@ export const detectionProposalsApi = {
     tags?: string[];
     base_rule_id?: string | null;
   }) =>
-    request<DetectionProposal>('/api/v1/detection-proposals', {
-      method: 'POST',
+    request<DetectionProposal>("/api/v1/detection-proposals", {
+      method: "POST",
       body: JSON.stringify(proposal),
     }),
 
   comment: (id: string, comment: string) =>
-    request<DetectionProposal>(
-      `/api/v1/detection-proposals/${id}/comment`,
-      { method: 'POST', body: JSON.stringify({ comment }) },
-    ),
+    request<DetectionProposal>(`/api/v1/detection-proposals/${id}/comment`, {
+      method: "POST",
+      body: JSON.stringify({ comment }),
+    }),
 
   attachEval: (
     id: string,
-    body: { eval_report: Record<string, unknown>; max_regression_pp?: number },
+    body: { eval_report: Record<string, unknown>; max_regression_pp?: number }
   ) =>
     request<DetectionProposal>(`/api/v1/detection-proposals/${id}/eval`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
@@ -5184,17 +5145,17 @@ export const detectionProposalsApi = {
     body: {
       positive_fixtures: Array<Record<string, unknown>>;
       negative_fixtures: Array<Record<string, unknown>>;
-    },
+    }
   ) =>
     request<DetectionProposal>(`/api/v1/detection-proposals/${id}/evaluate-rule`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
   /** Replay a candidate rule over real tenant events in the lake. */
   backtestProposal: (id: string, body?: { days?: number; limit?: number }) =>
     request<Record<string, unknown>>(`/api/v1/detection-proposals/${id}/backtest`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
 
@@ -5213,42 +5174,30 @@ export const detectionProposalsApi = {
       duration_seconds: number;
       ran_at: string;
       script: string;
-    }>('/api/v1/detection-proposals/run-eval', {
-      method: 'POST',
+    }>("/api/v1/detection-proposals/run-eval", {
+      method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
 
-  decide: (
-    id: string,
-    body: { decision: 'approve' | 'reject'; comment?: string | null },
-  ) =>
+  decide: (id: string, body: { decision: "approve" | "reject"; comment?: string | null }) =>
     request<DetectionProposal>(`/api/v1/detection-proposals/${id}/decide`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
   promote: (id: string) =>
-    request<DetectionProposal>(
-      `/api/v1/detection-proposals/${id}/promote`,
-      { method: 'POST' },
-    ),
+    request<DetectionProposal>(`/api/v1/detection-proposals/${id}/promote`, { method: "POST" }),
 
   listBaselines: (suite?: string) => {
-    const suffix = suite ? `?suite=${encodeURIComponent(suite)}` : '';
-    return request<DetectionEvalBaseline[]>(
-      `/api/v1/detection-proposals/baselines${suffix}`,
-    );
+    const suffix = suite ? `?suite=${encodeURIComponent(suite)}` : "";
+    return request<DetectionEvalBaseline[]>(`/api/v1/detection-proposals/baselines${suffix}`);
   },
 
-  recordBaseline: (body: {
-    suite: string;
-    score: number;
-    payload?: Record<string, unknown>;
-  }) =>
-    request<DetectionEvalBaseline>(
-      '/api/v1/detection-proposals/baselines',
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
+  recordBaseline: (body: { suite: string; score: number; payload?: Record<string, unknown> }) =>
+    request<DetectionEvalBaseline>("/api/v1/detection-proposals/baselines", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
 
 // ─── Detection Rule Tuning Workbench (PR-6 / v1.5 §W8) ───────────────────────
@@ -5269,18 +5218,14 @@ export const detectionProposalsApi = {
 // wire shape; the types below mirror its Pydantic models 1:1.
 
 export type TuningSuggestion =
-  | 'disable'
-  | 'add_suppression'
-  | 'raise_threshold'
-  | 'tune_confidence'
-  | 'review_stale'
-  | 'healthy';
+  | "disable"
+  | "add_suppression"
+  | "raise_threshold"
+  | "tune_confidence"
+  | "review_stale"
+  | "healthy";
 
-export type TuningAction =
-  | 'raise_threshold'
-  | 'add_suppression'
-  | 'disable'
-  | 'acknowledge';
+export type TuningAction = "raise_threshold" | "add_suppression" | "disable" | "acknowledge";
 
 export interface TuningEntry {
   rule_id: string;
@@ -5386,7 +5331,7 @@ export const tuningApi = {
    * ``include_dismissed: true`` when auditing what's been hidden.
    */
   list: (params: TuningListParams = {}) =>
-    request<TuningResponse>('/api/v1/detection/tuning', {
+    request<TuningResponse>("/api/v1/detection/tuning", {
       params: params as Record<string, string | number | boolean>,
     }),
 
@@ -5395,7 +5340,7 @@ export const tuningApi = {
    * upcoming /console dashboard tile so they don't have to fetch the
    * full feed just to render counts.
    */
-  summary: () => request<TuningSummary>('/api/v1/detection/tuning/summary'),
+  summary: () => request<TuningSummary>("/api/v1/detection/tuning/summary"),
 
   /**
    * Mechanically apply a tuning suggestion. ``raise_threshold``,
@@ -5405,7 +5350,7 @@ export const tuningApi = {
    */
   apply: (ruleId: string, body: ApplyTuningRequest) =>
     request<TuningEntry>(`/api/v1/detection/tuning/${ruleId}/apply`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
@@ -5415,7 +5360,7 @@ export const tuningApi = {
    */
   dismiss: (ruleId: string, body: DismissTuningRequest = {}) =>
     request<TuningEntry>(`/api/v1/detection/tuning/${ruleId}/dismiss`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
@@ -5427,14 +5372,14 @@ export const tuningApi = {
    */
   autoTune: (ruleId: string, enabled: boolean) =>
     request<TuningEntry>(`/api/v1/detection/tuning/${ruleId}/auto_tune`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ enabled } satisfies AutoTuneRequest),
     }),
 };
 
 // ─── AI Copilot ──────────────────────────────────────────────────────────────
 
-export type CopilotRole = 'user' | 'assistant' | 'system';
+export type CopilotRole = "user" | "assistant" | "system";
 
 export interface CopilotMessage {
   id: string;
@@ -5446,7 +5391,7 @@ export interface CopilotMessage {
   citations?: Array<{
     label: string;
     href?: string;
-    kind?: 'alert' | 'case' | 'rule' | 'asset' | 'doc';
+    kind?: "alert" | "case" | "rule" | "asset" | "doc";
   }>;
   /** Optional structured suggestions the UI can render as buttons. */
   suggestions?: string[];
@@ -5478,19 +5423,17 @@ export interface CopilotChatResponse {
 
 export const copilotApi = {
   listConversations: () =>
-    request<{ conversations: CopilotConversation[] }>(
-      '/api/v1/copilot/conversations',
-    ),
+    request<{ conversations: CopilotConversation[] }>("/api/v1/copilot/conversations"),
 
   getConversation: (id: string) =>
     request<{ id: string; title: string; messages: CopilotMessage[] }>(
-      `/api/v1/copilot/conversations/${id}`,
+      `/api/v1/copilot/conversations/${id}`
     ),
 
   /** One-shot chat call. UI should support optimistic append + rollback. */
   chat: (req: CopilotChatRequest) =>
-    request<CopilotChatResponse>('/api/v1/copilot/chat', {
-      method: 'POST',
+    request<CopilotChatResponse>("/api/v1/copilot/chat", {
+      method: "POST",
       body: JSON.stringify(req),
     }),
 
@@ -5501,7 +5444,7 @@ export const copilotApi = {
    */
   streamChat: (req: CopilotChatRequest, signal?: AbortSignal) =>
     fetch(`${API_BASE}/api/v1/copilot/chat/stream`, {
-      method: 'POST',
+      method: "POST",
       headers: apiHeaders(),
       body: JSON.stringify(req),
       signal,
@@ -5519,7 +5462,7 @@ export const copilotApi = {
 // the main API, because they share the same LangChain/MITRE plumbing as the
 // investigation orchestrator.
 
-export type ContextualPage = 'alerts' | 'cases' | 'detections' | 'playbooks';
+export type ContextualPage = "alerts" | "cases" | "detections" | "playbooks";
 
 export interface ContextualSuggestion {
   label: string;
@@ -5591,14 +5534,14 @@ export interface ContextualStreamFrame {
 export const contextualApi = {
   /** Catalogue of supported (page, action) pairs. */
   listActions: () =>
-    request<ContextualActionsCatalogue>('/api/v1/contextual/actions', {
+    request<ContextualActionsCatalogue>("/api/v1/contextual/actions", {
       baseUrl: AGENTS_BASE,
     }),
 
   /** One-shot contextual call. Returns a fully-formed Markdown response. */
   run: (req: ContextualActionRequest) =>
-    request<ContextualActionResponse>('/api/v1/contextual/action', {
-      method: 'POST',
+    request<ContextualActionResponse>("/api/v1/contextual/action", {
+      method: "POST",
       body: JSON.stringify(req),
       baseUrl: AGENTS_BASE,
     }),
@@ -5610,7 +5553,7 @@ export const contextualApi = {
    */
   stream: (req: ContextualActionRequest, signal?: AbortSignal) =>
     fetch(`${AGENTS_BASE}/api/v1/contextual/action/stream`, {
-      method: 'POST',
+      method: "POST",
       headers: apiHeaders(),
       body: JSON.stringify(req),
       signal,
@@ -5665,7 +5608,7 @@ export interface PushPublicKeyResponse {
   enabled: boolean;
 }
 
-export type OnCallStatus = 'available' | 'busy' | 'snoozed' | 'offline';
+export type OnCallStatus = "available" | "busy" | "snoozed" | "offline";
 
 export interface OnCallSnapshot {
   user_id: string;
@@ -5680,7 +5623,7 @@ export interface OnCallSnapshot {
   updated_at: string;
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
+export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
 export interface ApprovalRequest {
   id: string;
@@ -5693,7 +5636,7 @@ export interface ApprovalRequest {
   required_topic: string | null;
   title: string;
   summary: string;
-  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  risk_level: "low" | "medium" | "high" | "critical";
   action: Record<string, unknown>;
   status: ApprovalStatus;
   decided_by_id: string | null;
@@ -5706,36 +5649,33 @@ export interface ApprovalRequest {
 
 export const responderApi = {
   /** Fetch the VAPID public key the SW will subscribe with. */
-  getPublicKey: () =>
-    request<PushPublicKeyResponse>('/api/v1/push/public-key'),
+  getPublicKey: () => request<PushPublicKeyResponse>("/api/v1/push/public-key"),
 
   /** Register a new Web Push subscription for this device. */
   subscribe: (req: PushSubscribeRequest) =>
-    request<PushSubscribeResponse>('/api/v1/push/subscribe', {
-      method: 'POST',
+    request<PushSubscribeResponse>("/api/v1/push/subscribe", {
+      method: "POST",
       body: JSON.stringify(req),
     }),
 
   /** Tear down an existing subscription (e.g. on sign-out). */
   unsubscribe: (endpoint: string) =>
-    request<{ removed: boolean }>('/api/v1/push/unsubscribe', {
-      method: 'POST',
+    request<{ removed: boolean }>("/api/v1/push/unsubscribe", {
+      method: "POST",
       body: JSON.stringify({ endpoint }),
     }),
 
   /** Send a test page to all of the caller's registered devices. */
   testNotify: () =>
-    request<{ sent: number }>('/api/v1/push/test', {
-      method: 'POST',
+    request<{ sent: number }>("/api/v1/push/test", {
+      method: "POST",
     }),
 
   /** Snapshot of every user's on-call status (admin view). */
-  listOnCall: () =>
-    request<{ items: OnCallSnapshot[] }>('/api/v1/oncall'),
+  listOnCall: () => request<{ items: OnCallSnapshot[] }>("/api/v1/oncall"),
 
   /** Current caller's on-call snapshot. */
-  getOnCall: () =>
-    request<OnCallSnapshot>('/api/v1/oncall/me'),
+  getOnCall: () => request<OnCallSnapshot>("/api/v1/oncall/me"),
 
   /** Toggle the caller's own on-call status (optionally for a window).
    *
@@ -5749,10 +5689,10 @@ export const responderApi = {
       note?: string | null;
       rotation?: string | null;
       schedule_ref?: string | null;
-    },
+    }
   ) =>
-    request<OnCallSnapshot>('/api/v1/oncall/me', {
-      method: 'PUT',
+    request<OnCallSnapshot>("/api/v1/oncall/me", {
+      method: "PUT",
       body: JSON.stringify({
         status,
         snooze_minutes: options?.snooze_minutes ?? null,
@@ -5766,7 +5706,7 @@ export const responderApi = {
   listApprovals: (params?: {
     status?: ApprovalStatus;
     mine?: boolean;
-    risk_level?: ApprovalRequest['risk_level'];
+    risk_level?: ApprovalRequest["risk_level"];
     page?: number;
     page_size?: number;
   }) =>
@@ -5776,10 +5716,10 @@ export const responderApi = {
       page: number;
       page_size: number;
       pages: number;
-    }>('/api/v1/approvals', {
+    }>("/api/v1/approvals", {
       params: {
-        status: params?.status ?? 'pending',
-        ...(params?.mine ? { mine: 'true' } : {}),
+        status: params?.status ?? "pending",
+        ...(params?.mine ? { mine: "true" } : {}),
         ...(params?.risk_level ? { risk_level: params.risk_level } : {}),
         ...(params?.page ? { page: params.page } : {}),
         ...(params?.page_size ? { page_size: params.page_size } : {}),
@@ -5787,21 +5727,20 @@ export const responderApi = {
     }),
 
   /** Single approval (for the deep-linked notification view). */
-  getApproval: (id: string) =>
-    request<ApprovalRequest>(`/api/v1/approvals/${id}`),
+  getApproval: (id: string) => request<ApprovalRequest>(`/api/v1/approvals/${id}`),
 
   /** Approve a pending agent action. */
   approve: (id: string, comment?: string) =>
     request<ApprovalRequest>(`/api/v1/approvals/${id}/decide`, {
-      method: 'POST',
-      body: JSON.stringify({ decision: 'approve', comment: comment ?? null }),
+      method: "POST",
+      body: JSON.stringify({ decision: "approve", comment: comment ?? null }),
     }),
 
   /** Deny a pending agent action with a required reason. */
   deny: (id: string, reason: string) =>
     request<ApprovalRequest>(`/api/v1/approvals/${id}/decide`, {
-      method: 'POST',
-      body: JSON.stringify({ decision: 'deny', comment: reason }),
+      method: "POST",
+      body: JSON.stringify({ decision: "deny", comment: reason }),
     }),
 
   /** Snooze an alert for the on-call rotation.
@@ -5812,10 +5751,10 @@ export const responderApi = {
    */
   snoozeAlert: (
     alertId: string,
-    options: { durationMinutes?: number; until?: string; reason?: string },
+    options: { durationMinutes?: number; until?: string; reason?: string }
   ) =>
     request<Alert>(`/api/v1/alerts/${alertId}/snooze`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({
         duration_minutes: options.durationMinutes ?? null,
         until: options.until ?? null,
@@ -5847,26 +5786,26 @@ export const passkeyApi = {
       publicKey: Record<string, unknown>;
       challenge: string;
       device_name_default: string;
-    }>('/api/v1/passkeys/register/begin', {
-      method: 'POST',
+    }>("/api/v1/passkeys/register/begin", {
+      method: "POST",
       body: JSON.stringify({ device_name: deviceName }),
     }),
 
   /** Submit the platform attestation to persist the new credential. */
   registerFinish: (challenge: string, credential: Record<string, unknown>) =>
-    request<PasskeyCredential>('/api/v1/passkeys/register/finish', {
-      method: 'POST',
+    request<PasskeyCredential>("/api/v1/passkeys/register/finish", {
+      method: "POST",
       body: JSON.stringify({ challenge, credential }),
     }),
 
   /** Begin a passwordless login (email is optional / hint only). */
   authenticateBegin: (email?: string) =>
     request<{ publicKey: Record<string, unknown>; challenge: string }>(
-      '/api/v1/passkeys/authenticate/begin',
+      "/api/v1/passkeys/authenticate/begin",
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ email: email ?? null }),
-      },
+      }
     ),
 
   /** Verify the assertion and return a JWT pair. */
@@ -5876,18 +5815,16 @@ export const passkeyApi = {
       refresh_token: string;
       token_type: string;
       expires_in: number;
-    }>('/api/v1/passkeys/authenticate/finish', {
-      method: 'POST',
+    }>("/api/v1/passkeys/authenticate/finish", {
+      method: "POST",
       body: JSON.stringify({ challenge, credential }),
     }),
 
   /** Active credentials for the current user. */
-  list: () =>
-    request<{ items: PasskeyCredential[] }>('/api/v1/passkeys/credentials'),
+  list: () => request<{ items: PasskeyCredential[] }>("/api/v1/passkeys/credentials"),
 
   /** Soft-revoke one of my credentials. */
-  delete: (id: string) =>
-    request<void>(`/api/v1/passkeys/credentials/${id}`, { method: 'DELETE' }),
+  delete: (id: string) => request<void>(`/api/v1/passkeys/credentials/${id}`, { method: "DELETE" }),
 };
 
 // ─── Autonomy policy (Tier 1.3 — configurable autonomy guardrails) ──────────
@@ -5906,13 +5843,7 @@ export interface AutonomyThresholdTriple {
 }
 
 export type AutonomyBlastRadius =
-  | 'read'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'critical'
-  | 'custom'
-  | 'unknown';
+  "read" | "low" | "medium" | "high" | "critical" | "custom" | "unknown";
 
 export interface AutonomyActionPolicy {
   action: string;
@@ -5976,38 +5907,34 @@ export interface AutonomyThresholdUpdateResponse {
 
 export const autonomyPolicyApi = {
   /** Effective policy (defaults + DB overrides) for the calling tenant. */
-  list: () => request<AutonomyPolicyResponse>('/api/v1/autonomy-policy'),
+  list: () => request<AutonomyPolicyResponse>("/api/v1/autonomy-policy"),
 
   /** Upsert one action's three-tier thresholds. */
   update: (action: string, payload: AutonomyThresholdUpdate) =>
     request<AutonomyThresholdUpdateResponse>(
       `/api/v1/autonomy-policy/${encodeURIComponent(action)}`,
       {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(payload),
-      },
+      }
     ),
 
   /** Clear a tenant override and revert the action to the hard-coded default. */
   reset: (action: string) =>
-    request<void>(
-      `/api/v1/autonomy-policy/${encodeURIComponent(action)}`,
-      { method: 'DELETE' },
-    ),
+    request<void>(`/api/v1/autonomy-policy/${encodeURIComponent(action)}`, { method: "DELETE" }),
 
   /** Which alert classes this tenant is measuring rather than acting on. */
-  shadowMode: () =>
-    request<ShadowModeResponse>('/api/v1/autonomy-policy/shadow-mode'),
+  shadowMode: () => request<ShadowModeResponse>("/api/v1/autonomy-policy/shadow-mode"),
 
   /** Start or stop measuring one alert class. */
   setShadowMode: (alertClass: string, enabled: boolean) =>
     request<ShadowModeEntry>(
       `/api/v1/autonomy-policy/shadow-mode/${encodeURIComponent(alertClass)}`,
-      { method: 'PUT', body: JSON.stringify({ enabled }) },
+      { method: "PUT", body: JSON.stringify({ enabled }) }
     ),
 
   /** Capabilities this tenant has earned, or that an operator overruled into place. */
-  grants: () => request<GrantListResponse>('/api/v1/autonomy-policy/grants'),
+  grants: () => request<GrantListResponse>("/api/v1/autonomy-policy/grants"),
 
   /**
    * Ask for a capability. A refusal is a 200 with `granted: false` and the
@@ -6015,26 +5942,25 @@ export const autonomyPolicyApi = {
    * surfacing it as an error invites a client to retry it.
    */
   requestGrant: (payload: PromotionRequestBody) =>
-    request<PromotionResponse>('/api/v1/autonomy-policy/grants', {
-      method: 'POST',
+    request<PromotionResponse>("/api/v1/autonomy-policy/grants", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 
   /** Hand a capability back. Audited as a revocation, not as a demotion. */
   revokeGrant: (params: { scope_kind: string; scope_key: string; capability: string }) =>
-    request<void>(
-      `/api/v1/autonomy-policy/grants?${new URLSearchParams(params).toString()}`,
-      { method: 'DELETE' },
-    ),
+    request<void>(`/api/v1/autonomy-policy/grants?${new URLSearchParams(params).toString()}`, {
+      method: "DELETE",
+    }),
 
   /** Rolling agreement between the agent and this tenant's own analysts. */
   agreement: (params?: { scope_kind?: string; scope_key?: string }) => {
     const query = new URLSearchParams();
-    if (params?.scope_kind) query.set('scope_kind', params.scope_kind);
-    if (params?.scope_key) query.set('scope_key', params.scope_key);
+    if (params?.scope_kind) query.set("scope_kind", params.scope_kind);
+    if (params?.scope_key) query.set("scope_key", params.scope_key);
     const suffix = query.toString();
     return request<AgreementResponse>(
-      `/api/v1/autonomy-policy/agreement${suffix ? `?${suffix}` : ''}`,
+      `/api/v1/autonomy-policy/agreement${suffix ? `?${suffix}` : ""}`
     );
   },
 };
@@ -6100,8 +6026,8 @@ export interface AgreementThresholds {
 // overruled a refusal to grant, and six months later "was this earned" must
 // be answerable from the row rather than reconstructed from the numbers.
 
-export type GrantState = 'shadow' | 'granted' | 'demoted';
-export type GrantSource = 'earned' | 'operator_override';
+export type GrantState = "shadow" | "granted" | "demoted";
+export type GrantSource = "earned" | "operator_override";
 
 export interface AutonomyGrant {
   id: string;
@@ -6177,11 +6103,7 @@ export interface AgreementResponse {
 // The analyst can then bulk-apply the new disposition to those candidates
 // via ``POST /api/v1/feedback/redisposition/apply``.
 
-export type AnalystVerdict =
-  | 'true_positive'
-  | 'false_positive'
-  | 'benign'
-  | 'escalate';
+export type AnalystVerdict = "true_positive" | "false_positive" | "benign" | "escalate";
 
 export interface AlertOverrideRequest {
   alert_id: string;
@@ -6228,14 +6150,14 @@ export interface RedispositionApplyRequest {
  *  LAN address, where crypto.subtle is undefined. */
 export async function computeRedispositionToken(
   alertIds: string[],
-  newDisposition: string,
+  newDisposition: string
 ): Promise<string> {
-  const canonical = [...alertIds].sort().join('|') + '=>' + newDisposition;
+  const canonical = [...alertIds].sort().join("|") + "=>" + newDisposition;
   if (globalThis.crypto?.subtle) {
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
     return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
   }
   return sha256Hex(canonical);
 }
@@ -6261,11 +6183,17 @@ function sha256Hex(ascii: string): string {
   const lo = bitLen >>> 0;
   bytes.push((hi >>> 24) & 0xff, (hi >>> 16) & 0xff, (hi >>> 8) & 0xff, hi & 0xff);
   bytes.push((lo >>> 24) & 0xff, (lo >>> 16) & 0xff, (lo >>> 8) & 0xff, lo & 0xff);
-  let h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  let h = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
   const w = new Array<number>(64);
   for (let i = 0; i < bytes.length; i += 64) {
     for (let j = 0; j < 16; j++) {
-      w[j] = (bytes[i + j * 4] << 24) | (bytes[i + j * 4 + 1] << 16) | (bytes[i + j * 4 + 2] << 8) | bytes[i + j * 4 + 3];
+      w[j] =
+        (bytes[i + j * 4] << 24) |
+        (bytes[i + j * 4 + 1] << 16) |
+        (bytes[i + j * 4 + 2] << 8) |
+        bytes[i + j * 4 + 3];
     }
     for (let j = 16; j < 64; j++) {
       const s0 = rotr(w[j - 15], 7) ^ rotr(w[j - 15], 18) ^ (w[j - 15] >>> 3);
@@ -6280,11 +6208,18 @@ function sha256Hex(ascii: string): string {
       const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const t2 = (S0 + maj) >>> 0;
-      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
     }
     h = h.map((x, k) => (x + [a, b, c, d, e, f, g, hh][k]) >>> 0);
   }
-  return h.map((x) => x.toString(16).padStart(8, '0')).join('');
+  return h.map((x) => x.toString(16).padStart(8, "0")).join("");
 }
 
 export interface RedispositionApplyResponse {
@@ -6311,26 +6246,26 @@ export interface OverrideSummary {
 export const feedbackApi = {
   /** Persist an analyst correction and get retroactive re-disposition candidates back. */
   submitOverride: (payload: AlertOverrideRequest) =>
-    request<AlertOverrideResponse>('/api/v1/feedback/alert-override', {
-      method: 'POST',
+    request<AlertOverrideResponse>("/api/v1/feedback/alert-override", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 
   /** Bulk-apply a new disposition to past alerts the analyst confirmed. */
   applyRedisposition: (payload: RedispositionApplyRequest) =>
-    request<RedispositionApplyResponse>('/api/v1/feedback/redisposition/apply', {
-      method: 'POST',
+    request<RedispositionApplyResponse>("/api/v1/feedback/redisposition/apply", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 
   /** List analyst overrides the agent has 'learned' from for this tenant. */
   listOverrides: (limit = 100) =>
-    request<OverrideEntry[]>('/api/v1/feedback/overrides', {
+    request<OverrideEntry[]>("/api/v1/feedback/overrides", {
       params: { limit: String(limit) },
     }),
 
   /** Counts of dispositions for the FPR card on the SOC dashboard. */
-  summary: () => request<OverrideSummary>('/api/v1/feedback/summary'),
+  summary: () => request<OverrideSummary>("/api/v1/feedback/summary"),
 };
 
 // ─── Deployment & AI (air-gap + LLM provider snapshot) ───────────────────────
@@ -6354,18 +6289,18 @@ export interface AirgapStatus {
 }
 
 export type LlmProvider =
-  | 'openai'
-  | 'anthropic'
-  | 'azure-openai'
-  | 'local-ollama'
-  | 'local-vllm'
-  | 'local-litellm'
-  | 'custom'
-  | 'none';
+  | "openai"
+  | "anthropic"
+  | "azure-openai"
+  | "local-ollama"
+  | "local-vllm"
+  | "local-litellm"
+  | "custom"
+  | "none";
 
-export type LlmEffectivePath = 'live' | 'fallback';
+export type LlmEffectivePath = "live" | "fallback";
 
-export type LlmRecentHealth = 'healthy' | 'degraded' | 'unknown';
+export type LlmRecentHealth = "healthy" | "degraded" | "unknown";
 
 export interface LlmStatus {
   /** Stable provider id classified from the configured base URL. */
@@ -6432,13 +6367,13 @@ export interface LlmStatus {
 // — ``none`` is never a writable choice.
 
 export type LlmWritableProvider =
-  | 'openai'
-  | 'anthropic'
-  | 'azure-openai'
-  | 'local-ollama'
-  | 'local-vllm'
-  | 'local-litellm'
-  | 'custom';
+  | "openai"
+  | "anthropic"
+  | "azure-openai"
+  | "local-ollama"
+  | "local-vllm"
+  | "local-litellm"
+  | "custom";
 
 export interface LlmCredentialUpsert {
   provider: LlmWritableProvider;
@@ -6479,7 +6414,7 @@ export interface LlmCredentialView {
  * VRAM or a usable driver, so this is the outcome rather than the intent.
  */
 export interface LlmRuntime {
-  placement: 'gpu' | 'partial' | 'cpu' | 'unknown' | 'unreachable' | 'not_local';
+  placement: "gpu" | "partial" | "cpu" | "unknown" | "unreachable" | "not_local";
   detail: string;
   base_url: string;
   /** What an operator can do about the answer. Never empty for a CPU verdict. */
@@ -6492,11 +6427,11 @@ export interface LlmRuntime {
 
 export const llmApi = {
   /** Ask the model where it is running. Reports, never changes. */
-  runtime: () => request<LlmRuntime>('/api/v1/llm/runtime'),
+  runtime: () => request<LlmRuntime>("/api/v1/llm/runtime"),
 };
 
 export interface LlmCredentialTestResult {
-  outcome: 'ok' | 'refused' | 'unreachable' | 'unverified';
+  outcome: "ok" | "refused" | "unreachable" | "unverified";
   detail: string;
   provider: string;
   model?: string;
@@ -6505,28 +6440,26 @@ export interface LlmCredentialTestResult {
 
 export const deploymentApi = {
   /** Live air-gap policy snapshot for this pod. Safe to poll. */
-  getAirgapStatus: () => request<AirgapStatus>('/api/v1/airgap/status'),
+  getAirgapStatus: () => request<AirgapStatus>("/api/v1/airgap/status"),
 
   /** Live LLM provider snapshot. Mirrors the egress gate's classification. */
-  getLlmStatus: () => request<LlmStatus>('/api/v1/llm/status'),
+  getLlmStatus: () => request<LlmStatus>("/api/v1/llm/status"),
 
   /**
    * Read the tenant's BYOK credential. Returns ``null`` when no credential
    * is configured (the platform falls back to env-var defaults in that case).
    */
-  getLlmCredential: () =>
-    request<LlmCredentialView | null>('/api/v1/llm/credentials'),
+  getLlmCredential: () => request<LlmCredentialView | null>("/api/v1/llm/credentials"),
 
   /** Create or update the tenant's BYOK credential. */
   upsertLlmCredential: (payload: LlmCredentialUpsert) =>
-    request<LlmCredentialView>('/api/v1/llm/credentials', {
-      method: 'PUT',
+    request<LlmCredentialView>("/api/v1/llm/credentials", {
+      method: "PUT",
       body: JSON.stringify(payload),
     }),
 
   /** Hard-delete the credential. Returns 204 on success. */
-  deleteLlmCredential: () =>
-    request<void>('/api/v1/llm/credentials', { method: 'DELETE' }),
+  deleteLlmCredential: () => request<void>("/api/v1/llm/credentials", { method: "DELETE" }),
 
   /**
    * Make one real call with the saved credential and report what happened.
@@ -6537,8 +6470,8 @@ export const deploymentApi = {
    * egress rather than attempting it, which is the policy working.
    */
   testLlmCredential: () =>
-    request<LlmCredentialTestResult>('/api/v1/llm/credentials/test', {
-      method: 'POST',
+    request<LlmCredentialTestResult>("/api/v1/llm/credentials/test", {
+      method: "POST",
     }),
 };
 
@@ -6607,7 +6540,7 @@ export interface AutomationSummary {
 }
 
 export interface DigestRecommendation {
-  severity: 'info' | 'warning' | 'critical' | string;
+  severity: "info" | "warning" | "critical" | string;
   title: string;
   body: string;
 }
@@ -6639,8 +6572,8 @@ export const reportsApi = {
    * JSON suitable for rendering an interactive panel in the web UI.
    */
   weeklyDigest: (params: WeeklyDigestParams = {}) =>
-    request<ExecutiveDigest>('/api/v1/reports/digest/weekly', {
-      params: { format: 'json', ...params },
+    request<ExecutiveDigest>("/api/v1/reports/digest/weekly", {
+      params: { format: "json", ...params },
     }),
 
   /**
@@ -6654,20 +6587,20 @@ export const reportsApi = {
    * JSON variant.
    */
   weeklyDigestHtml: async (params: WeeklyDigestParams = {}): Promise<string> => {
-    const search = new URLSearchParams({ format: 'html' });
-    if (params.period_start) search.set('period_start', params.period_start);
-    if (params.period_end) search.set('period_end', params.period_end);
+    const search = new URLSearchParams({ format: "html" });
+    if (params.period_start) search.set("period_start", params.period_start);
+    if (params.period_end) search.set("period_end", params.period_end);
 
-    const headers = apiHeaders({ Accept: 'text/html' });
+    const headers = apiHeaders({ Accept: "text/html" });
 
     const url = `${API_BASE}/api/v1/reports/digest/weekly?${search.toString()}`;
-    const response = await fetch(url, { headers, cache: 'no-store' });
+    const response = await fetch(url, { headers, cache: "no-store" });
     if (!response.ok) {
-      const detail = await response.text().catch(() => '');
+      const detail = await response.text().catch(() => "");
       throw new ApiError(
         `API ${response.status} ${response.statusText} — /reports/digest/weekly`,
         response.status,
-        detail,
+        detail
       );
     }
     return response.text();
@@ -6862,7 +6795,7 @@ export const costsApi = {
    * digest.
    */
   dashboard: (params: CostDashboardParams = {}) =>
-    request<CostDashboard>('/api/v1/costs/dashboard', { params }),
+    request<CostDashboard>("/api/v1/costs/dashboard", { params }),
 };
 
 // ─── Audit log / compliance bundle helpers ──────────────────────────────────
@@ -6883,15 +6816,15 @@ export type AuditExportFilters = {
 
 function buildAuditExportSearch(
   filters: AuditExportFilters,
-  format: 'csv' | 'html',
+  format: "csv" | "html"
 ): URLSearchParams {
   const search = new URLSearchParams({ format });
-  if (filters.action) search.set('action', filters.action);
-  if (filters.resource) search.set('resource', filters.resource);
-  if (filters.actor_id) search.set('actor_id', filters.actor_id);
-  if (filters.search) search.set('search', filters.search);
-  if (typeof filters.limit === 'number' && filters.limit > 0) {
-    search.set('limit', String(filters.limit));
+  if (filters.action) search.set("action", filters.action);
+  if (filters.resource) search.set("resource", filters.resource);
+  if (filters.actor_id) search.set("actor_id", filters.actor_id);
+  if (filters.search) search.set("search", filters.search);
+  if (typeof filters.limit === "number" && filters.limit > 0) {
+    search.set("limit", String(filters.limit));
   }
   return search;
 }
@@ -6909,23 +6842,25 @@ export const auditApi = {
    * us forward the bearer token from localStorage and surface an
    * ``ApiError`` if the export is rejected (e.g. missing audit_log:read).
    */
-  exportCsv: async (filters: AuditExportFilters = {}): Promise<{ body: string; filename: string }> => {
-    const url = `${API_BASE}/api/v1/audit/export?${buildAuditExportSearch(filters, 'csv').toString()}`;
+  exportCsv: async (
+    filters: AuditExportFilters = {}
+  ): Promise<{ body: string; filename: string }> => {
+    const url = `${API_BASE}/api/v1/audit/export?${buildAuditExportSearch(filters, "csv").toString()}`;
     const response = await fetch(url, {
-      headers: buildAuditExportHeaders('text/csv'),
-      cache: 'no-store',
+      headers: buildAuditExportHeaders("text/csv"),
+      cache: "no-store",
     });
     if (!response.ok) {
-      const detail = await response.text().catch(() => '');
+      const detail = await response.text().catch(() => "");
       throw new ApiError(
         `API ${response.status} ${response.statusText} — /audit/export?format=csv`,
         response.status,
-        detail,
+        detail
       );
     }
     const filename = parseFilenameFromContentDisposition(
-      response.headers.get('Content-Disposition'),
-      `aisoc-audit-${timestampSlug()}.csv`,
+      response.headers.get("Content-Disposition"),
+      `aisoc-audit-${timestampSlug()}.csv`
     );
     const body = await response.text();
     return { body, filename };
@@ -6937,23 +6872,25 @@ export const auditApi = {
    * let the browser's native "Save as PDF" produce the compliance binder, no
    * server-side weasyprint dependency required.
    */
-  exportHtml: async (filters: AuditExportFilters = {}): Promise<{ html: string; filename: string }> => {
-    const url = `${API_BASE}/api/v1/audit/export?${buildAuditExportSearch(filters, 'html').toString()}`;
+  exportHtml: async (
+    filters: AuditExportFilters = {}
+  ): Promise<{ html: string; filename: string }> => {
+    const url = `${API_BASE}/api/v1/audit/export?${buildAuditExportSearch(filters, "html").toString()}`;
     const response = await fetch(url, {
-      headers: buildAuditExportHeaders('text/html'),
-      cache: 'no-store',
+      headers: buildAuditExportHeaders("text/html"),
+      cache: "no-store",
     });
     if (!response.ok) {
-      const detail = await response.text().catch(() => '');
+      const detail = await response.text().catch(() => "");
       throw new ApiError(
         `API ${response.status} ${response.statusText} — /audit/export?format=html`,
         response.status,
-        detail,
+        detail
       );
     }
     const filename = parseFilenameFromContentDisposition(
-      response.headers.get('Content-Disposition'),
-      `aisoc-audit-${timestampSlug()}.html`,
+      response.headers.get("Content-Disposition"),
+      `aisoc-audit-${timestampSlug()}.html`
     );
     const html = await response.text();
     return { html, filename };
@@ -6961,10 +6898,7 @@ export const auditApi = {
 };
 
 /** Parse ``filename="…"`` out of a Content-Disposition header. */
-function parseFilenameFromContentDisposition(
-  header: string | null,
-  fallback: string,
-): string {
+function parseFilenameFromContentDisposition(header: string | null, fallback: string): string {
   if (!header) return fallback;
   // Match RFC 6266 filename="…" — quoted form is what FastAPI emits for us.
   const match = header.match(/filename="([^"]+)"/i);
@@ -6974,7 +6908,7 @@ function parseFilenameFromContentDisposition(
 /** ``20260509T234501Z`` style slug for client-side filenames. */
 function timestampSlug(): string {
   const now = new Date();
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
   return (
     `${now.getUTCFullYear()}` +
     `${pad(now.getUTCMonth() + 1)}` +
@@ -6998,11 +6932,7 @@ function timestampSlug(): string {
 // a tight coupling between every list page and this client.
 
 /** Pages that support saved views — must match the backend allowlist. */
-export type SavedViewType =
-  | 'alerts'
-  | 'cases'
-  | 'investigations'
-  | 'playbooks';
+export type SavedViewType = "alerts" | "cases" | "investigations" | "playbooks";
 
 /** A saved-view row as returned by the API. */
 export interface SavedView {
@@ -7043,28 +6973,28 @@ export const savedViewsApi = {
    * preset (if any) lands first.
    */
   list: (viewType: SavedViewType) =>
-    request<SavedView[]>('/api/v1/saved-views', {
+    request<SavedView[]>("/api/v1/saved-views", {
       params: { view_type: viewType },
     }),
 
   /** Create a new preset. Returns the freshly-stamped row. */
   create: (payload: SavedViewCreateRequest) =>
-    request<SavedView>('/api/v1/saved-views', {
-      method: 'POST',
+    request<SavedView>("/api/v1/saved-views", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 
   /** Patch a preset in place — rename, retune filters, toggle default. */
   update: (id: string, payload: SavedViewUpdateRequest) =>
     request<SavedView>(`/api/v1/saved-views/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
 
   /** Delete a preset. Returns ``{}`` on the 204 response. */
   delete: (id: string) =>
     request<Record<string, never>>(`/api/v1/saved-views/${id}`, {
-      method: 'DELETE',
+      method: "DELETE",
     }),
 };
 
@@ -7085,8 +7015,7 @@ export const realtimeApi = {
    * returned `token` is appended as `?token=` to the WS/SSE URL immediately
    * before connecting and re-fetched on every (re)connect since it expires fast.
    */
-  ticket: () =>
-    request<RealtimeTicket>('/api/v1/realtime/ticket', { method: 'POST' }),
+  ticket: () => request<RealtimeTicket>("/api/v1/realtime/ticket", { method: "POST" }),
 
   /**
    * Returns a ready-to-open WebSocket URL for the given channel, with a freshly
@@ -7095,9 +7024,7 @@ export const realtimeApi = {
    * The tenant is derived from the verified ticket claim server-side, so we no
    * longer pass (untrusted) `tenant_id` in the query string.
    */
-  async channelUrl(
-    channel: 'alerts' | 'cases' | 'agents' | 'insights' | 'all',
-  ): Promise<string> {
+  async channelUrl(channel: "alerts" | "cases" | "agents" | "insights" | "all"): Promise<string> {
     const { token } = await realtimeApi.ticket();
     return `${wsOrigin()}/ws/${channel}?token=${encodeURIComponent(token)}`;
   },
@@ -7108,7 +7035,7 @@ export const realtimeApi = {
    */
   async sseUrl(): Promise<string> {
     const { token } = await realtimeApi.ticket();
-    const base = REALTIME_BASE || '';
+    const base = REALTIME_BASE || "";
     return `${base}/sse?token=${encodeURIComponent(token)}`;
   },
 
@@ -7118,10 +7045,9 @@ export const realtimeApi = {
    * same-origin behind the Cloudflare Tunnel.
    */
   health: () =>
-    request<{ status: string; clients: number }>(
-      '/api/v1/realtime/healthz',
-      { baseUrl: REALTIME_BASE },
-    ),
+    request<{ status: string; clients: number }>("/api/v1/realtime/healthz", {
+      baseUrl: REALTIME_BASE,
+    }),
 };
 
 export default {
@@ -7176,7 +7102,7 @@ export interface ApiKeyRecord {
 }
 
 /** Create response. `key` is the raw secret and is returned exactly once. */
-export interface CreatedApiKey extends Omit<ApiKeyRecord, 'is_active' | 'last_used_at'> {
+export interface CreatedApiKey extends Omit<ApiKeyRecord, "is_active" | "last_used_at"> {
   key: string;
 }
 
@@ -7187,22 +7113,21 @@ export interface CreateApiKeyInput {
 }
 
 export const apiKeysApi = {
-  list: () => request<ApiKeyRecord[]>('/api/v1/api-keys'),
+  list: () => request<ApiKeyRecord[]>("/api/v1/api-keys"),
 
   create: (data: CreateApiKeyInput) =>
-    request<CreatedApiKey>('/api/v1/api-keys', {
-      method: 'POST',
+    request<CreatedApiKey>("/api/v1/api-keys", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
 
   update: (id: string, data: Partial<CreateApiKeyInput>) =>
     request<ApiKeyRecord>(`/api/v1/api-keys/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     }),
 
-  revoke: (id: string) =>
-    request<void>(`/api/v1/api-keys/${id}`, { method: 'DELETE' }),
+  revoke: (id: string) => request<void>(`/api/v1/api-keys/${id}`, { method: "DELETE" }),
 };
 
 // ─── SCIM credentials ────────────────────────────────────────────────────────
@@ -7234,11 +7159,11 @@ export interface CreatedScimToken extends ScimTokenRecord {
 }
 
 export const scimTokensApi = {
-  list: () => request<ScimTokenRecord[]>('/api/v1/scim-tokens'),
+  list: () => request<ScimTokenRecord[]>("/api/v1/scim-tokens"),
 
   create: (data: { name: string; expires_in_days?: number | null }) =>
-    request<CreatedScimToken>('/api/v1/scim-tokens', {
-      method: 'POST',
+    request<CreatedScimToken>("/api/v1/scim-tokens", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
 
@@ -7250,12 +7175,11 @@ export const scimTokensApi = {
    */
   rotate: (id: string, grace_hours: number) =>
     request<CreatedScimToken>(`/api/v1/scim-tokens/${id}/rotate`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ grace_hours }),
     }),
 
-  revoke: (id: string) =>
-    request<void>(`/api/v1/scim-tokens/${id}`, { method: 'DELETE' }),
+  revoke: (id: string) => request<void>(`/api/v1/scim-tokens/${id}`, { method: "DELETE" }),
 };
 
 // ─── Replay evaluation (gap-closure Phase 1.4) ───────────────────────────────
@@ -7275,7 +7199,7 @@ export const scimTokensApi = {
 // says the agent got every answer wrong, which is a different fact with a
 // different remedy.
 
-export type ReplayEvaluationStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type ReplayEvaluationStatus = "queued" | "running" | "completed" | "failed";
 
 export interface ReplayEvaluationSummary {
   id: string;
@@ -7336,29 +7260,26 @@ export interface StartReplayInput {
   limit?: number;
 }
 
-export type ReplayExportFormat = 'markdown' | 'json' | 'pdf';
+export type ReplayExportFormat = "markdown" | "json" | "pdf";
 
 export const evaluationsApi = {
-  capabilities: () =>
-    request<ReplayCapabilities>('/api/v1/evaluations/replay/capabilities'),
+  capabilities: () => request<ReplayCapabilities>("/api/v1/evaluations/replay/capabilities"),
 
   list: (limit = 50) =>
-    request<ReplayEvaluationSummary[]>('/api/v1/evaluations/replay', {
+    request<ReplayEvaluationSummary[]>("/api/v1/evaluations/replay", {
       params: { limit },
     }),
 
-  get: (id: string) =>
-    request<ReplayEvaluationDetail>(`/api/v1/evaluations/replay/${id}`),
+  get: (id: string) => request<ReplayEvaluationDetail>(`/api/v1/evaluations/replay/${id}`),
 
   decisions: (id: string, limit = 2000) =>
-    request<Array<Record<string, unknown>>>(
-      `/api/v1/evaluations/replay/${id}/decisions`,
-      { params: { limit } },
-    ),
+    request<Array<Record<string, unknown>>>(`/api/v1/evaluations/replay/${id}/decisions`, {
+      params: { limit },
+    }),
 
   start: (data: StartReplayInput) =>
-    request<ReplayEvaluationSummary>('/api/v1/evaluations/replay', {
-      method: 'POST',
+    request<ReplayEvaluationSummary>("/api/v1/evaluations/replay", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
 
@@ -7372,7 +7293,7 @@ export const evaluationsApi = {
    */
   exportUrl: (id: string, format: ReplayExportFormat, excludeLatency = false): string =>
     `${API_BASE}/api/v1/evaluations/replay/${id}/export` +
-    `?format=${format}&exclude_latency=${excludeLatency ? 'true' : 'false'}`,
+    `?format=${format}&exclude_latency=${excludeLatency ? "true" : "false"}`,
 };
 
 // ─── Case depth (depth 9.3 / parity 5.6 remainder) ───────────────────────────

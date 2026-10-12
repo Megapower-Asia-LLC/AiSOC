@@ -212,16 +212,30 @@ IN_BAND_CREDENTIAL_ROUTES: dict[str, tuple[str, str]] = {
     ),
     # -- the second factor, which is part of establishing a credential ------
     #
-    # All three verify in band through `read_challenge`, which refuses a
+    # All five verify in band through `read_challenge`, which refuses a
     # token that is not of type `mfa_challenge` — so an access token
     # presented here is rejected rather than honoured, and a live session
     # cannot mint another one with no code. `/enroll/*` additionally accept
     # an ordinary bearer, through `get_current_user`; the anonymous arm is
     # what lets a user whose tenant has just started requiring a factor
     # enrol at all, since they hold a correct password and no session.
+    #
+    # The two `webauthn/*` routes are the same challenge discharged with a
+    # security key instead of a code. Both take the user from the signed
+    # challenge and never from the body: an endpoint that let a caller name
+    # whose credentials to list would answer "does this address hold a
+    # passkey" to anybody who asked.
     "services/api/app/api/v1/endpoints/mfa.py::verify": (
         "read_challenge",
         "completes the sign-in that POST /auth/login answered with 202; the challenge token it takes is the credential",
+    ),
+    "services/api/app/api/v1/endpoints/mfa.py::webauthn_challenge": (
+        "read_challenge",
+        "assertion options for the user the challenge names -- the second factor's equivalent of POST /verify's first half",
+    ),
+    "services/api/app/api/v1/endpoints/mfa.py::webauthn_verify": (
+        "read_challenge",
+        "discharges that same challenge with a security key; the credential must belong to the user the challenge names",
     ),
     "services/api/app/api/v1/endpoints/mfa.py::enroll_begin": (
         "read_challenge",

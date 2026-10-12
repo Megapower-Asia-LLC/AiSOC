@@ -69,6 +69,7 @@ from sqlalchemy import text
 
 from app.api.v1.deps import AuthUser, DBSession, bearer_scheme, get_current_user, require_permission
 from app.core.config import settings
+from app.core.role_grants import known_roles
 from app.core.security import create_access_token, create_refresh_token
 from app.db.rls import set_rls_context
 from app.security.credential_vault import CredentialVaultError, get_vault
@@ -147,18 +148,59 @@ async def enrolment_row(db: Any, user_id: uuid.UUID) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-async def has_confirmed_factor(db: Any, user_id: uuid.UUID) -> bool:
+async def has_webauthn_factor(db: Any, user_id: uuid.UUID, tenant_id: uuid.UUID) -> bool:
+    """Whether this user holds an unrevoked WebAuthn credential.
+
+    Any credential counts, not only one enrolled from the console. Both
+    the registration and the authentication path in `passkeys.py` pass
+    `require_user_verification=True`, so every row in that table is a
+    possession factor that has also verified its holder — which is what a
+    second factor is. Insisting on a console-enrolled one would make a
+    user who already carries a verified authenticator enrol the same
+    device twice, and leave two sign-count high-water marks for one
+    authenticator, splitting the clone-detection control in half.
+
+    Scoped to the tenant as well as the user. `passkey_credentials` is
+    tenant-scoped and a user id alone addresses a row in any tenant; that
+    the ids happen to come from a signed challenge today is a property of
+    the callers, not of this query, and the next caller inherits none of
+    it. `scripts/check_tenant_query_predicates.py` is the gate.
+    """
+    count = (
+        await db.execute(
+            text("SELECT count(*) FROM passkey_credentials WHERE user_id = :u AND tenant_id = :t AND revoked_at IS NULL").bindparams(
+                u=user_id, t=tenant_id
+            )
+        )
+    ).scalar()
+    return bool(count)
+
+
+async def has_confirmed_factor(db: Any, user_id: uuid.UUID, tenant_id: uuid.UUID) -> bool:
+    """Whether this account can satisfy a challenge with anything at all.
+
+    TOTP **or** WebAuthn. Before depth 8.1 this read the TOTP table alone,
+    so a user whose only factor was a passkey counted as unenrolled: an
+    enforcing tenant answered them `mfa_enrollment_required` and made them
+    add a TOTP secret beside an authenticator that was already stronger.
+    """
     row = await enrolment_row(db, user_id)
-    return bool(row and row["confirmed_at"])
+    if row and row["confirmed_at"]:
+        return True
+    return await has_webauthn_factor(db, user_id, tenant_id)
 
 
 async def tenant_requires_totp(db: Any, tenant_id: uuid.UUID) -> bool:
-    """Whether this tenant has asked for a second factor.
+    """Whether this tenant requires a second factor of **everybody**.
 
     **Absence of a row means no.** No migration writes one: a backfill of a
     row per tenant would change the meaning of every predicate that counts
     rows in that table, and this repository has already shipped a
     zero-permission administrator on a fresh install that way.
+
+    Kept under its original name because `auth.py`, the console and three
+    tests call it. It is one of the two inputs to `mfa_required_for`,
+    which is what callers deciding a sign-in should use.
     """
     row = (
         (await db.execute(text("SELECT require_totp FROM aisoc_tenant_mfa_policy WHERE tenant_id = :t").bindparams(t=tenant_id)))
@@ -166,6 +208,42 @@ async def tenant_requires_totp(db: Any, tenant_id: uuid.UUID) -> bool:
         .first()
     )
     return bool(row and row["require_totp"])
+
+
+async def roles_requiring_mfa(db: Any, tenant_id: uuid.UUID) -> set[str]:
+    """The roles this tenant enforces a second factor for.
+
+    Absence of a row means not required, for the same reason as above.
+    """
+    rows = (
+        (
+            await db.execute(
+                text("SELECT role FROM aisoc_tenant_mfa_role_policy WHERE tenant_id = :t AND require_mfa IS TRUE").bindparams(t=tenant_id)
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return {str(row["role"]) for row in rows}
+
+
+async def mfa_required_for(db: Any, tenant_id: uuid.UUID, role: str | None) -> bool:
+    """Whether *role* in *tenant* must hold a second factor.
+
+    The tenant-wide switch **or** a row for this role. A deployment that
+    wants a factor from its administrators and not from every viewer sets
+    the second without the first; one that wants it from everybody sets
+    the first and the role rows are then irrelevant.
+
+    `role` of `None` is answered by the tenant-wide switch alone. It is
+    not treated as "no role, so no requirement": a principal whose role
+    could not be read is the case where failing open is worst.
+    """
+    if await tenant_requires_totp(db, tenant_id):
+        return True
+    if not role:
+        return False
+    return role in await roles_requiring_mfa(db, tenant_id)
 
 
 def _decrypt_secret(stored: str) -> str:
@@ -266,6 +344,17 @@ class MfaStatus(BaseModel):
     enrolled: bool
     tenant_requires_totp: bool
     recovery_codes_remaining: int
+    # Which factors this account actually holds. `enrolled` is the OR of
+    # the two and says nothing about which, so a console that wants to
+    # offer "add a security key" to somebody who only has TOTP cannot
+    # work it out from `enrolled` alone.
+    has_totp: bool = False
+    has_webauthn: bool = False
+    # The roles this tenant enforces, and whether the caller's own role
+    # is one of them. The second is what a member needs to know; the
+    # first is what an administrator edits.
+    require_for_roles: list[str] = Field(default_factory=list)
+    required_for_me: bool = False
 
 
 class EnrollBegin(BaseModel):
@@ -307,6 +396,21 @@ class ResetRequest(BaseModel):
 
 class MfaPolicy(BaseModel):
     require_totp: bool
+    # Roles this tenant enforces a factor for, over and above the
+    # tenant-wide switch. Defaulted so every existing client — and the
+    # three tests that construct this model with one argument — keeps
+    # working against a body that names no roles.
+    require_for_roles: list[str] = Field(default_factory=list)
+
+
+class WebAuthnChallengeRequest(BaseModel):
+    mfa_token: str
+
+
+class WebAuthnVerifyRequest(BaseModel):
+    mfa_token: str
+    challenge: str
+    credential: dict[str, Any]
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -322,10 +426,16 @@ async def mfa_status(current_user: AuthUser, db: DBSession) -> MfaStatus:
             )
         )
     ).scalar() or 0
+    enrolment = await enrolment_row(db, current_user.user_id)
+    role = getattr(current_user, "role", None)
     return MfaStatus(
-        enrolled=await has_confirmed_factor(db, current_user.user_id),
+        enrolled=await has_confirmed_factor(db, current_user.user_id, current_user.tenant_id),
         tenant_requires_totp=await tenant_requires_totp(db, current_user.tenant_id),
         recovery_codes_remaining=int(remaining),
+        has_totp=bool(enrolment and enrolment["confirmed_at"]),
+        has_webauthn=await has_webauthn_factor(db, current_user.user_id, current_user.tenant_id),
+        require_for_roles=sorted(await roles_requiring_mfa(db, current_user.tenant_id)),
+        required_for_me=await mfa_required_for(db, current_user.tenant_id, role),
     )
 
 
@@ -442,6 +552,85 @@ async def verify(body: VerifyRequest, db: DBSession, request: Request) -> Sessio
 
     logger.warning("mfa.verify_failed user=%s source=%s", _sanitize(user_id), _sanitize(client_ip(request), 64))
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="That code is not valid.")
+
+
+# ─── WebAuthn as the second factor ────────────────────────────────────────────
+#
+# The credentials, the challenge store and the verification live in
+# `passkeys.py`, which the responder app has used since migration `009`.
+# This re-uses all three rather than growing a second implementation: a
+# second WebAuthn verifier in one tree is two things that can disagree
+# about whether a signature is valid.
+#
+# What is different here is only *what the assertion buys*. In
+# `passkeys.py` it is a whole sign-in; here it discharges a challenge that
+# `POST /auth/login` already issued against a verified password, and the
+# session is minted by this module's `_issue_session` from the user row —
+# never from anything the assertion carried.
+
+
+@router.post("/webauthn/challenge")
+async def webauthn_challenge(body: WebAuthnChallengeRequest, db: DBSession) -> dict[str, Any]:
+    """Assertion options for a user part-way through a sign-in.
+
+    The user is taken from the signed `mfa_token`, never from the body:
+    an endpoint that let a caller name whose credentials to list would
+    answer "does this address hold a passkey" to anybody who asked.
+    """
+    from app.api.v1.endpoints.passkeys import webauthn_second_factor_options  # noqa: PLC0415
+
+    payload = read_challenge(body.mfa_token, expect_purpose="verify")
+    user_id = uuid.UUID(str(payload["sub"]))
+    tenant_id = uuid.UUID(str(payload["tenant_id"]))
+    options = await webauthn_second_factor_options(db, user_id=user_id, tenant_id=tenant_id)
+    if options is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No security key or passkey is enrolled for this account. Use your authenticator app or a recovery code.",
+        )
+    return options
+
+
+@router.post("/webauthn/verify", response_model=SessionTokens)
+async def webauthn_verify(body: WebAuthnVerifyRequest, db: DBSession, request: Request) -> SessionTokens:
+    """Complete a sign-in with a security key or passkey.
+
+    The credential must belong to the user the challenge names. Without
+    that check anybody holding **any** enrolled authenticator could
+    discharge **anybody's** challenge, which is the whole control.
+    """
+    from app.api.v1.endpoints.passkeys import verify_second_factor_assertion  # noqa: PLC0415
+
+    payload = read_challenge(body.mfa_token, expect_purpose="verify")
+    user_id = uuid.UUID(str(payload["sub"]))
+    tenant_id = uuid.UUID(str(payload["tenant_id"]))
+
+    device = await verify_second_factor_assertion(
+        db,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        challenge=body.challenge,
+        credential=body.credential,
+    )
+    if device is None:
+        logger.warning("mfa.webauthn_failed user=%s source=%s", _sanitize(user_id), _sanitize(client_ip(request), 64))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="That security key could not be verified.")
+
+    await set_rls_context(db, tenant_id)
+    await emit_audit(
+        db=db,
+        tenant_id=tenant_id,
+        actor_id=user_id,
+        actor_email=None,
+        api_key_prefix=None,
+        action="mfa.verified",
+        resource="user",
+        resource_id=str(user_id),
+        changes={"method": "webauthn", "device_name": device, "source_ip": client_ip(request)},
+        request=request,
+    )
+    await db.commit()
+    return SessionTokens(**await _issue_session(db, user_id, tenant_id))
 
 
 async def _consume_recovery_code(db: Any, *, user_id: uuid.UUID, tenant_id: uuid.UUID, code: str, request: Request) -> bool:
@@ -653,7 +842,10 @@ async def _forget(db: Any, *, user_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
 async def get_policy(current_user: AuthUser, db: DBSession) -> MfaPolicy:
     """Readable by any member: a user is entitled to know what their own
     tenant requires of them."""
-    return MfaPolicy(require_totp=await tenant_requires_totp(db, current_user.tenant_id))
+    return MfaPolicy(
+        require_totp=await tenant_requires_totp(db, current_user.tenant_id),
+        require_for_roles=sorted(await roles_requiring_mfa(db, current_user.tenant_id)),
+    )
 
 
 @router.put("/policy", response_model=MfaPolicy)
@@ -668,7 +860,27 @@ async def put_policy(
     The tenant is the caller's, never a parameter. A row is written only
     when an administrator asks for one, so a tenant that has never visited
     this endpoint has no row and is not enforced.
+
+    `require_for_roles` names roles that must hold a factor even when the
+    tenant-wide switch is off. Every name is checked against the role
+    vocabulary before it is stored: a typo would otherwise be accepted,
+    match nobody's role, and leave an administrator looking at a policy
+    page that says a role is enforced while it is not — the quiet
+    direction, and the one worth refusing loudly.
+
+    The vocabulary comes from `role_grants.known_roles()` rather than from
+    `ROLE_PERMISSIONS` directly. This route decides nothing about
+    permissions and must not be able to: a route that reads the static map
+    is how a second permission model gets rebuilt, which
+    `scripts/check_one_permission_model.py` exists to prevent.
     """
+    unknown = sorted(set(body.require_for_roles) - known_roles())
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No such role: {', '.join(unknown)}. A policy naming a role nobody holds enforces nothing.",
+        )
+
     await set_rls_context(db, current_user.tenant_id)
     await db.execute(
         text("""
@@ -678,6 +890,20 @@ async def put_policy(
                SET require_totp = EXCLUDED.require_totp, updated_by = EXCLUDED.updated_by, updated_at = now()
         """).bindparams(t=current_user.tenant_id, r=body.require_totp, u=current_user.user_id)
     )
+
+    # The whole role set is replaced rather than merged, so clearing a
+    # role from the console actually clears it. A merge would make the
+    # page able to add a requirement and never able to remove one.
+    requested = sorted(set(body.require_for_roles))
+    await db.execute(text("DELETE FROM aisoc_tenant_mfa_role_policy WHERE tenant_id = :t").bindparams(t=current_user.tenant_id))
+    for role_name in requested:
+        await db.execute(
+            text("""
+                INSERT INTO aisoc_tenant_mfa_role_policy (tenant_id, role, require_mfa, updated_by, updated_at)
+                VALUES (:t, :r, TRUE, :u, now())
+            """).bindparams(t=current_user.tenant_id, r=role_name, u=current_user.user_id)
+        )
+
     await emit_audit(
         db=db,
         tenant_id=current_user.tenant_id,
@@ -687,8 +913,8 @@ async def put_policy(
         action="mfa.policy_changed",
         resource="tenant",
         resource_id=str(current_user.tenant_id),
-        changes={"require_totp": body.require_totp},
+        changes={"require_totp": body.require_totp, "require_for_roles": requested},
         request=request,
     )
     await db.commit()
-    return MfaPolicy(require_totp=body.require_totp)
+    return MfaPolicy(require_totp=body.require_totp, require_for_roles=requested)
