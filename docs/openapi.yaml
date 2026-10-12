@@ -2180,37 +2180,11 @@ paths:
         required: true
       responses:
         '200':
-
-  /api/v1/war-rooms/cases/{case_id}:
-      - war-rooms
-      summary: Open For Case
-      description: 'One action: create the channel, invite, post the header, record
-        it.
-
-
-        Fails loudly. The analyst pressed a button and is entitled to know when
-
-        it did not work — a 202 "we''ll try" here would be the toast-only control
-
-        this console is not allowed to ship.'
-      operationId: open_for_case_api_v1_war_rooms_cases__case_id__post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: case_id
-        in: path
-          type: string
-          format: uuid
-          title: Case Id
-              $ref: '#/components/schemas/OpenWarRoomRequest'
-        '201':
           description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MergeResponse'
-
-                $ref: '#/components/schemas/WarRoomModel'
         '422':
           description: Validation Error
           content:
@@ -2235,11 +2209,22 @@ paths:
       responses:
         '200':
           description: Successful Response
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/MergeResponse'
         '422':
           description: Validation Error
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /api/v1/case-depth/alerts/bulk-triage:
+    post:
+      tags:
+      - case-depth
       summary: Bulk Triage Route
       description: 'Apply one triage decision to many alerts, with a preflight count.
 
@@ -2252,44 +2237,155 @@ paths:
 
         how the weaker one becomes the one everybody reaches for.'
       operationId: bulk_triage_route_api_v1_case_depth_alerts_bulk_triage_post
+      requestBody:
+        content:
+          application/json:
+            schema:
               $ref: '#/components/schemas/BulkTriageRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/BulkTriageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /api/v1/case-depth/custom-fields:
     get:
+      tags:
+      - case-depth
       summary: List Custom Fields
       operationId: list_custom_fields_api_v1_case_depth_custom_fields_get
+      security:
+      - HTTPBearer: []
       parameters:
       - name: include_inactive
         in: query
         required: false
+        schema:
           type: boolean
           default: false
           title: Include Inactive
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/CustomFieldOut'
                 title: Response List Custom Fields Api V1 Case Depth Custom Fields
                   Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - case-depth
       summary: Create Custom Field
       operationId: create_custom_field_api_v1_case_depth_custom_fields_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
               $ref: '#/components/schemas/CustomFieldIn'
+      responses:
         '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/case-depth/custom-fields/{field_id}:
     patch:
+      tags:
+      - case-depth
       summary: Update Custom Field
       operationId: update_custom_field_api_v1_case_depth_custom_fields__field_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
       - name: field_id
         in: path
+        required: true
+        schema:
           type: string
           format: uuid
           title: Field Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
               $ref: '#/components/schemas/CustomFieldPatch'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     delete:
+      tags:
+      - case-depth
       summary: Retire Custom Field
       description: 'Retire, never delete: values already written stay readable and
         attributable.'
       operationId: retire_custom_field_api_v1_case_depth_custom_fields__field_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: field_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Field Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomFieldOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/case-depth/cases/{case_id}/custom-values:
+    get:
+      tags:
+      - case-depth
       summary: Get Custom Values
       description: 'Every active field, with this case''s value or an empty one.
 
@@ -2300,10 +2396,6 @@ paths:
 
         omits whatever was added last week.'
       operationId: get_custom_values_api_v1_case_depth_cases__case_id__custom_values_get
-
-      - war-rooms
-      summary: List For Case
-      operationId: list_for_case_api_v1_war_rooms_cases__case_id__get
       security:
       - HTTPBearer: []
       parameters:
@@ -2325,9 +2417,6 @@ paths:
                   $ref: '#/components/schemas/CustomValueOut'
                 title: Response Get Custom Values Api V1 Case Depth Cases  Case Id  Custom
                   Values Get
-
-                  $ref: '#/components/schemas/WarRoomModel'
-                title: Response List For Case Api V1 War Rooms Cases  Case Id  Get
         '422':
           description: Validation Error
           content:
@@ -2343,72 +2432,12 @@ paths:
       - HTTPBearer: []
       parameters:
       - name: case_id
-
-  /api/v1/war-rooms/{war_room_id}/sync:
-    post:
-      - war-rooms
-      summary: Sync
-      operationId: sync_api_v1_war_rooms__war_room_id__sync_post
-      - name: war_room_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
           title: Case Id
-
-          title: War Room Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SyncResult'
-        '422':
-          description: Validation Error
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/war-rooms/{war_room_id}/close:
-    post:
-      tags:
-      - war-rooms
-      summary: Close
-      description: 'Stop mirroring. The channel itself is left alone, deliberately.
-
-
-        Archiving somebody''s channel from a console button is a bigger action
-
-        than it looks: the transcript is often the incident''s own record and the
-
-        people in it did not press anything.'
-      operationId: close_api_v1_war_rooms__war_room_id__close_post
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: war_room_id
-        in: path
-        required: true
-          type: string
-          format: uuid
-                $ref: '#/components/schemas/WarRoomModel'
-  /api/v1/war-rooms/{war_room_id}/decision:
-      summary: Channel Decision
-      description: 'A decision taken in the channel, delivered by the bot.
-
-
-        Service-token only. See the module header: the bot has verified the
-
-        vendor''s signature and this service cannot, so the token is the whole
-
-        trust relationship and ``CHANNEL_DECISIONS`` is its blast radius.'
-      operationId: channel_decision_api_v1_war_rooms__war_room_id__decision_post
-      - name: X-AiSOC-Service-Token
-        in: header
-        required: false
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Aisoc-Service-Token
       requestBody:
         required: true
         content:
@@ -2428,6 +2457,9 @@ paths:
                   Values Put
         '422':
           description: Validation Error
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/case-depth/workload:
     get:
@@ -2449,13 +2481,12 @@ paths:
       - name: days
         in: query
         required: false
+        schema:
           type: integer
           maximum: 365
           minimum: 1
           default: 30
           title: Days
-
-              $ref: '#/components/schemas/ChannelDecisionRequest'
       responses:
         '200':
           description: Successful Response
@@ -2465,9 +2496,6 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Workload Api V1 Case Depth Workload Get
-
-                title: Response Channel Decision Api V1 War Rooms  War Room Id  Decision
-                  Post
         '422':
           description: Validation Error
           content:
@@ -7729,19 +7757,21 @@ paths:
       responses:
         '201':
           description: Successful Response
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/MemoryIngestResult'
         '422':
           description: Validation Error
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     get:
+      tags:
+      - semantic-memory
       summary: List Items
       operationId: list_items_api_v1_memory_items_get
-
-  /api/v1/ai-assets:
-      - ai-estate
-      summary: List Ai Assets
-      description: The estate, newest sighting first.
-      operationId: list_ai_assets_api_v1_ai_assets_get
       security:
       - HTTPBearer: []
       parameters:
@@ -7761,13 +7791,6 @@ paths:
           - type: string
           - type: 'null'
           title: State
-
-          description: Filter to one asset kind.
-      - name: unlinked
-          type: boolean
-          description: Only assets with no person linked.
-          default: false
-          title: Unlinked
       - name: limit
         in: query
         required: false
@@ -7789,6 +7812,9 @@ paths:
                 title: Response List Items Api V1 Memory Items Get
         '422':
           description: Validation Error
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/memory/items/{item_id}:
     delete:
@@ -7804,30 +7830,17 @@ paths:
       - name: item_id
         in: path
         required: true
+        schema:
           type: string
           format: uuid
           title: Item Id
       - name: reason
         in: query
         required: false
+        schema:
+          type: string
           default: ''
           title: Reason
-
-          maximum: 200
-          default: 50
-      - name: offset
-          type: integer
-          minimum: 0
-          default: 0
-          title: Offset
-                $ref: '#/components/schemas/AiAssetListResponse'
-  /api/v1/ai-assets/{asset_id}:
-    get:
-      - ai-estate
-      summary: Get Ai Asset
-      operationId: get_ai_asset_api_v1_ai_assets__asset_id__get
-      - name: asset_id
-          title: Asset Id
       responses:
         '200':
           description: Successful Response
@@ -7835,8 +7848,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MemoryItemOut'
-
-                $ref: '#/components/schemas/AiAssetModel'
         '422':
           description: Validation Error
           content:
@@ -7875,59 +7886,62 @@ paths:
       responses:
         '200':
           description: Successful Response
+          content:
+            application/json:
+              schema:
                 items:
                   $ref: '#/components/schemas/MemoryRecallHit'
                 type: array
                 title: Response Recall Api V1 Memory Recall Post
         '422':
           description: Validation Error
+          content:
+            application/json:
+              schema:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
   /api/v1/memory/conflicts:
     get:
+      tags:
+      - semantic-memory
       summary: List Conflicts
       operationId: list_conflicts_api_v1_memory_conflicts_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
                   $ref: '#/components/schemas/MemoryConflictOut'
+                type: array
                 title: Response List Conflicts Api V1 Memory Conflicts Get
+      security:
+      - HTTPBearer: []
   /api/v1/memory/conflicts/{item_id}/resolve:
+    post:
+      tags:
+      - semantic-memory
       summary: Resolve Conflict
       description: Settle a conflict by naming which side survives. The other is retired.
       operationId: resolve_conflict_api_v1_memory_conflicts__item_id__resolve_post
+      security:
+      - HTTPBearer: []
       parameters:
       - name: item_id
-
-  /api/v1/ai-assets/{asset_id}/sanction:
-      - ai-estate
-      summary: Sanction Ai Asset
-      description: 'Approve an asset, refuse it, or put it back to undecided.
-
-
-        The risk score is recomputed here rather than left stale, through the
-
-        same `score_risk` the recorder calls, because the sanction decision is
-
-        one of its inputs: an asset that has just been refused and is still
-
-        running is a different exposure from one nobody had looked at.'
-      operationId: sanction_ai_asset_api_v1_ai_assets__asset_id__sanction_post
-      - name: asset_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
           title: Item Id
-
-          title: Asset Id
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/MemoryConflictResolution'
-
-              $ref: '#/components/schemas/SanctionRequest'
       responses:
         '200':
           description: Successful Response
@@ -7935,8 +7949,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MemoryConflictOut'
-
-                $ref: '#/components/schemas/AiAssetModel'
         '422':
           description: Validation Error
           content:
@@ -20562,6 +20574,186 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /api/v1/lake/estimate:
+    post:
+      tags:
+      - lake
+      summary: Estimate Lake Sql
+      description: 'What would this query read, and where does that data live?
+
+
+        Charged at the schema rate rather than the query rate: an estimate
+
+        runs ``EXPLAIN ESTIMATE`` and two system-table reads, none of which
+
+        touch tenant data. Pricing it like a scan would train analysts to
+
+        skip the estimate, which is the opposite of the point.'
+      operationId: estimate_lake_sql_api_v1_lake_estimate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LakeEstimateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LakeEstimateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/lake/query-jobs:
+    post:
+      tags:
+      - lake
+      summary: Submit Lake Query Job
+      description: 'Submit a query that is allowed to take longer than the synchronous
+        bound.
+
+
+        The estimate is taken once, here, and stored on the job. It is never
+
+        recomputed: it is the number the analyst agreed to before the scan
+
+        started, and moving it afterwards would make the record of what they
+
+        were told untrue.'
+      operationId: submit_lake_query_job_api_v1_lake_query_jobs_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LakeQueryJobRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LakeQueryJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - lake
+      summary: List Lake Query Jobs
+      operationId: list_lake_query_jobs_api_v1_lake_query_jobs_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LakeQueryJobResponse'
+                title: Response List Lake Query Jobs Api V1 Lake Query Jobs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lake/query-jobs/{job_id}:
+    get:
+      tags:
+      - lake
+      summary: Get Lake Query Job
+      description: 'One job''s state, with a live progress read while it is running.
+
+
+        The live read is folded into the response but is **not** written back
+
+        over a terminal state: a late progress row must not make a finished
+
+        job look like it started again.'
+      operationId: get_lake_query_job_api_v1_lake_query_jobs__job_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LakeQueryJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lake/query-jobs/{job_id}/cancel:
+    post:
+      tags:
+      - lake
+      summary: Cancel Lake Query Job
+      description: 'Stop a running scan.
+
+
+        A job that has already ended answers 409 rather than being quietly
+
+        re-marked: cancelling a finished job would rewrite the record of what
+
+        happened.'
+      operationId: cancel_lake_query_job_api_v1_lake_query_jobs__job_id__cancel_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LakeQueryJobResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/lake/schema:
     get:
       tags:
@@ -20798,6 +20990,332 @@ paths:
                 $ref: '#/components/schemas/RealtimeTicket'
       security:
       - HTTPBearer: []
+  /api/v1/ai-assets:
+    get:
+      tags:
+      - ai-estate
+      summary: List Ai Assets
+      description: The estate, newest sighting first.
+      operationId: list_ai_assets_api_v1_ai_assets_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter to one asset kind.
+          title: Kind
+        description: Filter to one asset kind.
+      - name: unlinked
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Only assets with no person linked.
+          default: false
+          title: Unlinked
+        description: Only assets with no person linked.
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAssetListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-assets/{asset_id}:
+    get:
+      tags:
+      - ai-estate
+      summary: Get Ai Asset
+      operationId: get_ai_asset_api_v1_ai_assets__asset_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Asset Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAssetModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-assets/{asset_id}/sanction:
+    post:
+      tags:
+      - ai-estate
+      summary: Sanction Ai Asset
+      description: 'Approve an asset, refuse it, or put it back to undecided.
+
+
+        The risk score is recomputed here rather than left stale, through the
+
+        same `score_risk` the recorder calls, because the sanction decision is
+
+        one of its inputs: an asset that has just been refused and is still
+
+        running is a different exposure from one nobody had looked at.'
+      operationId: sanction_ai_asset_api_v1_ai_assets__asset_id__sanction_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Asset Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SanctionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAssetModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/cases/{case_id}:
+    post:
+      tags:
+      - war-rooms
+      summary: Open For Case
+      description: 'One action: create the channel, invite, post the header, record
+        it.
+
+
+        Fails loudly. The analyst pressed a button and is entitled to know when
+
+        it did not work — a 202 "we''ll try" here would be the toast-only control
+
+        this console is not allowed to ship.'
+      operationId: open_for_case_api_v1_war_rooms_cases__case_id__post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Case Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenWarRoomRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarRoomModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - war-rooms
+      summary: List For Case
+      operationId: list_for_case_api_v1_war_rooms_cases__case_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Case Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WarRoomModel'
+                title: Response List For Case Api V1 War Rooms Cases  Case Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/{war_room_id}/sync:
+    post:
+      tags:
+      - war-rooms
+      summary: Sync
+      operationId: sync_api_v1_war_rooms__war_room_id__sync_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: war_room_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: War Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/{war_room_id}/close:
+    post:
+      tags:
+      - war-rooms
+      summary: Close
+      description: 'Stop mirroring. The channel itself is left alone, deliberately.
+
+
+        Archiving somebody''s channel from a console button is a bigger action
+
+        than it looks: the transcript is often the incident''s own record and the
+
+        people in it did not press anything.'
+      operationId: close_api_v1_war_rooms__war_room_id__close_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: war_room_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: War Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarRoomModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/war-rooms/{war_room_id}/decision:
+    post:
+      tags:
+      - war-rooms
+      summary: Channel Decision
+      description: 'A decision taken in the channel, delivered by the bot.
+
+
+        Service-token only. See the module header: the bot has verified the
+
+        vendor''s signature and this service cannot, so the token is the whole
+
+        trust relationship and ``CHANNEL_DECISIONS`` is its blast radius.'
+      operationId: channel_decision_api_v1_war_rooms__war_room_id__decision_post
+      parameters:
+      - name: war_room_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: War Room Id
+      - name: X-AiSOC-Service-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Aisoc-Service-Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelDecisionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Channel Decision Api V1 War Rooms  War Room Id  Decision
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /auth/saml/login:
     get:
       tags:
@@ -31207,6 +31725,184 @@ components:
       - type
       title: LakeColumnInfo
       description: One column within a lake table.
+    LakeEstimateRequest:
+      properties:
+        sql:
+          type: string
+          maxLength: 200000
+          minLength: 1
+          title: Sql
+        row_cap:
+          anyOf:
+          - type: integer
+            maximum: 100000.0
+            minimum: 1.0
+          - type: 'null'
+          title: Row Cap
+      type: object
+      required:
+      - sql
+      title: LakeEstimateRequest
+      description: Ask what a query would read, without running it.
+    LakeEstimateResponse:
+      properties:
+        estimated_rows:
+          type: integer
+          title: Estimated Rows
+        estimated_parts:
+          type: integer
+          title: Estimated Parts
+        estimated_bytes:
+          type: integer
+          title: Estimated Bytes
+        cold_bytes:
+          type: integer
+          title: Cold Bytes
+        warm_bytes:
+          type: integer
+          title: Warm Bytes
+        touches_cold:
+          type: boolean
+          title: Touches Cold
+        tables:
+          items:
+            type: string
+          type: array
+          title: Tables
+        estimated_usd:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimated Usd
+        cost_basis:
+          type: string
+          title: Cost Basis
+      type: object
+      required:
+      - estimated_rows
+      - estimated_parts
+      - estimated_bytes
+      - cold_bytes
+      - warm_bytes
+      - touches_cold
+      - tables
+      - estimated_usd
+      - cost_basis
+      title: LakeEstimateResponse
+    LakeQueryJobRequest:
+      properties:
+        sql:
+          type: string
+          maxLength: 200000
+          minLength: 1
+          title: Sql
+        row_cap:
+          anyOf:
+          - type: integer
+            maximum: 100000.0
+            minimum: 1.0
+          - type: 'null'
+          title: Row Cap
+      type: object
+      required:
+      - sql
+      title: LakeQueryJobRequest
+    LakeQueryJobResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        status:
+          type: string
+          title: Status
+        referenced_tables:
+          items:
+            type: string
+          type: array
+          title: Referenced Tables
+        row_cap:
+          type: integer
+          title: Row Cap
+        estimate:
+          additionalProperties: true
+          type: object
+          title: Estimate
+        rows_read:
+          type: integer
+          title: Rows Read
+        bytes_read:
+          type: integer
+          title: Bytes Read
+        total_rows_approx:
+          type: integer
+          title: Total Rows Approx
+        progress_ratio:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Progress Ratio
+        columns:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Columns
+        rows:
+          anyOf:
+          - items:
+              items: {}
+              type: array
+            type: array
+          - type: 'null'
+          title: Rows
+        row_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Row Count
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Started At
+        finished_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Finished At
+      type: object
+      required:
+      - id
+      - status
+      - referenced_tables
+      - row_cap
+      - estimate
+      - rows_read
+      - bytes_read
+      - total_rows_approx
+      - progress_ratio
+      - columns
+      - rows
+      - row_count
+      - error
+      - created_at
+      - started_at
+      - finished_at
+      title: LakeQueryJobResponse
+      description: A job's state. The fields a console needs to show progress honestly.
     LakeQueryRequest:
       properties:
         sql:
@@ -31237,6 +31933,16 @@ components:
           title: Timeout Seconds
           description: Optional wall-clock cap. Defaults to the server cap (30s).
             Useful for agent loops that need to fail fast.
+        force_sync:
+          type: boolean
+          title: Force Sync
+          description: 'Run synchronously even when the estimate says the query must
+            read the cold volume. Off by default: the synchronous path is bounded
+            by the 30-second default and 60-second maximum above, and a cold read
+            that does not fit inside them used to come back as a bare timeout with
+            no indication of how much data was involved. Set this only when you already
+            know the scan is small.'
+          default: false
       type: object
       required:
       - sql

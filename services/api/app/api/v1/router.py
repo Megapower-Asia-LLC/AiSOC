@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin_users,
     agent_tools,
     agents,
+    ai_assets,
     airgap,
     alert_explain,
     alert_writeback,
@@ -102,6 +103,7 @@ from app.api.v1.endpoints import (
     usage,
     verification_policies,
     waitlist,
+    war_rooms,
     workload_identities,
 )
 
@@ -436,3 +438,17 @@ api_router.include_router(graph_ws.router)
 # upgrade and SSE request, deriving the tenant from the verified claim so the
 # fan-out edge is no longer unauthenticated.
 api_router.include_router(realtime.router)
+
+# Observed AI estate — depth 6.1. /ai-assets reads the inventory the fusion
+# recorder writes from the raw-events branch (routes behind ai_estate:read /
+# ai_estate:write; deliberately no create route — an inventory a human can
+# type into stops answering "what is running that nobody told us about").
+# The module shipped in #1303 with no include site, so its three routes were
+# unreachable on that branch; mounted here by the merge train.
+api_router.include_router(ai_assets.router)
+
+# Case war rooms — depth 9.4. One action opens a Slack channel for a case,
+# invites the assignees and mirrors the timeline; the sweep worker is started
+# in main.py. Same story as ai_assets: #1315 shipped the module with no
+# include site, so POST /war-rooms/cases/{id} was unreachable until here.
+api_router.include_router(war_rooms.router)

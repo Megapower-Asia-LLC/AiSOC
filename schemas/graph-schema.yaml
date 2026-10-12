@@ -775,6 +775,11 @@ relationships:
     description: >-
       "What else did this principal do", without scanning every event the
       principal ever produced.
+    properties:
+      - { name: ts,              type: datetime, required: true }
+      - { name: source_event_id, type: string,   required: true }
+      - { name: snapshot_id,     type: string,   required: true }
+
   # ── v1.3: the AI estate ────────────────────────────────────────────────────
   # Two new types rather than a second pair of endpoints on OWNED_BY and
   # RUNS: each relationship here declares one source label and one target
@@ -814,6 +819,11 @@ relationships:
     target_label: Alert
     event_edge: true
     description: What the session is accused of.
+    properties:
+      - { name: ts,              type: datetime, required: true }
+      - { name: source_event_id, type: string,   required: true }
+      - { name: snapshot_id,     type: string,   required: true }
+
   - name: HOSTS
     source_label: Endpoint
     target_label: AIAsset

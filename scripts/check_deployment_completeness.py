@@ -84,6 +84,12 @@ COMPOSE_EXEMPT: dict[str, str] = {
     "kafka-topics": "a one-shot topic-creation Job",
     "core-api": "an optional second API surface with its own template and values block",
     "kafka": "the chart ships its own StatefulSet; compose runs the Confluent image",
+    "mcp": (
+        "an opt-in surface on both sides: compose gates it behind `profiles: [mcp]` and the "
+        "chart ships it `enabled: false` with an empty image repository the template `required`s "
+        "— depth 9.1 (#1304) added both halves before 4.5's gate (#1326) existed, and the two "
+        "merged in one train"
+    ),
 }
 
 #: The compose service each chart component corresponds to where the two

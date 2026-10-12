@@ -180,9 +180,7 @@ def test_the_threat_half_alone_does_not_fire(rule: dict[str, Any]) -> None:
     for field in _fields_of(rule["match_when"]) & DERIVED_FIELDS:
         event.pop(field, None)
     hits = engine.evaluate(_msg(event, product))
-    assert all(h.rule_id != rule["id"] for h in hits), (
-        f"{rule['slug']} fires without its baseline — the anomaly clause is decorative"
-    )
+    assert all(h.rule_id != rule["id"] for h in hits), f"{rule['slug']} fires without its baseline — the anomaly clause is decorative"
 
 
 @pytest.mark.asyncio
@@ -203,6 +201,7 @@ async def test_core_fires_one_end_to_end_with_no_full_service() -> None:
     rarity is *earned from the traffic*, not asserted.
     """
     from app.services.baselines import BaselineStore  # noqa: PLC0415
+
     from tests.test_baselines import _FakeRedis  # noqa: PLC0415
 
     rule = next(r for r in FAMILY if r["slug"] == "ta-aws-access-key-created-from-rare-client")

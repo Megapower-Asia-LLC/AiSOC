@@ -24,8 +24,8 @@ from app.services.event_schema import validate_event
 from app.services.fusion_engine import FusionEngine
 from app.services.lake_writer import LakeWriter
 from app.services.promoter import promote_normalized_event
-from app.services.sessions import DERIVED_IDLE_SECONDS, SessionRef, SessionStore
 from app.services.scale_hint import compute as compute_scale_hint
+from app.services.sessions import DERIVED_IDLE_SECONDS, SessionRef, SessionStore
 from app.services.tenant_overlay import OverlayCache
 from app.services.ueba_signal import UebaSignalCache
 from app.services.windowed_detection import WindowedDetectionEngine
