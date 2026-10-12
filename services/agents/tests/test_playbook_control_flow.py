@@ -68,7 +68,16 @@ def enrich(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 def test_the_three_types_exist_and_are_runnable() -> None:
     for name in ("wait", "parallel", "loop"):
         assert name in {s.value for s in StepType}
-    assert set(engine_mod._CONTROL_FLOW) == {StepType.WAIT, StepType.PARALLEL, StepType.LOOP}
+    # Equality rather than a subset, so a type added to the table without a
+    # test is a failing build. `verify_user` (depth 5.4) is the fourth: it
+    # suspends to the same pause table and so needs the run, which is the
+    # property that puts a step in this table rather than in `_HANDLERS`.
+    assert set(engine_mod._CONTROL_FLOW) == {
+        StepType.WAIT,
+        StepType.PARALLEL,
+        StepType.LOOP,
+        StepType.VERIFY_USER,
+    }
 
 
 def test_a_control_flow_step_is_not_in_the_handler_table() -> None:
@@ -552,18 +561,26 @@ class TestWaitsAreActuallyResumed:
             called.append("resume")
             return ["run-1"]
 
+        async def _verifications(**kwargs: Any) -> list[str]:
+            called.append("verify")
+            return []
+
         async def _expire(**kwargs: Any) -> list[str]:
             called.append("expire")
             return []
 
         monkeypatch.setattr(engine_mod, "resume_due_waits", _resume)
+        monkeypatch.setattr(engine_mod, "resume_due_verifications", _verifications)
         monkeypatch.setattr(engine_mod.playbook_pause, "expire_due", _expire)
 
         counts = await sweeper.sweep_once()
         # Resume before expire: a pause whose timer came due in the same
-        # tick that its TTL lapsed should run, not be cancelled.
-        assert called == ["resume", "expire"]
-        assert counts == {"resumed": 1, "expired": 0}
+        # tick that its TTL lapsed should run, not be cancelled. The
+        # verification sweep sits in the same half for the same reason — a
+        # question whose stage came due should escalate rather than be
+        # cancelled with no outcome for the run to read.
+        assert called == ["resume", "verify", "expire"]
+        assert counts == {"resumed": 1, "verifications": 0, "expired": 0}
 
     async def test_the_sweeper_survives_a_failing_pass(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A sweeper that dies on one bad pass stops resuming everything."""

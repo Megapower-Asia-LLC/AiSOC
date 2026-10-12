@@ -97,6 +97,7 @@ from app.api.v1.endpoints import (
     threat_intel,
     translation,
     usage,
+    verification_policies,
     waitlist,
     workload_identities,
 )
@@ -262,6 +263,7 @@ api_router.include_router(saved_views.router)
 # Administering SCIM credentials, which is a console action. The SCIM
 # surface those credentials authenticate is mounted at /scim/v2 in main.py.
 api_router.include_router(scim_tokens.router)
+api_router.include_router(verification_policies.router)
 api_router.include_router(sso_connections.router)
 
 # Wave 3 — operational maturity

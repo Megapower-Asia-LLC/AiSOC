@@ -28,7 +28,7 @@ import httpx
 
 from app.playbook import pause as playbook_pause
 
-from . import action_bridge, idempotency, references
+from . import action_bridge, idempotency, references, verification
 from .bounds import (
     ABSOLUTE_MAX_LOOP_ITERATIONS,
     ABSOLUTE_MAX_PARALLEL_BRANCHES,
@@ -1019,6 +1019,185 @@ async def resume_wait(*, resume_token: str) -> PlaybookRun | None:
     return await _resume_pause(pause, resolution="resumed by callback")
 
 
+async def resume_verification(*, resume_token: str, answer: str, signature: str) -> PlaybookRun | None:
+    """Record a signed answer and continue the run that was waiting on it.
+
+    Returns the finished run, or None when the token matches no waiting
+    verification, the signature does not verify for the stage the pause is
+    actually on, or somebody answered first. The caller gets one refusal
+    for all of those on purpose, so the route cannot be used to learn
+    whether a token was ever valid.
+
+    The outcome is written **before** the pause is resolved and the pause
+    is resolved **before** the run continues, which is what makes a double
+    click resume once: the second attempt matches no unanswered, waiting
+    row.
+    """
+    pause = await playbook_pause.find_verification_by_token(resume_token=resume_token)
+    if pause is None:
+        return None
+
+    stage = pause.verification_stage or verification.STAGE_USER
+    if not verification.signature_valid(resume_token=resume_token, answer=answer, stage=stage, signature=signature):
+        # A user-stage link presented after the question escalated lands
+        # here, which is the point of binding the stage into the signature.
+        logger.info("playbook verification: refused an answer whose signature does not verify for stage %s", stage)
+        return None
+
+    if not await playbook_pause.record_verification_outcome(pause_id=pause.id, tenant_id=pause.tenant_id, outcome=answer):
+        # Already answered. Not an error: a chat client that prefetches
+        # links, or a person who clicked twice.
+        return None
+
+    return await _resume_pause(
+        pause,
+        resolution=f"{stage} answered {answer}",
+        extra_context=_verification_context(stage=stage, outcome=answer, pause=pause),
+    )
+
+
+def _verification_context(*, stage: str, outcome: str, pause: Any) -> dict[str, Any]:
+    """What a resumed run reads to branch on.
+
+    Both the nested object and the flat ``verification_outcome`` are set.
+    The nested form is what a reader writes conditions against; the flat
+    one exists because ``_resolve_field`` walks dots and a playbook author
+    writing ``verification_outcome`` should not get silence.
+    """
+    payload = {
+        "outcome": outcome,
+        "stage": stage,
+        "subject": pause.verification_subject,
+        "manager": pause.verification_manager,
+    }
+    return {"verification": payload, "verification_outcome": outcome}
+
+
+async def resume_due_verifications(*, now: Any = None, limit: int = 50) -> list[str]:
+    """Escalate or time out every verification whose stage deadline passed.
+
+    Two different things, and the stage decides which:
+
+    * **User stage.** Resolve the manager and ask them, keeping the same
+      pause and the same token. The run stays suspended — this is the
+      escalation, not the end of the question. A subject with no manager
+      in the directory has nobody to escalate to, so the run resumes
+      immediately with ``no_manager`` rather than waiting out a second
+      deadline for a prompt that was never sent.
+    * **Manager stage.** Nobody answered. The run resumes with
+      ``timed_out``, which is the outcome the plan requires and is a thing
+      a playbook can branch on — unlike an expired pause, which leaves the
+      run neither waiting nor finished.
+
+    Returns the run ids that *resumed*. An escalation is deliberately not
+    in that list: nothing resumed, a second question was asked.
+    """
+    resumed: list[str] = []
+    for pause in await playbook_pause.due_verifications(now=now, limit=limit):
+        stage = pause.verification_stage or verification.STAGE_USER
+        if stage == verification.STAGE_MANAGER:
+            run = await _time_out_verification(pause)
+            if run is not None:
+                resumed.append(pause.run_id)
+            continue
+        run = await _escalate_verification(pause)
+        if run is not None:
+            resumed.append(pause.run_id)
+    return resumed
+
+
+async def _time_out_verification(pause: Any) -> PlaybookRun | None:
+    """Nobody answered either question. Resume with the recorded outcome."""
+    if not await playbook_pause.record_verification_outcome(pause_id=pause.id, tenant_id=pause.tenant_id, outcome="timed_out"):
+        return None
+    return await _resume_pause(
+        pause,
+        resolution="nobody answered before the manager deadline",
+        extra_context=_verification_context(stage=verification.STAGE_MANAGER, outcome="timed_out", pause=pause),
+    )
+
+
+async def _escalate_verification(pause: Any) -> PlaybookRun | None:
+    """Ask the manager. Returns a run only when there was nobody to ask."""
+    subject = pause.verification_subject or ""
+    context = pause.run_context or {}
+    # The step's own params travelled with the pause, so an author who
+    # named a manager is honoured on the sweeper too. Reading `{}` here was
+    # the first version and it silently ignored the author.
+    step_params = dict(context.get("_verification_step_params") or {})
+    lookup = await verification.resolve_manager(
+        tenant_id=pause.tenant_id,
+        subject=subject,
+        step_params=step_params,
+        context=context,
+    )
+    if lookup.manager is None:
+        if lookup.source == "error":
+            # Transient. Leaving the row waiting means the next sweep tries
+            # again; recording `no_manager` here would turn a database blip
+            # into a permanent statement about somebody's reporting line.
+            logger.warning(
+                "playbook verification: manager lookup for run %s failed; leaving the pause to the next sweep",
+                pause.run_id,
+            )
+            return None
+        if not await playbook_pause.record_verification_outcome(pause_id=pause.id, tenant_id=pause.tenant_id, outcome="no_manager"):
+            return None
+        return await _resume_pause(
+            pause,
+            resolution=f"{subject} did not answer and has no manager in the directory",
+            extra_context=_verification_context(stage=verification.STAGE_USER, outcome="no_manager", pause=pause),
+        )
+
+    deadline = datetime.now(UTC) + timedelta(seconds=verification.manager_stage_seconds())
+    if not await playbook_pause.escalate_to_manager(
+        pause_id=pause.id,
+        tenant_id=pause.tenant_id,
+        manager=lookup.manager,
+        resume_at=deadline,
+    ):
+        # Another replica escalated, or an answer arrived first. Both are
+        # fine and neither is this sweep's business any more.
+        return None
+
+    try:
+        links = verification.answer_links(
+            base_url=_verification_public_url(),
+            resume_token=pause.resume_token or "",
+            stage=verification.STAGE_MANAGER,
+        )
+    except verification.VerificationConfigError as exc:
+        logger.error("playbook verification: cannot sign the manager prompt for run %s: %s", pause.run_id, exc)
+        return None
+
+    step = PlaybookStep(
+        id=pause.step_id,
+        name="verification escalation",
+        type=StepType.VERIFY_USER,
+        params=step_params,
+    )
+    delivery = await _deliver_verification_prompt(
+        step=step,
+        context=context,
+        tenant_id=pause.tenant_id,
+        recipient=lookup.manager,
+        stage=verification.STAGE_MANAGER,
+        links=links,
+        run_id=pause.run_id,
+    )
+    if not delivery.get("executed"):
+        # Said out loud at warning. The row is now on the manager stage
+        # with a deadline, so the run still ends with `timed_out` rather
+        # than hanging — but an operator should know the second question
+        # never reached anybody.
+        logger.warning(
+            "playbook verification: escalation for run %s was recorded but the prompt did not deliver: %s",
+            pause.run_id,
+            delivery.get("error") or delivery.get("summary") or "unknown",
+        )
+    return None
+
+
 async def resume_due_waits(*, now: Any = None, limit: int = 50) -> list[str]:
     """Resume every timer wait that has come due. Returns the run ids.
 
@@ -1036,8 +1215,14 @@ async def resume_due_waits(*, now: Any = None, limit: int = 50) -> list[str]:
     return resumed
 
 
-async def _resume_pause(pause: Any, *, resolution: str) -> PlaybookRun | None:
-    """Claim a pause and continue its run. Shared by both wait resumers."""
+async def _resume_pause(pause: Any, *, resolution: str, extra_context: dict[str, Any] | None = None) -> PlaybookRun | None:
+    """Claim a pause and continue its run. Shared by every resumer.
+
+    ``extra_context`` is merged into the stored run context before the run
+    restarts, which is how a verification answer reaches the ``condition``
+    step that branches on it. A wait and an approval pass nothing: they
+    resume a run, they do not tell it anything it did not already know.
+    """
     claimed = await playbook_pause.resolve(
         pause_id=pause.id,
         tenant_id=pause.tenant_id,
@@ -1059,7 +1244,7 @@ async def _resume_pause(pause: Any, *, resolution: str) -> PlaybookRun | None:
             pause.playbook_id,
         )
         return None
-    return await PlaybookEngine().resume(playbook, pause)
+    return await PlaybookEngine().resume(playbook, pause, extra_context=extra_context)
 
 
 # ---------------------------------------------------------------------------
@@ -1360,6 +1545,268 @@ async def _control_loop(
     return StepStatus.SUCCESS, payload
 
 
+#: Where the person being asked is found, params first then the run
+#: context. Deliberately *not* an entry in ``_TARGET_KEYS``:
+#: ``RESPONSE_STEP_TYPES`` is derived from that table, and a verb listed
+#: there is dispatched through the action registry and graded on
+#: ``executed``. A verification is a question, not an action on an estate,
+#: and adding it to the table would make the engine fail every unanswered
+#: prompt as an action that did not run.
+_VERIFY_SUBJECT_KEYS: tuple[str, ...] = ("subject", "user", "username", "user_id", "upn", "email")
+
+
+def _first_present(keys: tuple[str, ...], *sources: dict[str, Any]) -> str:
+    for key in keys:
+        for source in sources:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+async def _control_verify_user(
+    step: PlaybookStep,
+    pr: PlaybookRun,
+    http: httpx.AsyncClient,
+    *,
+    dry_run: bool,
+    path: tuple[str, ...],
+) -> tuple[StepStatus, dict]:
+    """Ask the affected person whether they recognise their own activity.
+
+    Depth 5.4. The step suspends the run on a ``verification`` pause and
+    the answer resumes it with ``verification.outcome`` in the context, so
+    the next step can be a plain ``condition`` on it. The branching is
+    therefore the engine's existing branching rather than a second
+    mechanism only this verb understands.
+
+    The order below is the whole of the contract's caution, and it is an
+    order rather than a set:
+
+    1. **Refuse before resolving anything.** A confirmed true positive is
+       not asked, and a class the tenant did not opt into is not asked. The
+       refusal is a successful step with ``sent: false`` and the reason, not
+       a failure — "we deliberately did not ask" is an outcome a playbook
+       should be able to branch on, and failing the step would abort the
+       containment that follows under the default ``on_failure: abort``.
+    2. **Mint the credential before sending.** An unsigned link would take
+       an answer from anybody who reached the route, so a missing secret
+       fails the step rather than sending an unsigned prompt.
+    3. **Persist before delivering.** A prompt delivered with no pause is a
+       question nobody can answer; a pause written with no prompt expires
+       with a recorded outcome. Only one of those two orders is recoverable.
+    """
+    subject = _first_present(_VERIFY_SUBJECT_KEYS, step.params, pr.context)
+    if not subject:
+        return StepStatus.FAILED, {
+            "executed": False,
+            "sent": False,
+            "error": "a verify_user step needs a subject (user, username, upn or email) and found none in its params or the run context",
+        }
+
+    tenant_id = str(pr.context.get("tenant_id") or pr.trigger_context.get("tenant_id") or "")
+    if not tenant_id:
+        return StepStatus.FAILED, {
+            "executed": False,
+            "sent": False,
+            "error": "a verify_user step has no tenant in the run context, so neither the opt-in policy nor the pause could be written",
+        }
+
+    human_initiated = bool(pr.context.get("initiated_by_human") or pr.trigger_context.get("initiated_by_human"))
+    if verification.is_confirmed_true_positive(pr.context):
+        # No opt-out, and no exception for a human-initiated run either.
+        # The reason is not consent, it is that the message would tell an
+        # attacker holding the account that they have been seen.
+        decision = await verification.may_auto_send(tenant_id=tenant_id, step_params=step.params, context=pr.context)
+        return StepStatus.SUCCESS, {
+            "sent": False,
+            "subject": subject,
+            "verification": {"outcome": "refused", "reason": decision.reason, "stage": None},
+            "reason": decision.reason,
+        }
+    if not human_initiated:
+        decision = await verification.may_auto_send(tenant_id=tenant_id, step_params=step.params, context=pr.context)
+        if not decision.allowed:
+            return StepStatus.SUCCESS, {
+                "sent": False,
+                "subject": subject,
+                "verification": {"outcome": "refused", "reason": decision.reason, "stage": None},
+                "reason": decision.reason,
+            }
+
+    resume_token = verification.mint_resume_token()
+    try:
+        links = verification.answer_links(
+            base_url=_verification_public_url(),
+            resume_token=resume_token,
+            stage=verification.STAGE_USER,
+        )
+    except verification.VerificationConfigError as exc:
+        return StepStatus.FAILED, {"executed": False, "sent": False, "error": str(exc)}
+
+    if dry_run or not verification.execute_enabled():
+        # A preview names the person who would be asked. "A prompt would be
+        # sent" without the recipient is the kind of preview that reads as
+        # reassurance and answers nothing.
+        return StepStatus.SUCCESS, {
+            "sent": False,
+            "previewed": True,
+            "subject": subject,
+            "answers": [link["answer"] for link in links],
+            "reason": (
+                "verify_user previews unless AISOC_PLAYBOOK_VERIFY_EXECUTE is set; nobody was messaged" if not dry_run else "dry run"
+            ),
+        }
+
+    step_index = next((i for i, candidate in enumerate(pr.steps) if candidate.id == step.id), -1)
+    if step_index < 0:
+        # Same refusal as a nested wait, for the same reason: a pause that
+        # names no resume point is a row that looks resumable and is not.
+        return StepStatus.FAILED, {
+            "executed": False,
+            "sent": False,
+            "error": "a verify_user step nested inside control flow has no index to resume from; it was failed closed rather than asked",
+        }
+
+    # The escalation runs on the sweeper, long after this process has
+    # forgotten the step, so the parameters that decide *how* to ask —
+    # the channel and the message — travel with the pause. Reading them
+    # back off the playbook at escalation time would silently change the
+    # question if the playbook had been edited in between.
+    stored_context = dict(pr.context)
+    stored_context["_verification_step_params"] = dict(step.params)
+
+    pause = await playbook_pause.suspend(
+        kind="verification",
+        resume_at=datetime.now(UTC) + timedelta(seconds=verification.user_stage_seconds()),
+        resume_token=resume_token,
+        tenant_id=tenant_id,
+        run_id=pr.run_id,
+        playbook_id=pr.playbook_id,
+        playbook_name=pr.playbook_name,
+        step_index=step_index,
+        step_id=step.id,
+        run_context=stored_context,
+        step_results=pr.step_results,
+        verification_stage=verification.STAGE_USER,
+        verification_subject=subject,
+        ttl_hours=_verification_ttl(step),
+    )
+    if pause is None:
+        return StepStatus.FAILED, {
+            "executed": False,
+            "sent": False,
+            "error": "the verification could not be persisted, so nothing could resume this run; it was failed rather than asked",
+        }
+
+    delivery = await _deliver_verification_prompt(
+        step=step,
+        context=pr.context,
+        tenant_id=tenant_id,
+        recipient=subject,
+        stage=verification.STAGE_USER,
+        links=links,
+        run_id=pr.run_id,
+    )
+    if not delivery.get("executed"):
+        # The pause stays. A prompt that did not reach anybody expires with
+        # `timed_out` on the sweeper, which is a recorded outcome the run
+        # can branch on — strictly better than a cancelled pause, which
+        # leaves the run neither waiting nor finished.
+        return StepStatus.FAILED, {
+            "executed": False,
+            "sent": False,
+            "paused": True,
+            "pause_id": pause.id,
+            "subject": subject,
+            "error": f"the verification prompt was not delivered: {delivery.get('error') or delivery.get('summary') or 'unknown'}",
+        }
+
+    return StepStatus.PENDING, {
+        "paused": True,
+        "sent": True,
+        "pause_id": pause.id,
+        "subject": subject,
+        "stage": verification.STAGE_USER,
+        "escalates_at": pause.resume_at.isoformat() if pause.resume_at else None,
+        "durable": True,
+    }
+
+
+def _verification_public_url() -> str:
+    """Where an answer link points.
+
+    The agents service, not the actions service: the run that has to wake
+    lives here, and routing the click through a second service would mean a
+    second hop that can be configured, deployed and broken independently of
+    the thing it exists to resume.
+    """
+    return os.getenv("AISOC_AGENTS_PUBLIC_URL", "").strip() or os.getenv("CONSOLE_PUBLIC_BASE_URL", "").strip() or "http://localhost:8001"
+
+
+def _verification_ttl(step: PlaybookStep) -> float:
+    """How long the whole two-stage question may take before it expires.
+
+    Comfortably past both stages, so a manager answering a little late is
+    still heard. An author who sets ``expires_in_hours`` gets theirs.
+    """
+    raw = step.params.get("expires_in_hours")
+    try:
+        if raw is not None:
+            return float(raw)
+    except (TypeError, ValueError):
+        pass
+    total = verification.user_stage_seconds() + verification.manager_stage_seconds()
+    return max(DEFAULT_VERIFICATION_TTL_HOURS, (total / 3600.0) * 2)
+
+
+#: Floor for how long a verification row may sit. Both stages plus slack,
+#: so the sweeper's `timed_out` is what ends an unanswered question rather
+#: than the TTL expiring it with no outcome for the run to read.
+DEFAULT_VERIFICATION_TTL_HOURS = 24.0
+
+
+async def _deliver_verification_prompt(
+    *,
+    step: PlaybookStep,
+    context: dict[str, Any],
+    tenant_id: str,
+    recipient: str,
+    stage: str,
+    links: list[dict[str, str]],
+    run_id: str,
+) -> dict:
+    """Send one prompt through the configured destination.
+
+    Dispatched as a governed ``notify`` through ``action_bridge``, which is
+    where the Slack, Teams, email and PagerDuty arms and their credentials
+    already live after 5.1. Writing a fifth sender here would be the shape
+    5.1 removed, and it would be one the capability contract cannot see.
+    """
+    channel = str(step.params.get("channel") or "slack").strip().lower()
+    template = str(
+        step.params.get("message_template")
+        or step.params.get("message")
+        or "AiSOC is checking recent activity on {{subject}}. Was this you?"
+    )
+    body = _render_context(template.replace("{{subject}}", recipient), context)
+    choices = "\n".join(f"{link['label']}: {link['url']}" for link in links)
+
+    params = {k: v for k, v in step.params.items() if k not in {"channel", "message", "message_template", "manager", "manager_email"}}
+    params["message"] = f"{body}\n\n{choices}"
+    params["recipient"] = recipient
+    return await action_bridge.dispatch_step(
+        capability="notify",
+        tenant_id=tenant_id,
+        target=recipient,
+        params=params,
+        vendor_id=channel,
+        confidence=None,
+        playbook_run_id=run_id,
+        playbook_step_id=f"{step.id}:{stage}",
+    )
+
+
 #: Step types the run loop hands to a control-flow coroutine rather than to
 #: ``_HANDLERS``. Keyed here rather than tested with an ``in`` against a set
 #: so a type added to one and not the other cannot silently fall through to
@@ -1368,6 +1815,7 @@ _CONTROL_FLOW: dict[StepType, Any] = {
     StepType.WAIT: _control_wait,
     StepType.PARALLEL: _control_parallel,
     StepType.LOOP: _control_loop,
+    StepType.VERIFY_USER: _control_verify_user,
 }
 
 
@@ -1523,17 +1971,23 @@ async def _invoke_step(
 class PlaybookEngine:
     """Executes playbooks step-by-step, emitting realtime events."""
 
-    async def resume(self, playbook: Playbook, pause: Any) -> PlaybookRun:
-        """Continue a suspended run from the step after its approval.
+    async def resume(self, playbook: Playbook, pause: Any, *, extra_context: dict[str, Any] | None = None) -> PlaybookRun:
+        """Continue a suspended run from the step after the one that paused.
 
         Rebuilds the run from what was stored rather than re-running the
-        first half: the steps before the approval already executed, and
+        first half: the steps before the pause already executed, and
         repeating them would re-send notifications and re-dispatch
         actions.
+
+        ``extra_context`` carries whatever the pause learned while it was
+        suspended — for a verification, the answer the run branches on.
         """
+        context = dict(pause.run_context or {})
+        if extra_context:
+            context.update(extra_context)
         return await self.run(
             playbook,
-            pause.run_context,
+            context,
             resume_from=pause.resume_index,
             resume_run_id=pause.run_id,
             resume_results=pause.step_results,
@@ -1650,6 +2104,23 @@ class PlaybookEngine:
                 step_status, result = await _invoke_step(step, pr, http, dry_run=dry_run)
 
                 pr.step_results.append({"step_id": step.id, "name": step.name, "status": step_status, "result": result})
+
+                # A durable pause stops the run. Depth 5.3 taught `wait` and
+                # `verify_user` to suspend to Postgres, and only the
+                # `approval` branch above knew to break — so a durable wait
+                # wrote its pause and then carried straight on into the
+                # steps it exists to delay, and ran them a second time when
+                # the callback resumed from `step_index + 1`.
+                #
+                # Keyed on the result rather than on the step type, because
+                # the same control step both sleeps in process (no pause)
+                # and suspends (a pause), and the type cannot tell them
+                # apart. `paused` with a `pause_id` is the only shape that
+                # means a row exists to wake this run.
+                if step_status == StepStatus.PENDING and result.get("paused") and result.get("pause_id"):
+                    pr.status = RunStatus.PAUSED
+                    await _emit(pr.run_id, "run.paused", {"step": step.name, "pause_id": result["pause_id"]}, http)
+                    break
                 # Merge result into context for downstream steps. The namespaced
                 # key ``_step_<id>`` always reflects this step's full result.
                 pr.context[f"_step_{step.id}"] = result

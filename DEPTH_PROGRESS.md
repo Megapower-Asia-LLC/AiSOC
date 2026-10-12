@@ -70,9 +70,15 @@ is written. Next free at capture: migration `095`, ADR `0010`
 | migration `113` | 8.1 — `113_entitlement_enforcement.sql` | claimed |
 | ADR `0011` | 8.1 — truncating a hash-chained audit log | claimed |
 
-Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
-so `095`--`101` were taken by sibling lanes between the capture above and this
-claim; re-read `services/api/migrations/` rather than trusting the capture row.
+| migration `104` | 5.4 stateful user/manager verification (verification requests, answers, tenant opt-in) | claimed |
+| migration `105` | 5.6 plain-language playbook drafts (draft, preview, approval) | claimed |
+
+Lane B claimed `102`/`103` and landed that claim on `main` first, so Lane C's
+two moved to `104`/`105` and `102_playbook_verification.sql` was renamed with
+it. Both lanes had claimed before writing, as the plan requires -- what the
+rule cannot prevent is two lanes claiming the same free number before either
+merges, so re-read `services/api/migrations/` **and** this table before
+picking one.
 
 Phase 9 re-read `services/api/migrations/` on 2026-10-11 before claiming:
 `101_audit_immutable_nullify.sql` was still the highest on `main`, and `102`
@@ -412,6 +418,48 @@ Instead, every selector field, `group-by` and `distinct_by` is checked
 against the emitted-field namespace with **no ceiling**, which caught three
 invented fields on the first run of the gate.
 
+### D11 -- A durable `wait` suspended the run and then carried on
+
+Found while building 5.4 on 5.3's pause, and fixed here because 5.4 inherits
+it. `_control_wait` writes a pause row and returns `StepStatus.PENDING` with
+`paused: True`, and the run loop broke out only for `StepType.APPROVAL` --
+so a `wait` long enough to become durable, or any `wait` with
+`until: callback`, wrote its row and then ran every step after it. When the
+callback or the sweeper later resumed from `step_index + 1`, those steps ran
+a **second** time.
+
+Nothing caught it because the two tests that exercise the durable path assert
+on the pause row and on the resume, not on what the first half of the run did
+afterwards -- and the shipped packs contain no `wait`, so no replay exercised
+it either. The run loop now stops on any step that returns PENDING with a
+`pause_id`, keyed on the result rather than on the step type, because the same
+control step both sleeps in process (no pause) and suspends (a pause) and the
+type cannot tell those apart.
+
+Negative control: reverting that break fails
+`test_a_durable_pause_stops_the_run` plus two others, recorded in the pull
+request.
+
+### D12 -- The manager comes from SCIM only, and the lookup is three sources deep
+
+The plan says "from SCIM or IdP data". Implemented as the step's own
+`manager` parameter, then the run context (where identity enrichment puts one
+when the alert carried it), then `aisoc_scim_users.manager_ref` -- the
+enterprise extension's `manager.value`, which the column was missing
+entirely, so every sync delivered the attribute and every sync dropped it.
+
+**A live per-request lookup against Entra or Okta is not implemented**, and
+is named here rather than left to be inferred: it needs a vendor credential
+in the agents service, which today holds none, and the escalation runs on a
+sweeper with no tenant session. A tenant that provisions through SCIM has the
+data; a tenant that does not will see `no_manager` and the run resumes with
+that outcome rather than hanging.
+
+`context_import.py` writes a `manager_id` edge into Neo4j, which would be a
+fourth source. Not used: the agents service has an asyncpg pool and no Neo4j
+driver, and adding one for an escalation is a dependency the item does not
+justify.
+
 ## Phase 1: Verdict quality you can publish
 
 - [x] **1.1** Balanced, labelled verdict corpus
@@ -607,7 +655,30 @@ endpoint produces once triage falls through to its deterministic scorer.
 - [x] **5.1** Steps that act (parity 5.3)
 - [x] **5.2** Delivery (parity 5.7)
 - [x] **5.3** `wait`, `parallel`, `loop` with idempotency keys
-- [ ] **5.4** Stateful user and manager verification
+- [x] **5.4** Stateful user and manager verification. A `verify_user` step
+  suspends the run on a `verification` pause (migration 102, a third `kind`
+  on `aisoc_playbook_pauses` rather than a second table), asks the affected
+  person over the configured Slack, Teams or email destination through the
+  5.1 `notify` arms, escalates to their manager from
+  `aisoc_scim_users.manager_ref` when the stage deadline passes, and
+  resumes the run with the signed answer in the context so an ordinary
+  `condition` step branches on it. Five outcomes a playbook can read:
+  `acknowledged`, `denied`, `unsure`, `timed_out`, `no_manager`. The answer
+  is HMAC-signed over `(token, answer, stage)` — the token alone would make
+  a guess yield three working links, and without the stage the subject's own
+  link still answers after the question has moved to their manager. The
+  contract's caution is enforced in `may_auto_send` in that order: a
+  confirmed true positive is never asked, with no opt-out and no exception
+  for a human-initiated run, and everything else needs a row in
+  `aisoc_verification_policies` — default-deny, with a writer at
+  `PUT /api/v1/verification-policies` so the control can actually be
+  switched on. Ships off: `AISOC_PLAYBOOK_VERIFY_EXECUTE` previews and names
+  who *would* be asked. Gated by `scripts/check_stateful_verification.py`
+  (self-test: eleven injected violations, one per rule) wired into
+  `ci.yml :: python-lint`, plus `verification-live.yml` driving the real SQL
+  against real Postgres. 20 new offline tests, 12 live, 5 SCIM; shipped
+  playbook `user-verification-containment.playbook.json`. Deviation D11
+  records the `wait` defect this item found and fixed.
 - [ ] **5.5** Executor arms 74 → at least 150
 - [ ] **5.6** Plain-language playbooks
 
@@ -724,6 +795,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-09 | 3.3 | Identity privilege (18 rules) and a per-tenant first-seen store (2) built; 5 rules were never unreachable (gate operator drift, D9); 18 retired with a reason (D10). `MAX_UNREACHABLE` 45 → 2, the two remaining both needing the 3.4 baseline. Two matcher operators three shipped rules already used were implemented. |
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
+| 2026-10-11 | 5.4 | Reproduced: `check_stateful_verification.py` against `origin/main` reported eight problems — no `verification.py` at all, `verify_user` absent from the control-flow table, no resume path, no escalation, no `timed_out`, no sweep, no migration and no writer for the opt-in table. Built the stage machine on the existing pause row rather than a second table. Three negative controls recorded in the PR: reverting the run-loop break fails three tests including the `wait` regression (D11), removing `manager_ref=_extract_manager(body)` fails three SCIM tests, and removing `ENABLE ROW LEVEL SECURITY` from migration 102 fails the live tenancy test with "tenant B read tenant A's verification policy". Two pre-existing tests pinned the old shape and were widened rather than relaxed: the control-flow table's membership (still an equality, now of four) and the sweeper's return dict. Writing the gate found a hole in the gate: its first block extractor matched `\n\n\n`, which finds nothing for the *last* function in a module, so the ordering rule was skipped entirely over an injected violation. |
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |
 | 2026-10-11 | 8.1 | parity 4.1's containerised-IdP leg **observed to pass**, both halves: `keycloak-oidc` verifies a real `id_token` against Keycloak's published JWKS with an audience-mismatch negative control, and `keycloak-saml` walks the whole SP-initiated flow to the real ACS and signs `alice@example.com` in as `infosec`, with an untrusted-key control answering 400. Run `38124780886`, as `ENVIRONMENT=test` against the DML-only `aisoc_app` role. The SSO claim row moves PARTIAL → GATED on that evidence. Building it found two shipped defects no self-authored provider could expose: `resolve_saml_connection` bound `:i` untyped so `:i IS NULL` raised on asyncpg, and Keycloak's default role-list mapper emits one `<Attribute Name="Role">` per role, which python3-saml refuses. |
 | 2026-10-11 | 8.1 | WebAuthn as a console second factor and MFA enforced per role. Fixing the branch's own gates found three `passkey_credentials` reads scoped by user id alone on a tenant-scoped table, and a permission-model violation where the MFA policy route imported `ROLE_PERMISSIONS` directly; the role *vocabulary* now has one owner in `role_grants.known_roles()`. 23 of 23 live cases pass against real Postgres, and deleting the login integration fails 14 of them — measured, where the workflow had said eight. |

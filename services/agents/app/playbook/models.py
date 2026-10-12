@@ -39,6 +39,11 @@ class StepType(str, Enum):
     LOOP = "loop"  # Run child steps once per item, bounded
     # Human-in-the-loop
     APPROVAL = "approval"  # Require analyst approval before proceeding
+    # Ask the affected person, then their manager, and branch on the answer.
+    # Distinct from `approval`, which asks an analyst whether the platform
+    # may act: this asks the subject of the alert whether they recognise
+    # their own activity, which is evidence rather than authorisation.
+    VERIFY_USER = "verify_user"
     # Identity response
     DISABLE_USER = "disable_user"
     RESET_PASSWORD = "reset_password"

@@ -71,10 +71,22 @@ async def sweep_once() -> dict[str, int]:
     from app.playbook import pause as playbook_pause
 
     resumed = await engine.resume_due_waits()
+    # Depth 5.4. A verification's deadline does not mean "give up": at the
+    # user stage it escalates to the manager and the run stays suspended,
+    # and only at the manager stage does it resume with `timed_out`. Swept
+    # before `expire_due` for the reason the waits are — a question whose
+    # stage came due in the same tick as its TTL should escalate, not be
+    # cancelled with no outcome for the run to read.
+    verifications = await engine.resume_due_verifications()
     expired = await playbook_pause.expire_due()
-    if resumed or expired:
-        logger.info("playbook_sweeper: resumed %d wait(s), expired %d pause(s)", len(resumed), len(expired))
-    return {"resumed": len(resumed), "expired": len(expired)}
+    if resumed or verifications or expired:
+        logger.info(
+            "playbook_sweeper: resumed %d wait(s), finished %d verification(s), expired %d pause(s)",
+            len(resumed),
+            len(verifications),
+            len(expired),
+        )
+    return {"resumed": len(resumed), "verifications": len(verifications), "expired": len(expired)}
 
 
 async def run_forever(*, interval_seconds: float | None = None) -> None:

@@ -12807,6 +12807,89 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verification-policies:
+    get:
+      tags:
+      - settings
+      summary: List Policies
+      description: Every class this tenant has opted into. Empty means none.
+      operationId: list_policies_api_v1_verification_policies_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/VerificationPolicyOut'
+                type: array
+                title: Response List Policies Api V1 Verification Policies Get
+      security:
+      - HTTPBearer: []
+    put:
+      tags:
+      - settings
+      summary: Enable Class
+      description: 'Allow automatic verification prompts for one alert class.
+
+
+        Idempotent: re-enabling an already-enabled class re-stamps who asked for
+
+        it and when, which is the record a review after a complaint needs.'
+      operationId: enable_class_api_v1_verification_policies_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationPolicyIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationPolicyOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/verification-policies/{alert_class}:
+    delete:
+      tags:
+      - settings
+      summary: Disable Class
+      description: 'Stop automatic prompts for one class.
+
+
+        Answers 204 whether or not a row existed. A tenant revoking a grant
+
+        wants it gone; telling them it was already gone is not useful and a 404
+
+        here would read as "the revocation failed".'
+      operationId: disable_class_api_v1_verification_policies__alert_class__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: alert_class
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Alert Class
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sso-connections:
     get:
       tags:
@@ -39221,6 +39304,39 @@ components:
         pass-through would let a caller supply their own vendor credential and
 
         have the read run somewhere else entirely.'
+    VerificationPolicyIn:
+      properties:
+        alert_class:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Alert Class
+          description: An alert's rule_id, category or alert_class. Matched case-insensitively.
+      type: object
+      required:
+      - alert_class
+      title: VerificationPolicyIn
+    VerificationPolicyOut:
+      properties:
+        alert_class:
+          type: string
+          title: Alert Class
+        enabled_by:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Enabled By
+        enabled_at:
+          type: string
+          format: date-time
+          title: Enabled At
+      type: object
+      required:
+      - alert_class
+      - enabled_by
+      - enabled_at
+      title: VerificationPolicyOut
     VerifyRequest:
       properties:
         mfa_token:
