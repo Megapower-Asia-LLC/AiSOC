@@ -124,7 +124,7 @@ export function ConfidenceTrends() {
     // `unscored` is the library the engine runs. Those rules exist and fire;
     // the compiled corpus simply records no confidence for them, so every
     // average here would be shaped by a placeholder rather than measured.
-    // "No rules yet" over 2,586 running rules is the wrong sentence.
+    // "No rules yet" over 2,614 running rules is the wrong sentence.
     const unscored = data?.summary.unscored ?? 0;
     return (
       <EmptyState

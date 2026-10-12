@@ -4942,7 +4942,7 @@ export const detectionApi = {
   /**
    * The tenant's effective rule library: the compiled corpus the engine runs
    * plus whatever this tenant has tuned. Filters and paging are server-side
-   * because the library is 2,586 rules on a default install and serialising
+   * because the library is 2,614 rules on a default install and serialising
    * all of it is several megabytes.
    */
   list: (params: DetectionRuleListParams = {}) => {

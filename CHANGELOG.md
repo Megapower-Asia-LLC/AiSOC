@@ -193,7 +193,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   absent verdict counts as *not* auto-executing, because inferring one from
   whatever else is on the row is how this happened the first time.
 
-- **Rule management showed 0 rules while the detection engine ran 2,586 of
+- **Rule management showed 0 rules while the detection engine ran 2,614 of
   them** ([#1273](https://github.com/beenuar/AiSOC/issues/1273)). `/detection`
   rendered "No detection rules yet", `GET /api/v1/rules` answered `[]`,
   `GET /api/v1/detection/rules` answered `{"rules":[],"total":0}` and the MCP
@@ -238,12 +238,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change the engine will not run; `confidence`, false-positive rate and hit
   history are absent from the artefacts, so they travel with
   `confidence_measured: false` and the Confidence and Drift panels report
-  `summary.unscored` instead of averaging a placeholder across 2,586 rules;
+  `summary.unscored` instead of averaging a placeholder across 2,614 rules;
   and an unreadable corpus renders as a failure naming the paths, never as
   "no detection rules yet".
 
   Measured before and after on the same tree: `GET /api/v1/detection/rules`
-  `total` 0 → 2,586, equal to the union of ids returned by fusion's own
+  `total` 0 → 2,614, equal to the union of ids returned by fusion's own
   `_load_ruleset()`, `load_window_rules()` and `load_sequence_rules()` run in
   a subprocess.
 

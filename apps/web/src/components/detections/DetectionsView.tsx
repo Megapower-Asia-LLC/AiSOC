@@ -173,7 +173,7 @@ const TABS: { id: DetectionsTab; label: string; description: string }[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-//: One page of rules. The library is 2,586 entries on a default install, so
+//: One page of rules. The library is 2,614 entries on a default install, so
 //: the list is paged and every filter runs on the server — rendering the
 //: whole corpus would trade an empty page for an unusable one.
 const PAGE_SIZE = 50;
@@ -188,14 +188,14 @@ export function DetectionsView() {
   const [page, setPage] = useState(0);
 
   // Typing a character per request would put one round-trip per keystroke
-  // against a 2,586-rule search.
+  // against a 2,614-rule search.
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 250);
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Any filter change invalidates the page offset: page 4 of a 2,586-rule
+  // Any filter change invalidates the page offset: page 4 of a 2,614-rule
   // list is page 0 of a six-rule one.
   useEffect(() => {
     setPage(0);
@@ -617,7 +617,7 @@ export function DetectionsView() {
             libraryTotal === 0 ? (
               // Only reachable when the library really is empty: the compiled
               // corpus read fine and held nothing, and the tenant has authored
-              // nothing. A default install ships 2,586 engine rules, so this
+              // nothing. A default install ships 2,614 engine rules, so this
               // now means what it says.
               <EmptyState
                 title="No detection rules yet"

@@ -1,6 +1,6 @@
 """The rules the engine runs have to be the rules the console can see and tune.
 
-Issue #1273: a core install loads 2,586 detection rules into fusion and fires
+Issue #1273: a core install loads 2,614 detection rules into fusion and fires
 them, while `GET /api/v1/rules` and `GET /api/v1/detection/rules` both answer
 with an empty list, because both read the Postgres `detection_rules` table and
 **nothing in production ever writes a built-in row there**. An operator could
@@ -336,7 +336,7 @@ class TestTheConsoleReadsTheLoadedCorpus:
         assert body["missingArtefacts"] == []
 
     async def test_the_page_is_bounded_and_the_total_is_not(self, client) -> None:
-        """2,586 rules serialised is several MB; the header count must still be true."""
+        """2,614 rules serialised is several MB; the header count must still be true."""
         body = (await client.get("/api/v1/detection/rules", params={"limit": 25})).json()
         assert len(body["rules"]) == 25
         assert body["returned"] == 25
