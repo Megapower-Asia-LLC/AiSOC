@@ -2429,20 +2429,21 @@ files = [
 
 [[package]]
 name = "neo4j"
-version = "6.3.1"
+version = "6.4.0"
 description = "Neo4j Bolt driver for Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "neo4j-6.3.1-py3-none-any.whl", hash = "sha256:a1b702d356f88885c27bdcf7dcd56af76423dbff4e26064e5bf5dbf47af53044"},
-    {file = "neo4j-6.3.1.tar.gz", hash = "sha256:e75530ca0691d69916c56acdb7401df4ee9e1d5084cfcfb3ede796db38667dcd"},
+    {file = "neo4j-6.4.0-py3-none-any.whl", hash = "sha256:fdd048ba827be138063b045cf59e40056fbf0405ac02dadc24f64e369fbd9d3d"},
+    {file = "neo4j-6.4.0.tar.gz", hash = "sha256:056676698f080b5af5b24b0fc5abb485b8db1b95edf366d01dcfd63bcff9b71d"},
 ]
 
 [package.dependencies]
 pytz = "*"
 
 [package.extras]
+http = ["aiohttp[speedups] (>=3.12.15,<4.0.0)", "urllib3 (>=2.0.0,<3.0.0)"]
 numpy = ["numpy (>=1.21.2,<3.0.0)"]
 pandas = ["numpy (>=1.21.2,<3.0.0)", "pandas[timezone] (>=1.1.0,<4.0.0)"]
 pyarrow = ["pyarrow (>=6.0.0,<26.0.0)"]
