@@ -244,7 +244,7 @@ PARSER_ARTEFACTS: dict[tuple[str, str], str] = {
         "services/api/app/services/lake_query_runner.py",
         "elapsed",
     ): (
-        "Prose in the module docstring, not a statement: \"Nothing here derives a percentage "
+        'Prose in the module docstring, not a statement: "Nothing here derives a percentage '
         "from elapsed time\" puts the word after `from` in an English sentence. The module's "
         "real statements are SQLAlchemy Core, not raw strings."
     ),
