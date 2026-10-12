@@ -320,7 +320,7 @@ async def saml_acs(request: Request, db: DBSession) -> Response:
         # In the fragment, which browsers do not send to the server and
         # which does not land in an access log or a Referer header.
         return RedirectResponse(
-            url=(f"{redirect_url}#access_token={session['access_token']}&refresh_token={session['refresh_token']}"),
+            url=f"{redirect_url}{_session_fragment(session)}",
             status_code=302,
         )
 
@@ -402,6 +402,28 @@ async def saml_logout(request: Request, db: DBSession, issuer: str | None = None
 
 def _first(lst: list[str]) -> str:
     return lst[0] if lst else ""
+
+
+def _session_fragment(session: dict[str, Any]) -> str:
+    """The URL fragment a completed callback lands on.
+
+    Two outcomes, and the difference is whether a session exists at all.
+    When the tenant's policy requires a second factor of this role and
+    the provider did not assert one, `complete_sso_login` returns a
+    challenge and **no tokens** — so there is nothing to put in the
+    fragment but the challenge, and the console's sign-in page asks for
+    the factor before anybody is signed in.
+
+    Reading `access_token` unconditionally, as this did before depth 8.1,
+    would raise `KeyError` inside the handler on exactly the deployments
+    that enforce MFA. Shared with the OIDC callback so the two cannot
+    answer differently.
+    """
+    if session.get("mfa_required") or session.get("mfa_enrollment_required"):
+        methods = ",".join(str(m) for m in (session.get("methods") or []))
+        key = "mfa_required" if session.get("mfa_required") else "mfa_enrollment_required"
+        return f"#{key}=1&mfa_token={quote(str(session['mfa_token']), safe='')}&methods={quote(methods, safe='')}"
+    return f"#access_token={session['access_token']}&refresh_token={session['refresh_token']}"
 
 
 async def _build_saml_request(request: Request) -> dict[str, Any]:

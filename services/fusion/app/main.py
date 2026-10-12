@@ -12,9 +12,11 @@ from app.core.config import settings
 from app.core.logging import configure_logging, logger
 from app.memory.provider import MemoryPriorProvider
 from app.services import ioc_match
+from app.services.ai_asset_recorder import AiAssetRecorder
 from app.services.alert_enricher import AlertEnricher
 from app.services.alert_sink import AlertSink
 from app.services.attack_chain_grouper import AttackChainGrouper
+from app.services.baselines import BaselineStore
 from app.services.confidence import ConfidenceScorer
 from app.services.correlator import Correlator
 from app.services.deduplicator import Deduplicator
@@ -25,6 +27,7 @@ from app.services.first_seen import FirstSeenStore
 from app.services.fusion_engine import FusionEngine
 from app.services.ioc_match import TenantIocMatcher
 from app.services.lake_writer import LakeWriter
+from app.services.sessions import SessionStore
 from app.services.tenant_overlay import OverlayCache
 from app.services.ueba_signal import UebaSignalCache
 from app.services.windowed_detection import WindowedDetectionEngine
@@ -126,6 +129,10 @@ async def lifespan(app: FastAPI):
     # Depth plan 3.3 — per-tenant first-seen memory, sharing the fusion Redis
     # the windowed engine already uses for sliding-window state.
     first_seen = FirstSeenStore(redis_client)
+    # Depth plan 3.4 — per-principal behavioural baselines in CORE, on the
+    # same Redis. ADR-0011 records why this is a fusion module rather than
+    # the `full`-profile UEBA service.
+    baselines = BaselineStore(redis_client)
     # Dead letters go to Postgres so they can be read back. Until now the
     # worker defaulted to LoggingDLQ, so a dropped event produced a log
     # line and nothing else — and an invisible drop is indistinguishable
@@ -136,6 +143,14 @@ async def lifespan(app: FastAPI):
     # capture None and drop every dead letter.
     dlq = PostgresDLQ(lambda: sink._pool) if sink is not None else None
 
+    # Depth 6.1 — the observed AI estate. Shares the alert sink's pool for
+    # the same reason the dead-letter queue does: one Postgres connection
+    # pool per service, opened by `sink.start()` during `worker.start()`.
+    # Passed as a callable because that happens after this point, and
+    # capturing `sink._pool` eagerly would capture None and silently drop
+    # every sighting for the life of the process.
+    ai_assets = AiAssetRecorder(lambda: sink._pool) if sink is not None else None
+
     worker = FusionWorker(
         engine,
         sink=sink,
@@ -144,12 +159,19 @@ async def lifespan(app: FastAPI):
         detector=detector,
         windowed_detector=windowed_detector,
         first_seen=first_seen,
+        baselines=baselines,
         # Parity 5.4. Per-tenant detection tuning as a versioned overlay
         # with hot reload. Without it the engine evaluated the shared
         # corpus and nothing else, so a tenant who disabled a noisy rule
         # in the console kept receiving its alerts.
-        overlays=OverlayCache(_overlay_pool()),
+        overlays=OverlayCache(_fusion_pool()),
+        # Depth plan 2.4. Sessions per principal: the stateful half of the
+        # projection `session.go` derives per event. Disabled by the same
+        # switch as the alert sink, because a session row nothing can join
+        # an alert to is a row nobody reads.
+        sessions=SessionStore(_fusion_pool()) if settings.alert_sink_enabled else None,
         ueba_cache=ueba_cache,
+        ai_assets=ai_assets,
     )
     set_worker(worker)
 
@@ -222,13 +244,21 @@ app.include_router(router)
 _OVERLAY_POOL: Any = None
 
 
-def _overlay_pool() -> Any:
-    """A lazy pool for the tenant-tuning overlay.
+def _fusion_pool() -> Any:
+    """One lazy Postgres pool, shared by the consumer's side readers.
 
     Built on first use rather than at import, because `main` runs before
-    an event loop exists and `asyncpg.create_pool` needs one. The cache
-    tolerates `None` and returns the empty overlay, so a deployment with
-    no database reachable detects exactly as it did before 5.4.
+    an event loop exists and `asyncpg.create_pool` needs one. The overlay
+    cache tolerates `None` and returns the empty overlay, so a deployment
+    with no database reachable detects exactly as it did before 5.4, and
+    the session store logs and returns None for the same reason.
+
+    Shared rather than one pool each: both sit on the consumer's hot path
+    against the same database, and two pools is two connection budgets to
+    size instead of one. Renamed from `_overlay_pool` when the session
+    store (depth plan 2.4) became the second reader, because a name that
+    says "overlay" while two things use it is how the next contributor
+    opens a third.
     """
     global _OVERLAY_POOL  # noqa: PLW0603
     if _OVERLAY_POOL is None:

@@ -102,6 +102,14 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "elevation:read",
         "elevation:request",
         "elevation:approve",
+        # Depth 6.1. The AI-estate inventory names which coding agent on
+        # which laptop belongs to which person and which provider key it
+        # holds. That is a target list, so it is a permission of its own
+        # rather than riding on alerts:read.
+        "ai_estate:read",
+        # Approving or refusing an observed AI asset is a governance
+        # decision, so it sits with the roles that govern.
+        "ai_estate:write",
         "access_conditions:read",
         "access_conditions:write",
     ],
@@ -139,6 +147,14 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # the role the separation-of-duties rule assumes exists.
         "elevation:read",
         "elevation:request",
+        # Depth 6.1. The AI-estate inventory names which coding agent on
+        # which laptop belongs to which person and which provider key it
+        # holds. That is a target list, so it is a permission of its own
+        # rather than riding on alerts:read.
+        "ai_estate:read",
+        # Approving or refusing an observed AI asset is a governance
+        # decision, so it sits with the roles that govern.
+        "ai_estate:write",
         "elevation:approve",
         "access_conditions:read",
     ],
@@ -168,6 +184,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # tenant's own knowledge base, so every role that can read an
         # alert can read it.
         "knowledge_base:read",
+        # Depth 6.1. The AI-estate inventory names which coding agent on
+        # which laptop belongs to which person and which provider key it
+        # holds. That is a target list, so it is a permission of its own
+        # rather than riding on alerts:read.
+        "ai_estate:read",
         # Request, never approve. The analyst asking to isolate a host is
         # not the person who should decide they may.
         "elevation:request",
@@ -196,6 +217,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # tenant's own knowledge base, so every role that can read an
         # alert can read it.
         "knowledge_base:read",
+        # Depth 6.1. The AI-estate inventory names which coding agent on
+        # which laptop belongs to which person and which provider key it
+        # holds. That is a target list, so it is a permission of its own
+        # rather than riding on alerts:read.
+        "ai_estate:read",
         "elevation:request",
     ],
     "viewer": [

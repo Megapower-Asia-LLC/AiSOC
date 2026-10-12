@@ -40,6 +40,7 @@ passing for the wrong reason:
 
 from __future__ import annotations
 
+import base64
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -423,3 +424,258 @@ class TestEnrolmentAndResetAreAudited:
         # outright — that is the point of the reset and also what makes it
         # worth auditing.
         assert (await _password_login(app_client, member)).status_code == 200
+
+
+class TestPerRoleEnforcement:
+    """Depth 8.1. `096` could require a factor of everybody or of nobody.
+
+    A deployment that wants one from its administrators and not from
+    every viewer had to choose between locking out its whole read-only
+    population and leaving its administrators single-factor.
+    """
+
+    async def test_a_role_can_be_enforced_without_enforcing_the_tenant(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        admin = await _user(db, role="tenant_admin")
+        updated = await app_client.put(
+            "/api/v1/auth/mfa/policy",
+            json={"require_totp": False, "require_for_roles": ["soc_analyst"]},
+            headers=await _bearer(app_client, admin),
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["require_for_roles"] == ["soc_analyst"]
+
+        # The enforced role is challenged...
+        analyst = await _user(db, role="soc_analyst", tenant_id=admin["tenant_id"])
+        challenged = await _password_login(app_client, analyst)
+        assert challenged.status_code == 202, challenged.text
+        assert challenged.json()["mfa_enrollment_required"] is True
+
+        # ...and a role the policy does not name is not. This is the half
+        # that makes it per-role rather than a second way to spell
+        # `require_totp`, so it is asserted rather than assumed.
+        viewer = await _user(db, role="viewer", tenant_id=admin["tenant_id"])
+        assert (await _password_login(app_client, viewer)).status_code == 200
+
+    async def test_the_tenant_wide_switch_still_covers_every_role(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        """The two inputs are OR-ed, so naming no roles cannot weaken the
+        switch that was already there."""
+        admin = await _user(db, role="tenant_admin")
+        assert (
+            await app_client.put(
+                "/api/v1/auth/mfa/policy",
+                json={"require_totp": True, "require_for_roles": []},
+                headers=await _bearer(app_client, admin),
+            )
+        ).status_code == 200
+
+        viewer = await _user(db, role="viewer", tenant_id=admin["tenant_id"])
+        assert (await _password_login(app_client, viewer)).status_code == 202
+
+    async def test_clearing_a_role_actually_clears_it(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        """A policy page that can add a requirement and not remove one is
+        worse than none: an administrator believes they have turned
+        something off."""
+        admin = await _user(db, role="tenant_admin")
+        headers = await _bearer(app_client, admin)
+        await app_client.put(
+            "/api/v1/auth/mfa/policy",
+            json={"require_totp": False, "require_for_roles": ["viewer"]},
+            headers=headers,
+        )
+        cleared = await app_client.put(
+            "/api/v1/auth/mfa/policy",
+            json={"require_totp": False, "require_for_roles": []},
+            headers=headers,
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["require_for_roles"] == []
+
+        viewer = await _user(db, role="viewer", tenant_id=admin["tenant_id"])
+        assert (await _password_login(app_client, viewer)).status_code == 200
+
+    async def test_a_role_nobody_holds_is_refused(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        """A typo stored verbatim would match no user's role, and the
+        console would show a policy that enforces nothing."""
+        admin = await _user(db, role="tenant_admin")
+        response = await app_client.put(
+            "/api/v1/auth/mfa/policy",
+            json={"require_totp": False, "require_for_roles": ["soc_analist"]},
+            headers=await _bearer(app_client, admin),
+        )
+        assert response.status_code == 422, response.text
+        assert "soc_analist" in response.text
+
+    async def test_one_tenants_policy_does_not_reach_another(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        """The policy table carries an unbound *read* arm, because the
+        login route runs before there is a principal. That arm is what
+        this checks has not become an unbound *scope*."""
+        enforcing = await _user(db, role="tenant_admin")
+        assert (
+            await app_client.put(
+                "/api/v1/auth/mfa/policy",
+                json={"require_totp": False, "require_for_roles": ["viewer"]},
+                headers=await _bearer(app_client, enforcing),
+            )
+        ).status_code == 200
+
+        elsewhere = await _user(db, role="viewer")
+        assert elsewhere["tenant_id"] != enforcing["tenant_id"]
+        assert (await _password_login(app_client, elsewhere)).status_code == 200
+
+
+class TestWebAuthnIsASecondFactor:
+    """Depth 8.1. `096` shipped TOTP and recovery codes; WebAuthn was the
+    half of parity 4.2 left open.
+
+    These exercise the policy and the binding rather than the signature:
+    minting a real assertion needs an authenticator, and the signature
+    path is `passkeys.py`'s, already covered by the responder suite. What
+    is new here, and what a wrong answer would be a vulnerability, is
+    *whose* credential may discharge *whose* challenge.
+    """
+
+    async def test_a_passkey_holder_is_not_told_to_enrol_a_totp(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        """Before this, `has_confirmed_factor` read the TOTP table alone,
+        so a user whose only factor was an authenticator counted as
+        unenrolled and an enforcing tenant made them add a weaker one."""
+        import sqlalchemy
+
+        admin = await _user(db, role="tenant_admin")
+        assert (
+            await app_client.put(
+                "/api/v1/auth/mfa/policy",
+                json={"require_totp": True},
+                headers=await _bearer(app_client, admin),
+            )
+        ).status_code == 200
+
+        member = await _user(db, tenant_id=admin["tenant_id"])
+        await _register_credential(db, member)
+
+        challenged = await _password_login(app_client, member)
+        assert challenged.status_code == 202, challenged.text
+        body = challenged.json()
+        assert body.get("mfa_required") is True, body
+        assert "mfa_enrollment_required" not in body
+        assert "webauthn" in body["methods"]
+        # No TOTP secret exists, so offering `totp` would send the user to
+        # an authenticator app they never set up.
+        assert "totp" not in body["methods"]
+
+        held = (
+            await db.execute(
+                sqlalchemy.text("SELECT count(*) FROM aisoc_user_mfa WHERE user_id = :u"),
+                {"u": member["id"]},
+            )
+        ).scalar()
+        assert held == 0, "a passkey holder was made to enrol a TOTP secret as well"
+
+    async def test_a_challenge_offers_only_this_users_credentials(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        holder = await _user(db)
+        credential_id = await _register_credential(db, holder)
+        stranger = await _user(db)
+        await _register_credential(db, stranger)
+
+        challenged = await _password_login(app_client, holder)
+        options = await app_client.post(
+            "/api/v1/auth/mfa/webauthn/challenge",
+            json={"mfa_token": challenged.json()["mfa_token"]},
+        )
+        assert options.status_code == 200, options.text
+        offered = options.json()["publicKey"]["allowCredentials"]
+        assert [c["id"] for c in offered] == [credential_id], offered
+
+    async def test_a_user_with_no_authenticator_is_told_so(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        """Rather than handed a challenge no device can answer."""
+        user = await _user(db)
+        await _enrol(app_client, user, await _bearer(app_client, user))
+        challenged = await _password_login(app_client, user)
+
+        options = await app_client.post(
+            "/api/v1/auth/mfa/webauthn/challenge",
+            json={"mfa_token": challenged.json()["mfa_token"]},
+        )
+        assert options.status_code == 409, options.text
+
+    async def test_somebody_elses_credential_cannot_discharge_this_challenge(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        """The control, and the reason the lookup is scoped on `user_id`.
+
+        An attacker who has a password for one account but not its second
+        factor holds their *own* enrolled authenticator. If the assertion
+        were verified against whichever credential it named, that
+        authenticator would answer the victim's challenge with a
+        perfectly valid signature.
+        """
+        victim = await _user(db)
+        await _register_credential(db, victim)
+        attacker = await _user(db)
+        attacker_credential = await _register_credential(db, attacker)
+
+        challenged = await _password_login(app_client, victim)
+        options = await app_client.post(
+            "/api/v1/auth/mfa/webauthn/challenge",
+            json={"mfa_token": challenged.json()["mfa_token"]},
+        )
+        assert options.status_code == 200, options.text
+
+        replayed = await app_client.post(
+            "/api/v1/auth/mfa/webauthn/verify",
+            json={
+                "mfa_token": challenged.json()["mfa_token"],
+                "challenge": options.json()["challenge"],
+                "credential": {"id": attacker_credential, "response": {}, "type": "public-key"},
+            },
+        )
+        assert replayed.status_code == 401, replayed.text
+        assert "access_token" not in replayed.text
+
+    async def test_an_access_token_is_not_a_webauthn_challenge(self, app_client: httpx.AsyncClient, db: AsyncSession) -> None:
+        # The session belongs to a user with no factor, because a user who
+        # *has* one is answered 202 and never holds an access token to
+        # misuse. That is the new enforcement working, and it would
+        # otherwise make this control untestable through the front door.
+        holder = await _user(db)
+        access_token = (await _password_login(app_client, holder)).json()["access_token"]
+
+        response = await app_client.post(
+            "/api/v1/auth/mfa/webauthn/challenge",
+            json={"mfa_token": access_token},
+        )
+        assert response.status_code == 401, response.text
+
+
+async def _register_credential(session: AsyncSession, user: dict, *, enrolled_via: str = "console") -> str:
+    """One enrolled WebAuthn credential, written the way the register
+    endpoint writes it.
+
+    The public key is not a real COSE key and no test here asks for a
+    signature over it: these cover *which* credential may answer *which*
+    challenge, which is decided before any signature is checked. The
+    signature path belongs to `passkeys.py` and the responder suite
+    covers it against real authenticator fixtures.
+    """
+    import sqlalchemy
+
+    await session.rollback()
+    # Base64url, because that is what `_b64url_encode` stores and what
+    # every read path decodes. A friendlier string like `cred-<hex>` makes
+    # the fixture *less* capable than the real thing — it raises in
+    # `_b64url_decode` before reaching the behaviour under test, which is
+    # a harness failure wearing the costume of a product defect.
+    credential_id = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("=")
+    await session.execute(
+        sqlalchemy.text(
+            "INSERT INTO passkey_credentials (tenant_id, user_id, credential_id, public_key, device_name, enrolled_via) "
+            "VALUES (:t, :u, :c, :k, :d, :v)"
+        ),
+        {
+            "t": user["tenant_id"],
+            "u": user["id"],
+            "c": credential_id,
+            "k": "not-a-real-cose-key",
+            "d": "CI security key",
+            "v": enrolled_via,
+        },
+    )
+    await session.commit()
+    return credential_id

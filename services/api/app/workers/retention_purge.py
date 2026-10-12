@@ -24,13 +24,22 @@ same code path proves the predicate is right.
 exist to pre-fill a form, and treating them as an instruction would delete data
 nobody asked to delete.
 
-**Audit is excluded.** ``audit_days`` is storable but not purged here. The
-audit log is an append-only hash chain (migration 043) whose entire value is
-that no row was deleted, reordered, or rewritten; a retention purge would break
-the chain and make every subsequent verification fail. Enforcing an audit
-retention window needs chain-aware truncation with a re-anchored checkpoint,
-which is a different piece of work. Saying so in one place beats a purge that
-silently errors every tick.
+**Audit is included, through one function and nothing else.** ``audit_days``
+was storable and purged by nothing, because the audit log is an append-only
+hash chain (migration 043) whose entire value is that no row was deleted,
+reordered or rewritten — remove the oldest rows and a perfectly intact chain
+replays as `prev_hash mismatch` at index 0, which is the worst outcome for a
+control whose only job is to tell tampering from innocence.
+
+Depth 8.1 built the chain-aware truncation that was missing. Migration `111`
+adds `audit_retention_truncate`, a `SECURITY DEFINER` function that records a
+checkpoint — the cutoff, the count, the hash of the last row removed and the
+predecessor the oldest survivor names — and only then deletes, in the same
+transaction. Verification re-anchors on that checkpoint and the remainder
+replays clean, while the removal becomes a fact an auditor can read rather
+than an absence they have to infer. The application role has **no DELETE
+privilege on `audit_log`**, so that function is not merely the intended path,
+it is the only one.
 """
 
 from __future__ import annotations
@@ -70,8 +79,10 @@ class TenantPurgeResult:
     tenant_id: uuid.UUID
     raw_events_days: int
     alerts_days: int
+    audit_days: int = 0
     lake_rows: int = 0
     alert_rows: int = 0
+    audit_rows: int = 0
     #: Rows that were past the window and were not deleted because a legal
     #: hold covers this tenant. Counted rather than merely skipped: a hold
     #: that silently stops a purge and a purge that silently had nothing to
@@ -79,6 +90,7 @@ class TenantPurgeResult:
     #: work" can only be answered by a number.
     held_lake_rows: int = 0
     held_alert_rows: int = 0
+    held_audit_rows: int = 0
     #: The matters the hold was placed under, so the operator reading the
     #: log knows which one to go and release.
     hold_refs: list[str] = field(default_factory=list)
@@ -104,12 +116,20 @@ class PurgeRun:
         return sum(t.alert_rows for t in self.tenants)
 
     @property
+    def audit_rows(self) -> int:
+        return sum(t.audit_rows for t in self.tenants)
+
+    @property
     def held_lake_rows(self) -> int:
         return sum(t.held_lake_rows for t in self.tenants)
 
     @property
     def held_alert_rows(self) -> int:
         return sum(t.held_alert_rows for t in self.tenants)
+
+    @property
+    def held_audit_rows(self) -> int:
+        return sum(t.held_audit_rows for t in self.tenants)
 
     @property
     def tenants_held(self) -> int:
@@ -232,6 +252,46 @@ async def _purge_lake(tenant_id: uuid.UUID, days: int, *, dry_run: bool) -> int:
     return doomed
 
 
+async def _purge_audit(db: AsyncSession, tenant_id: uuid.UUID, days: int, *, dry_run: bool) -> int:
+    """Truncate (or count) audit rows past the window for one tenant.
+
+    The delete goes through `audit_retention_truncate`, which is not a
+    style choice: the application role has no DELETE privilege on
+    `audit_log`, so a statement here would be refused by Postgres. That
+    function records the re-anchoring checkpoint and removes the rows in
+    one transaction, so there is no ordering in which the rows are gone
+    and the record of them is not.
+
+    A window of zero is "no audit window configured" and purges nothing.
+    `resolve_policy` fills the other two from `DEFAULT_RETENTION`; this one
+    is deliberately not defaulted, because a default that silently starts
+    deleting an audit trail is the kind of instruction nobody gave.
+    """
+    if days <= 0:
+        return 0
+
+    doomed = int(
+        (
+            await db.execute(
+                text("SELECT count(*) FROM audit_log WHERE tenant_id = :tenant_id AND created_at < now() - make_interval(days => :days)"),
+                {"tenant_id": str(tenant_id), "days": days},
+            )
+        ).scalar_one()
+    )
+    if doomed == 0 or dry_run:
+        return doomed
+
+    removed = (
+        await db.execute(
+            text("SELECT audit_retention_truncate(CAST(:tenant_id AS uuid), now() - make_interval(days => :days), :days)"),
+            {"tenant_id": str(tenant_id), "days": days},
+        )
+    ).scalar_one()
+    # The function's own count, not the one counted a moment ago. A row
+    # written between the two is retained rather than reported as removed.
+    return int(removed or 0)
+
+
 async def _purge_alerts(db: AsyncSession, tenant_id: uuid.UUID, days: int, *, dry_run: bool) -> int:
     """Delete (or count) alerts past the window for one tenant.
 
@@ -277,6 +337,13 @@ async def run_once(
                 tenant_id=tenant_id,
                 raw_events_days=policy.raw_events_days,
                 alerts_days=policy.alerts_days,
+                # Read from the stored policy rather than from
+                # `resolve_policy`, which fills an unset window from
+                # `DEFAULT_RETENTION`. Those defaults exist to pre-fill a
+                # form; treating one as an instruction to start truncating
+                # an audit trail would delete evidence nobody asked to
+                # delete.
+                audit_days=int(config.get("audit_days") or 0),
             )
 
             try:
@@ -324,13 +391,32 @@ async def run_once(
                     type(exc).__name__,
                 )
 
+            try:
+                purged = await _purge_audit(db, tenant_id, result.audit_days, dry_run=dry_run or held)
+                if held:
+                    result.held_audit_rows = purged
+                else:
+                    result.audit_rows = purged
+            except Exception as exc:
+                # Same reasoning as the two above: one failing store must
+                # not read as "nothing needed deleting". It matters more
+                # here, because the thing that did not happen is an
+                # erasure somebody may have been told was performed.
+                result.errors.append(f"audit: {type(exc).__name__}")
+                logger.warning(
+                    "retention_purge.audit_failed tenant=%s err=%s",
+                    tenant_id,
+                    type(exc).__name__,
+                )
+
             if held:
                 logger.info(
-                    "retention_purge.held tenant=%s matters=%s lake_rows=%d alert_rows=%d",
+                    "retention_purge.held tenant=%s matters=%s lake_rows=%d alert_rows=%d audit_rows=%d",
                     tenant_id,
                     ",".join(result.hold_refs),
                     result.held_lake_rows,
                     result.held_alert_rows,
+                    result.held_audit_rows,
                 )
 
             run.tenants.append(result)

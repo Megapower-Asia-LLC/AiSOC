@@ -1514,6 +1514,47 @@ services:
       - aisoc
     restart: unless-stopped
 
+  # Depth 9.1 (parity 6.6). The MCP server was stdio-only and deployed by
+  # nothing, so the only way to reach it was to let an MCP host start it as a
+  # child process with one operator's API key in the host's config file.
+  #
+  # Its own profile rather than CORE or full. Two reasons, and the second is
+  # the one that matters: it is a standing read path into a tenant's alerts
+  # and event lake, so an operator should have to say yes to it; and a service
+  # nobody asked for does not belong in the smallest deployment the project
+  # tells people to start with.
+  #
+  # Built locally with no `image:` tag, the way teams-bot is, because no
+  # `ghcr.io/beenuar/aisoc-mcp` package has been published yet and naming one
+  # here would tell an operator to pull something that does not exist.
+  # `scripts/check_published_images.py` is what catches that.
+  mcp:
+    build:
+      context: .
+      dockerfile: services/mcp/Dockerfile
+    container_name: aisoc-mcp
+    depends_on:
+      - api
+    ports:
+      - "${AISOC_BIND_ADDR:-127.0.0.1}:8096:8096"
+    profiles:
+      - mcp
+    environment:
+      # Where to send every tool call and every authorize request.
+      AISOC_URL: http://api:8000
+      # Deliberately NOT AISOC_API_KEY. Over HTTP the credential arrives in
+      # the request and the tenant is derived from it; a key here would be a
+      # fallback that answers one tenant's question with another's access.
+      # `scripts/check_mcp_over_http.py` fails if src/http.ts ever reads one.
+      AISOC_MCP_HTTP: "1"
+      AISOC_MCP_HTTP_HOST: 0.0.0.0
+      AISOC_MCP_HTTP_PORT: "8096"
+      AISOC_TIMEOUT_MS: ${AISOC_MCP_TIMEOUT_MS:-20000}
+      AISOC_MCP_VERBOSE: ${AISOC_MCP_VERBOSE:-0}
+    networks:
+      - aisoc
+    restart: unless-stopped
+
   web:
     build:
       context: .

@@ -687,6 +687,21 @@ jobs:
         run: python3 scripts/check_syslog_listener.py --self-test
       - name: Syslog listener gate
         run: python3 scripts/check_syslog_listener.py
+      # Asking a person whether they recognise their own activity is a
+      # workflow, not a message, and every property that makes it one can be
+      # removed without a test failing — the prompt would still arrive and
+      # the run would quietly stop branching. This asserts the answer is
+      # signed and bound to its stage, that an unanswered prompt escalates
+      # to a manager and then ends with a `timed_out` outcome, that a
+      # confirmed true positive is never asked and that the refusal is
+      # checked before the opt-in, and that the opt-in table has a writer —
+      # a control that fails closed with no way to switch it on is a feature
+      # that reads as broken. Self-test first, on the same tree: eleven
+      # injected violations, one per rule.
+      - name: Stateful verification gate — self-test
+        run: python3 scripts/check_stateful_verification.py --self-test
+      - name: Stateful verification gate
+        run: python3 scripts/check_stateful_verification.py
       # Every connector above reads an API that answers a time window, so the
       # window bounds what a poll can return. The three cloud-native
       # collection paths do not: an SQS queue after an outage, a Pub/Sub
@@ -701,6 +716,99 @@ jobs:
         run: python3 scripts/check_cloud_native_collection.py --self-test
       - name: Cloud-native collection gate
         run: python3 scripts/check_cloud_native_collection.py
+      # Depth 9.1. Moving the MCP server off stdio and onto HTTP changes who
+      # is allowed to decide what: the credential arrives per request and
+      # several tenants share one process. This asserts the properties that
+      # makes safe — a transport exists, it never falls back to the
+      # process-wide API key, every call is authorized by the API before
+      # dispatch and reported after, a non-read-only tool cannot run on a
+      # bearer token alone, the API's tool catalogue matches the TypeScript
+      # registry name for name and flag for flag, and something deploys it.
+      # Self-test first, on the same tree: one injected violation per rule.
+      - name: MCP over HTTP gate — self-test
+        run: python3 scripts/check_mcp_over_http.py --self-test
+      - name: MCP over HTTP gate
+        run: python3 scripts/check_mcp_over_http.py
+      # Depth 9.6. Voice input transcribes on the device and sends text, and
+      # "no audio leaves the device" is a claim a comment cannot carry. This
+      # refuses any capture API or binary request body under
+      # apps/mobile/src. Also wired into mobile.yml, which only runs when
+      # that app changes — here it is unconditional, because a claim this
+      # strong should not be graded by a path filter.
+      - name: No audio egress gate — self-test
+        run: python3 scripts/check_no_audio_egress.py --self-test
+      - name: No audio egress gate
+        run: python3 scripts/check_no_audio_egress.py
+      # Depth 9.2. The probe set behind the recall measurement has to stay
+      # usable: every probe must name an item that is in the corpus, the
+      # probes must stay low-overlap with their answers (a probe written in
+      # the document's own words hands the lexical baseline a score it could
+      # not earn on a real question), and the baseline must still be a real
+      # retriever rather than a stub. The scorer itself runs too: with no
+      # embedding backend on a runner it prints "not measured" and exits 0,
+      # which is the honest row and also proves the refusal path works.
+      - name: Memory recall scorer — self-test
+        run: python3 scripts/score_memory_recall.py --self-test
+      - name: Memory recall scorer
+        run: python3 scripts/score_memory_recall.py
+
+      # Depth 6.1. The AI estate is a stored value a console page reads, and
+      # the failure that costs most here is not an absent feature but a
+      # present one nothing writes: the page renders "no AI estate" to a
+      # tenant that has one, which is the single most dangerous false
+      # statement it could make. The WRITER rule is therefore the
+      # load-bearing one — it requires the fusion consumer to call the
+      # recorder on the raw-events branch *and* the service to construct it
+      # at startup, because an unconstructed recorder is a None that every
+      # call site skips in silence.
+      - name: AI asset inventory gate — self-test
+        run: python3 scripts/check_ai_asset_inventory.py --self-test
+      - name: AI asset inventory gate
+        run: python3 scripts/check_ai_asset_inventory.py
+      # Depth 6.2. The endpoint half, and the rule that carries it is
+      # NAMESPACE: the four endpoint connectors put their process fields in
+      # the connector payload under `raw_data`, and the canonical OCSF
+      # profile maps none of them — so a classifier reading `process.name`
+      # finds None on every real source while its unit tests pass against
+      # events built in the shape it expects.
+      - name: AI endpoint discovery gate — self-test
+        run: python3 scripts/check_ai_endpoint_discovery.py --self-test
+      - name: AI endpoint discovery gate
+        run: python3 scripts/check_ai_endpoint_discovery.py
+      # The three standard inputs the syslog gate does not cover: OTLP
+      # logs, a customer Kafka topic and a TAXII 2.1 server. All three are
+      # things a third party points at, and all three fail the same three
+      # ways — unwired, tenant taken from the payload, and (for the Kafka
+      # consumer) a loop that cannot tell a permanent fault from a
+      # transient one. Self-test first, on the same tree: it injects
+      # nineteen violations, one per rule. Writing it found two real
+      # defects — the OTLP template was not in ALLOWED_TEMPLATE_IDS, so no
+      # operator could mint a token the receiver would accept, and the
+      # media-type rule matched the error message that names JSON rather
+      # than the case arm that accepts it.
+      - name: Standard inputs gate — self-test
+        run: python3 scripts/check_standard_inputs.py --self-test
+      - name: Standard inputs gate
+        run: python3 scripts/check_standard_inputs.py
+      # Three descriptions of one platform that can drift apart
+      # silently: the Helm chart against CORE in docker-compose.yml,
+      # restore.sh against backup.sh, and the connector scheduler
+      # against its own lease. Each was wrong in a way nothing could
+      # see — `helm install` brought up a deployment missing response
+      # execution and every connector poll and reported success, and
+      # two scheduler replicas each polled every vendor. Self-test
+      # first, on the same tree: nine injected violations, one per rule.
+      - name: Deployment completeness gate — self-test
+        # The gate parses the chart and the compose file, so it is the first
+        # step in this job that needs a YAML parser; the runner's Python does
+        # not ship one, and the install two steps down arrived too late for
+        # this gate — which only surfaced once the step before it stopped
+        # failing first.
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/check_deployment_completeness.py --self-test
+      - name: Deployment completeness gate
+        run: python3 scripts/check_deployment_completeness.py
       # Depth 9.2. The probe set behind the recall measurement has to stay
       # usable: every probe must name an item that is in the corpus, the
       # probes must stay low-overlap with their answers (a probe written in
@@ -747,6 +855,15 @@ jobs:
         run: python3 scripts/check_activity_projection.py --self-test
       - name: Activity projection drift gate
         run: python3 scripts/check_activity_projection.py
+      # ADR-0010 accepted writing sessions to Postgres *and* to the graph on
+      # the stated condition that one producer derives the key and the other
+      # three only read it. A second deriver would agree today and disagree
+      # after the next vendor-schema change, and the symptom is a session
+      # count that drifts rather than anything failing.
+      - name: Session projection gate — self-test
+        run: python3 scripts/check_session_projection.py --self-test
+      - name: Session projection gate
+        run: python3 scripts/check_session_projection.py
       # The same shape one layer over: an inbox template that ships has to be
       # mintable, and a mintable id has to have a template to apply. Both
       # directions, because only one of them was ever checked informally and
@@ -968,7 +1085,7 @@ jobs:
         run: |
           python3 scripts/sync_vendored_playbook_packs.py --self-test
           python3 scripts/sync_vendored_playbook_packs.py --check
-      # The same defect, one service over. The fusion engine loads 2,586
+      # The same defect, one service over. The fusion engine loads 2,614
       # detection rules from four artefacts and the console's rule-management
       # surface could see none of them (#1273), because the API image is built
       # from `services/api` and `services/fusion/app/data/` is outside that

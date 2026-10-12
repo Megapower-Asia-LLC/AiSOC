@@ -64,6 +64,7 @@ const VALID_PARAMS: Record<StepType, Record<string, unknown>> = {
   wait: { until: 'timer', seconds: 300 },
   parallel: { join: 'all' },
   loop: { over: 'sessions' },
+  verify_user: { user: 'jane.doe@example.com', channel: 'slack' },
 };
 
 /**
@@ -111,6 +112,11 @@ const TARGET_KEY: Record<StepType, string | null> = {
   wait: null,
   parallel: null,
   loop: null,
+  // Depth 5.4. Resolved by `engine._first_present(_VERIFY_SUBJECT_KEYS, ...)`
+  // rather than by `_resolve_target`: a verification is a question, not an
+  // action on an estate, so it is deliberately absent from `_TARGET_KEYS`
+  // — being in that table would make the engine grade it on `executed`.
+  verify_user: 'user',
 };
 
 /**

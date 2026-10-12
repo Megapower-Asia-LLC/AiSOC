@@ -49,6 +49,7 @@ Design rationale
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -71,6 +72,7 @@ from app.db.connector_repo import (
 )
 from app.db.engine import get_engine
 from app.ingest_client import IngestClient, IngestClientError
+from app.leader_lease import LeaderLease, election_enabled
 from app.pipeline import (
     apply_filter_rules,
     compute_fingerprint,
@@ -171,6 +173,9 @@ class ConnectorScheduler:
         self._vault = vault
         self._reload_interval_s = reload_interval_seconds
         self._scheduler: AsyncIOScheduler | None = None
+        # None when leader election is off, which is the default and
+        # means this replica always schedules.
+        self._lease: LeaderLease | None = None
         # Cache of {connector_id_str: last_seen_config_signature} so reloads
         # can detect when an instance's poll interval / config changed and
         # need its job rescheduled, vs leaving an unchanged job alone.
@@ -202,8 +207,40 @@ class ConnectorScheduler:
                 logger.error("connector.scheduler.vault_unavailable: %s", exc)
                 raise
 
+        # Parity 6.8. Without an election, two replicas each add one job
+        # per connector instance and every vendor is polled twice on every
+        # cycle — which on a rate-limited API is worse than duplication,
+        # because the second replica's poll is what gets throttled and a
+        # throttled connector looks identical to one whose credentials
+        # expired. Off by default: a single-replica deployment gains
+        # nothing from an election and gains a new way to fail to start.
+        if election_enabled():
+            self._lease = LeaderLease(self._engine)
+            if not await self._lease.acquire():
+                state = await self._lease.state()
+                logger.info(
+                    "connector.scheduler.follower holder=%s term=%s — not scheduling any poll jobs",
+                    state.holder,
+                    state.term,
+                )
+
         self._scheduler = AsyncIOScheduler(timezone="UTC")
         self._scheduler.start()
+
+        if self._lease is not None:
+            # Renewal runs whether or not this replica is the leader: a
+            # follower has to keep trying to acquire, or a dead leader is
+            # never replaced. The same job does both, because "renew if I
+            # hold it, otherwise try to take it" is one decision.
+            self._scheduler.add_job(
+                self._maintain_lease,
+                "interval",
+                seconds=self._lease.renew_after,
+                id="_leader_lease",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
 
         # Fire one reload immediately so we don't wait
         # ``reload_interval`` seconds for the first poll cycle.
@@ -238,6 +275,56 @@ class ConnectorScheduler:
             self._reload_interval_s,
         )
 
+    def _remove_all_poll_jobs(self) -> None:
+        """Drop every connector poll job, keeping the control jobs.
+
+        Called when leadership is lost. The reload and lease jobs stay,
+        because a follower still has to notice when the leader dies.
+        """
+        if self._scheduler is None:
+            return
+        keep = {"_reload_loop", "_leader_lease", "_vuln_promotion_loop"}
+        removed = 0
+        for job in list(self._scheduler.get_jobs()):
+            if job.id in keep:
+                continue
+            with contextlib.suppress(Exception):
+                self._scheduler.remove_job(job.id)
+                removed += 1
+        self._known_signatures.clear()
+        if removed:
+            logger.info("connector.scheduler.follower_dropped_jobs count=%s", removed)
+
+    def _is_leader(self) -> bool:
+        """Whether this replica should be scheduling polls.
+
+        True when election is off, which is the default: a deployment
+        that has not asked for an election must not stop polling because
+        a lease table it never populated says nobody leads.
+        """
+        return self._lease is None or self._lease.held
+
+    async def _maintain_lease(self) -> None:
+        """Renew the lease, or try to take one.
+
+        A leadership change in either direction reshapes the job set, and
+        it does so by calling the same reload the periodic job calls — a
+        second code path for "schedule everything" is a second place for
+        the two to disagree about what everything is.
+        """
+        lease = self._lease
+        if lease is None:
+            return
+        was_leader = lease.held
+        still_leader = await lease.renew() if was_leader else await lease.acquire()
+        if still_leader == was_leader:
+            return
+        if still_leader:
+            logger.info("connector.scheduler.became_leader term=%s", lease.term)
+        else:
+            logger.warning("connector.scheduler.lost_leadership term=%s", lease.term)
+        await self.reload_jobs()
+
     async def stop(self) -> None:
         """Stop the scheduler and release resources."""
         if self._scheduler is not None:
@@ -268,6 +355,16 @@ class ConnectorScheduler:
         if self._scheduler is None or self._engine is None:
             # ``stop()`` was called between ticks, or ``start()`` was never
             # called. Either way: nothing to do.
+            return
+
+        if not self._is_leader():
+            # A follower removes whatever it was running rather than just
+            # declining to add more. A replica that loses leadership while
+            # holding jobs keeps polling every vendor from the jobs it
+            # already had, which is the double-poll the election exists to
+            # prevent — only now it is invisible, because the follower is
+            # reporting itself as a follower.
+            self._remove_all_poll_jobs()
             return
 
         try:

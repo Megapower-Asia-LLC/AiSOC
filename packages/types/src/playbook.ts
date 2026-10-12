@@ -44,6 +44,7 @@ export type StepType =
   | "loop"
   | "osquery_live_query"
   | "approval"
+  | "verify_user"
   | "disable_user"
   | "reset_password"
   | "revoke_session"

@@ -19,18 +19,23 @@ as a JSON string. The native ``match_when`` specs were authored against exactly
 those flat connector fields, so ``matches(rule.match_when, json.loads(raw_data))``
 is the correct evaluation contract.
 
-Performance: every event is evaluated against the **whole corpus**. A
-product-based pre-filter was tried and removed, because connector product
-names do not line up with spec products (``aws_cloudtrail`` against ``aws``,
-``crowdstrike_falcon`` against ``edr``) and any such filter silently drops
-real matches. See ``_candidates``, which returns ``self._rules`` unchanged
-and records that reasoning. The full pass is cheap because the matcher
-short-circuits on the first absent field, so a benign event touches almost
-no rule past its first clause. The engine is pure and synchronous; the
-consumer calls it inline.
+Performance: parity plan 6.9 / depth plan 4.4. Events are routed through
+``app.services.rule_index``, which maps an event's field *names* to the
+rules that could possibly match it.
 
-Indexing by log source is parity plan 6.9, and it has to solve the
-product-name mapping first.
+Not by log source, which is what the plan asks for and what this module
+previously recorded as unsafe: connector product names do not line up
+with spec products (``aws_cloudtrail`` against ``aws``,
+``crowdstrike_falcon`` against ``edr``), a product-based pre-filter was
+tried and reverted for silently dropping real matches, and a mapping
+table would leave every new connector one missing entry away from a
+detection that stops firing. The index is on required fields instead,
+which is strictly more selective *and* provably lossless: ``match_when``
+is an AND at the top level, so a rule that requires a field an event does
+not carry cannot match it, whatever the product names say. ADR-0012
+records the decision.
+
+The engine is pure and synchronous; the consumer calls it inline.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ from app.services.derived_fields import enrich, requested_derived_fields
 from app.services.detection_matcher import matches
 from app.services.provenance import extract_provenance
 from app.services.raw_data import decode_raw_data
+from app.services.rule_index import RuleIndex
 
 logger = structlog.get_logger()
 
@@ -103,20 +109,52 @@ class DetectionEngine:
         # change, not when traffic arrives. Doing it per event would mean a
         # regex over every rule's clauses for every ingested event.
         self._derived_wanted: set[str] = requested_derived_fields(self._rules)
+        # Parity 6.9. Built once at load for the same reason.
+        self._index = RuleIndex(self._rules)
+        logger.info(
+            "detection_engine.rule_index_built",
+            rules=self._index.stats.rules,
+            indexed=self._index.stats.indexed,
+            always_evaluated=self._index.stats.always_evaluated,
+            distinct_pivot_fields=self._index.stats.distinct_fields,
+        )
 
     @property
     def rule_count(self) -> int:
         return len(self._rules)
 
-    def _candidates(self, product: str) -> list[dict[str, Any]]:
-        # Correctness-first routing: evaluate the whole corpus against every
-        # event. Connector product names don't line up 1:1 with spec products
-        # (``aws_cloudtrail`` vs ``aws``, ``crowdstrike_falcon`` vs ``edr``), so
-        # any product-based pre-filter risks silently dropping a real match.
-        # The matcher short-circuits on the first absent field, so a full pass
-        # over ~800 rules is cheap in practice (a benign event touches almost
-        # none of them past the first clause).
+    @property
+    def rules(self) -> list[dict[str, Any]]:
+        """The loaded corpus, in order.
+
+        Exposed so the index's losslessness test can replay every
+        fixture through the unindexed path and compare. A test that
+        reached into ``_rules`` would be asserting against a private
+        name, and the comparison is the only thing making the index
+        safe to ship.
+        """
         return self._rules
+
+    def _candidates(self, fields: dict[str, Any]) -> list[dict[str, Any]]:
+        """Rules this event could possibly match, in corpus order.
+
+        Lossless by construction rather than by configuration: a rule is
+        only skipped when the event lacks a field the rule's own clause
+        cannot be satisfied without, which the index establishes by
+        running the real matcher against an empty event. Rules with no
+        such field are in every candidate list.
+
+        ``index_stats`` and the parity test
+        (``test_rule_index_is_lossless.py``) are what keep that true: the
+        test replays the whole corpus both ways over every fixture and
+        requires identical hits.
+        """
+        return self._index.candidates(fields)
+
+    @property
+    def index_stats(self):
+        """What the index did, for the log line and for the gate."""
+        return self._index.stats
 
     @staticmethod
     def _raw_fields(ocsf: dict[str, Any]) -> dict[str, Any]:
@@ -165,22 +203,36 @@ class DetectionEngine:
         return ocsf if isinstance(ocsf, dict) else {}
 
     async def evaluate_async(
-        self, message: dict[str, Any], overlay: Any | None = None, first_seen: Any | None = None
+        self,
+        message: dict[str, Any],
+        overlay: Any | None = None,
+        first_seen: Any | None = None,
+        baselines: Any | None = None,
     ) -> list[DetectionHit]:
-        """`evaluate`, plus the first-seen enrichment, which needs Redis.
+        """`evaluate`, plus the enrichments that need Redis.
 
         A second entry point rather than making `evaluate` async: the
         synchronous one has callers throughout the tests and the replay
         harness, and turning it async would be a wide change for an
-        enrichment two rules read. The two share everything below the
-        extra pass.
+        enrichment a handful of rules read. The two share everything below
+        the extra pass.
+
+        `baselines` is the depth plan 3.4 behavioural store. It is folded in
+        beside first-seen rather than behind it because the two answer
+        different questions about the same event — "have we seen this value
+        before" and "how usual is it for this principal" — and a rule may
+        read one, the other or both.
         """
         extra: dict[str, Any] = {}
-        if first_seen is not None:
-            ocsf = message.get("ocsf_event")
-            tenant = str(message.get("tenant_id") or (ocsf or {}).get("tenant_uid") or "")
-            if tenant and isinstance(ocsf, dict):
-                extra = await first_seen.derived_fields(tenant, self._raw_fields(ocsf))
+        ocsf = message.get("ocsf_event")
+        if (first_seen is not None or baselines is not None) and isinstance(ocsf, dict):
+            tenant = str(message.get("tenant_id") or ocsf.get("tenant_uid") or "")
+            if tenant:
+                fields = self._raw_fields(ocsf)
+                if first_seen is not None:
+                    extra.update(await first_seen.derived_fields(tenant, fields))
+                if baselines is not None:
+                    extra.update(await baselines.derived_fields(tenant, fields))
         return self.evaluate(message, overlay, _extra_fields=extra)
 
     def evaluate(
@@ -239,7 +291,7 @@ class DetectionEngine:
             fields = {**fields, **_extra_fields}
 
         hits: list[DetectionHit] = []
-        for rule in self._candidates(""):
+        for rule in self._candidates(fields):
             try:
                 if matches(rule["match_when"], fields):
                     if overlay is not None:

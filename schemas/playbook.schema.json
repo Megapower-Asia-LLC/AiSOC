@@ -33,7 +33,8 @@
     "create_notable_event": "governed",
     "wait": "executed",
     "parallel": "executed",
-    "loop": "executed"
+    "loop": "executed",
+    "verify_user": "executed"
   },
 
   "properties": {
@@ -186,6 +187,7 @@
             "isolate_host",
             "create_ticket",
             "approval",
+            "verify_user",
             "block_ioc",
             "disable_user",
             "reset_password",

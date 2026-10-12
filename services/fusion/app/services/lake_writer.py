@@ -96,6 +96,16 @@ _COLUMNS = (
     "client_category",
     "client_raw",
     "outcome",
+    # Sessions per principal (depth plan 2.4). `session_id` is the same
+    # deterministic uuid the Postgres row and the graph node carry, so a hunt
+    # can join the three without any of them having coordinated at write time.
+    # `session_key_kind` rides along because a query that counts events per
+    # session means something different for a vendor session than for a
+    # derived one, and a hunter who cannot see which they have will mix them.
+    "session_id",
+    "session_key",
+    "session_key_kind",
+    "session_originating_human",
 )
 
 _INSERT_SQL = f"INSERT INTO aisoc.raw_events ({', '.join(_COLUMNS)}) VALUES"
@@ -270,6 +280,25 @@ def _activity_columns(ocsf: dict[str, Any]) -> dict[str, Any]:
         "client_category": _as_str(client.get("category")),
         "client_raw": _as_str(client.get("raw"))[:1024],
         "outcome": _as_str(act.get("outcome")),
+        **_session_columns(act),
+    }
+
+
+def _session_columns(act: dict[str, Any]) -> dict[str, Any]:
+    """Flatten the session block, defaulting every key for the same reason.
+
+    `session_id` is stamped onto the event by the fusion consumer after the
+    Postgres upsert and before this writer runs. An event that reached the
+    lake without going through that step — a replay, or a deployment with the
+    alert sink off — carries the vendor key and kind but an empty id, which is
+    the honest record: the grouping is known, the row it joins to is not.
+    """
+    session = _as_dict(act.get("session"))
+    return {
+        "session_id": _as_str(session.get("id")),
+        "session_key": _as_str(session.get("key"))[:512],
+        "session_key_kind": _as_str(session.get("key_kind")),
+        "session_originating_human": _as_str(session.get("originating_human")),
     }
 
 

@@ -110,6 +110,10 @@ PUBLIC_ROUTES: dict[str, str] = {
     # -- Prometheus scrape endpoints, gated by METRICS_TOKEN in the handler ---
     "services/api/app/main.py::metrics": "Prometheus scrape; refuses without METRICS_TOKEN outside a development environment",
     "services/fusion/app/api/router.py::metrics": "Prometheus scrape of worker counters; no tenant data, numeric series only",
+    "services/fusion/app/api/router.py::scale_hint": (
+        "lag-based autoscaling signal (depth 4.4): a cluster scaler scrapes it on the same footing as /metrics — "
+        "a lag count and a replica suggestion, no tenant data. AiSOC publishes it and does not act on it (ADR-0012)"
+    ),
     # -- sign-in: the request that establishes a credential cannot carry one --
     "services/api/app/api/v1/endpoints/auth.py::login": "the sign-in request itself; it is what mints the credential",
     "services/api/app/api/v1/endpoints/auth.py::sso_status": (
@@ -163,11 +167,41 @@ PUBLIC_ROUTES: dict[str, str] = {
 #: Routes whose credential is verified inside the handler. ``(verifier, reason)``
 #: — the verifier must still be called or the exemption lapses.
 IN_BAND_CREDENTIAL_ROUTES: dict[str, tuple[str, str]] = {
+    "services/agents/app/api/playbooks.py::answer_verification": (
+        "resume_verification",
+        "the signed answer link is the whole credential (depth 5.4): resume_verification recomputes the HMAC over "
+        "(token, answer, stage) with hmac.compare_digest and refuses with one sentence for every failure shape, so "
+        "the route is not an oracle for whether a token was ever valid. The person clicking holds no AiSOC session "
+        "by design — the prompt went to chat or email",
+    ),
     "services/slack-bot/app/main.py::slack_events": (
         "SlackRequestHandler",
         "Slack Bolt verifies the request signature against SLACK_SIGNING_SECRET before the handler sees the body",
     ),
     "services/slack-bot/app/notify.py::post_approval_card": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
+    # Depth 9.4. The four war-room routes carry the same credential as the
+    # notify routes above and for the same reason: the caller is an AiSOC
+    # service, not the chat vendor, so there is no vendor signature to
+    # verify. `_authorized` is the identical constant-time comparison that
+    # fails closed when the token is unset, with no dev-mode exemption —
+    # a route that creates channels in somebody's workspace must not be
+    # open to whatever can reach the pod.
+    "services/slack-bot/app/war_room.py::open_war_room": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
+    "services/slack-bot/app/war_room.py::post_to_war_room": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
+    "services/teams-bot/app/war_room.py::open_war_room": (
+        "_authorized",
+        "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
+    ),
+    "services/teams-bot/app/war_room.py::post_to_war_room": (
         "_authorized",
         "internal call authenticated by a shared X-AiSOC-Internal-Token compared in constant time, failing closed when unset",
     ),
@@ -189,16 +223,30 @@ IN_BAND_CREDENTIAL_ROUTES: dict[str, tuple[str, str]] = {
     ),
     # -- the second factor, which is part of establishing a credential ------
     #
-    # All three verify in band through `read_challenge`, which refuses a
+    # All five verify in band through `read_challenge`, which refuses a
     # token that is not of type `mfa_challenge` — so an access token
     # presented here is rejected rather than honoured, and a live session
     # cannot mint another one with no code. `/enroll/*` additionally accept
     # an ordinary bearer, through `get_current_user`; the anonymous arm is
     # what lets a user whose tenant has just started requiring a factor
     # enrol at all, since they hold a correct password and no session.
+    #
+    # The two `webauthn/*` routes are the same challenge discharged with a
+    # security key instead of a code. Both take the user from the signed
+    # challenge and never from the body: an endpoint that let a caller name
+    # whose credentials to list would answer "does this address hold a
+    # passkey" to anybody who asked.
     "services/api/app/api/v1/endpoints/mfa.py::verify": (
         "read_challenge",
         "completes the sign-in that POST /auth/login answered with 202; the challenge token it takes is the credential",
+    ),
+    "services/api/app/api/v1/endpoints/mfa.py::webauthn_challenge": (
+        "read_challenge",
+        "assertion options for the user the challenge names -- the second factor's equivalent of POST /verify's first half",
+    ),
+    "services/api/app/api/v1/endpoints/mfa.py::webauthn_verify": (
+        "read_challenge",
+        "discharges that same challenge with a security key; the credential must belong to the user the challenge names",
     ),
     "services/api/app/api/v1/endpoints/mfa.py::enroll_begin": (
         "read_challenge",
@@ -267,6 +315,15 @@ IN_BAND_CREDENTIAL_ROUTES: dict[str, tuple[str, str]] = {
         "the agents service reads directory context for the principals an alert names here and holds no session; the shared "
         "X-AiSOC-Service-Token is compared in constant time and fails closed when unset. An analyst reaches the same data through "
         "GET /graph/incident-context/{alert_id}, which authenticates by session and traverses from the alert",
+    ),
+    "services/api/app/api/v1/endpoints/war_rooms.py::channel_decision": (
+        "service_token_valid",
+        "the chat bot delivers a decision taken in the channel here and holds no session; the shared X-AiSOC-Service-Token is "
+        "compared in constant time and fails closed when unset. Deliberately no session fallback: the bot has already verified "
+        "the vendor's signature on the interaction and this service cannot re-verify it, holding no workspace secret — so the "
+        "token is the whole trust relationship and CHANNEL_DECISIONS is its blast radius, four verbs none of which closes a case. "
+        "The tenant comes from the war-room row the bot named, never from the request body, so there is no tenant field to get "
+        "wrong",
     ),
     "services/api/app/api/v1/endpoints/knowledge_base.py::retrieve_runbooks_for_triage": (
         "service_token_valid",

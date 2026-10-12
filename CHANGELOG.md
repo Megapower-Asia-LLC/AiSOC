@@ -31,6 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tenant deletion was impossible on any database holding audit rows**
+  (#1330). `audit_log.tenant_id` has declared `ON DELETE CASCADE` since
+  migration 004, and the same migration's immutability trigger refused every
+  DELETE — a cascade is an ordinary DELETE on the child, so
+  `DELETE FROM tenants` raised for any tenant that had ever written an audit
+  row, and `tenant_deletion.py` (the GDPR erasure path) could never complete.
+  The offboarding gate stayed green throughout because its test database held
+  no audit rows. Migration `119` teaches the trigger the distinction
+  migration `117` already used on its checkpoint table: the cascade runs
+  after the parent is gone, a direct DELETE still finds its tenant and is
+  refused (ADR-0014 records the trade — erasure costs the whole tenant,
+  loudly, and selective tampering stays impossible at both the privilege and
+  trigger layers). Proven by the acceptance tests the issue named, in
+  `test_audit_immutability_live.py` — a suite that had been wired into **no
+  workflow at all** since #1231 and now runs in `audit-forgery-live.yml`
+  against real Postgres as the runtime role, with its teardown corrected to
+  go through the two legal paths rather than around them.
+
 - **A fix pass closed the gap between what the enterprise-identity surfaces
   claimed and what they did.** Six items, each reproduced before it was
   fixed. **White-label** reached the surfaces the docs listed: both report
@@ -175,7 +193,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   absent verdict counts as *not* auto-executing, because inferring one from
   whatever else is on the row is how this happened the first time.
 
-- **Rule management showed 0 rules while the detection engine ran 2,586 of
+- **Rule management showed 0 rules while the detection engine ran 2,614 of
   them** ([#1273](https://github.com/beenuar/AiSOC/issues/1273)). `/detection`
   rendered "No detection rules yet", `GET /api/v1/rules` answered `[]`,
   `GET /api/v1/detection/rules` answered `{"rules":[],"total":0}` and the MCP
@@ -220,16 +238,184 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change the engine will not run; `confidence`, false-positive rate and hit
   history are absent from the artefacts, so they travel with
   `confidence_measured: false` and the Confidence and Drift panels report
-  `summary.unscored` instead of averaging a placeholder across 2,586 rules;
+  `summary.unscored` instead of averaging a placeholder across 2,614 rules;
   and an unreadable corpus renders as a failure naming the paths, never as
   "no detection rules yet".
 
   Measured before and after on the same tree: `GET /api/v1/detection/rules`
-  `total` 0 → 2,586, equal to the union of ids returned by fusion's own
+  `total` 0 → 2,614, equal to the union of ids returned by fusion's own
   `_load_ruleset()`, `load_window_rules()` and `load_sequence_rules()` run in
   a subprocess.
 
 ### Added
+
+- **Endpoint discovery of the AI estate, with no new agent** (depth plan 6.2).
+  `packs/aisoc-ai-estate.yaml` finds coding agents and MCP server processes,
+  the configuration files the popular MCP clients read, AI IDE extensions and
+  model-provider credential files, through the osquery agent a fleet already
+  runs. `apps/docs/docs/concepts/ai-estate-discovery.md` records what each
+  source can **and cannot** see, which is the half that makes an empty column
+  readable: a device missing from a provider-audit row is not a finding,
+  because no provider audit log has ever carried one.
+
+  The finding that made this a fix as well as a feature: the endpoint branch
+  of the recorder read `process.name` off the OCSF event, and the canonical
+  OCSF profile carries `title`, `external_id` and the identity aliases and
+  nothing else. `fleetdm`, `osctrl`, `auditd` and `windows_event` all put
+  their process fields in the connector payload under `raw_data`, so that
+  branch found `None` on every endpoint source this product has and could
+  never have produced one row — while its own tests passed, because they
+  built events in the shape the module expected. It now reconstructs the same
+  flat namespace `DetectionEngine._raw_fields` does, and
+  `scripts/check_ai_endpoint_discovery.py` makes reading it a rule.
+
+  Recorded rather than implied: `crowdstrike`, `sentinelone` and
+  `azure_defender` poll the vendor's own **detections**, not raw process
+  telemetry, so they cannot supply a process start. An operator running an
+  EDR and nothing else has a coverage gap here, not a quiet estate, and the
+  documentation says so in a callout.
+
+- **An AI-estate inventory built from observation rather than registration**
+  (depth plan 6.1). `aisoc_ai_assets` (migration `110`, tenant-scoped with
+  forced row-level security) holds every AI app, coding agent, MCP server,
+  IDE extension, model-provider key and OAuth grant AiSOC has seen, with the
+  person and device behind each. The gap it closes is that `aisoc_mcp_servers`
+  records what an operator *declared*, and the row that matters in an AI
+  governance review is the one present in observation and absent from the
+  declaration.
+
+  Measured the way the recurring defect here demands: the writer is in the
+  fusion consumer's raw-events branch, the one path every normalized event
+  already travels on the default profile, because a recorder behind a flag or
+  in a service CORE does not start is a table nothing writes and a page that
+  renders "no AI estate" to a tenant that has one.
+  `scripts/check_ai_asset_inventory.py` makes that a rule rather than a
+  comment — it requires the consumer to call the recorder *and* the service
+  to construct it, since an unconstructed recorder is a `None` every call
+  site skips in silence. `ai-estate-live.yml` writes a fixture estate of
+  three kinds into a real PostgreSQL as the DML-only `aisoc_app` role, and
+  two negative controls re-inject real defects: reverting `NULLS NOT
+  DISTINCT` on the identity constraint turns one provider-key row into
+  three, and a tenant policy of `USING (true)` lets one tenant read
+  another's estate.
+
+  Also: graph schema `v1.2 → v1.3` adds the `AIAsset` label with
+  `(:User)-[:OPERATES]->(:AIAsset)` and `(:Endpoint)-[:HOSTS]->(:AIAsset)`,
+  emitted by `services/ingest` as a post-pass rather than a connector case —
+  AI telemetry arrives on three connector types and as plain process
+  activity, so keying on the connector would have covered one of them and
+  looked complete. A new `ai_estate:read` / `ai_estate:write` permission
+  pair, held by real roles and mintable into an API key, because the
+  inventory names which agent on which laptop holds which provider key and
+  `hunts:read` already demonstrated what a permission no role holds is worth.
+
+- **A reported message's headers, URLs and attachments are analysed once and
+  cited where an auditor looks (depth 7.2).** Nothing in the tree read an
+  `Authentication-Results` header before this — `grep -rl
+  "authentication-results" services/` returned no match — so a message whose
+  SPF and DMARC had both failed at the receiving boundary produced a verdict
+  that had never looked. The analysis is three components in one pass, and
+  the rule it turns on is that **an unanalysed artefact must never read as a
+  clean one**, which is the same rule the submit path already applied to
+  attachments and which `services/api/app/services/phishing/headers.py` now
+  applies to authentication. SPF, DKIM and DMARC each carry three values, and
+  the third is the point: `not_evaluated` is published rather than folded
+  into either of the others, and `neutral`, `none`, `permerror` and
+  `temperror` are **not** passes — treating them as passes is how a domain
+  with a broken SPF record reads as authenticated. A URL on a deployment with
+  no provider configured says so per URL rather than vanishing from the
+  output, and that specific defect was found by a negative control that at
+  first failed to fail, because the tests built their own result list instead
+  of driving the producer. `analysed` and `unanalysed` are counted separately
+  and never summed — in the dataclass, the response model and migration
+  `111`'s column comment — because the sum is the number this product must
+  not publish: five artefacts nothing examined, rendered as "5 artefacts, 0
+  findings", says the opposite of what happened. The verdict is only ever
+  raised, and SPF **and** DMARC must both fail to raise it, because a
+  forwarded message routinely breaks SPF and flagging that would alert on
+  every mailing list in the estate. Citations go into the investigation
+  ledger as `evidence_cited` rows, one per component, written even when a
+  component found nothing — a ledger with no row for the URL check cannot be
+  told from one where the check passed. The ledger suite has no teardown by
+  design: deleting a run cascades to its events, migration `008`'s trigger
+  refuses, and defeating an append-only control to tidy a test fixture would
+  be the wrong fix.
+- **Reported phish now goes from intake to purge (depth 7.1).** The gap was
+  not that phishing was unhandled — `POST /phishing/submit` has triaged
+  artefacts since migration 015 — but that nothing in the product could
+  *remove a message*. The live-action registry held 79 builtin arms and not
+  one could touch a mailbox, so governed dispatch answered
+  `executor_not_found` for `purge_email`: a response that could block the
+  sender's domain at the firewall and could not take back the mail. Five
+  verbs enter both halves of the capability vocabulary (`search_mailboxes`,
+  `purge_email`, `restore_email`, `block_sender`, `unblock_sender`) with ten
+  vendor arms over Microsoft Graph and the Gmail API. Only what the vendors
+  document: purge is a move to `recoverableitemsdeletions` or to Trash, never
+  a hard delete, and `restore_email` is a real reverse rather than a declared
+  one. There is deliberately **no tenant-wide blocked-sender verb**, because
+  neither vendor exposes its organisation-level block list through these
+  APIs; the sender block is per mailbox and says so in the summary an analyst
+  reads, not only in a docstring. Reported-message intake normalises three
+  sources into one record — an M365 report mailbox over Graph, Workspace user
+  reports, and the existing `email_inbox` connector — and the hard case is
+  the common one: a user who reports by forwarding becomes the *sender*, so
+  the adapter reads the original sender and recipients out of the preserved
+  headers and leaves the sender empty rather than naming the victim as the
+  attacker. Campaign grouping is a five-step ladder and `grouping_basis`
+  records which step matched, because four are facts about the message and
+  subject similarity is a judgement. The purge is **one proposal and one
+  dispatch per mailbox**: handing a single executor twenty-five addresses
+  would be one approval covering a list the approver never read.
+  `scaled_impact` turns the recipient count into the tier — MODERATE at one,
+  HIGH at five, SEVERE at twenty-five, where `NEVER_AUTONOMOUS` makes it
+  mandatory-human at any confidence and any autonomy tier — and the proposal
+  and every dispatch under it read the same function, so the approver and the
+  executor cannot see different actions. Verification re-queries the mailbox,
+  and that probe is the one in the service whose confirming answer is an
+  *absence*. Everything ships **off**: `AISOC_FEATURE_MAILBOX_REMEDIATION`
+  and `PHISHING_INTAKE_WORKER_ENABLED` both default false, and a disabled
+  deployment answers FAILED naming the setting rather than simulating a purge
+  — `NotifySlackExecutor` reporting `message_sent: true` for a message it
+  never sent is the precedent. Migration `110`. Gates:
+  `check_action_contract.py` (86 → 97 executors), `check_module_reachability.py`
+  (981 → 986 reachable), `check_vendor_catalog_ids.py`,
+  `test_mailbox_remediation.py` (60 cases through real `respx` HTTP) and
+  `test_phishing_campaign_purge_live.py` (17 cases against a real Postgres
+  with the full chain). **No Microsoft 365 or Google Workspace tenant was
+  exercised**: every vendor claim rests on the documented request shape and a
+  mock.
+- **An adversary-in-the-middle detection family, on sessions (depth 7.3).**
+  The attack is invisible to every rule the corpus had, and the reason is
+  structural rather than a coverage gap: an AiTM proxy relays the victim's
+  credentials *and* their MFA response, so the sign-in is legitimate by every
+  check the identity provider makes. There is no failed authentication to
+  count and often no impossible travel to measure, because the proxy sits in
+  the victim's own country. What gives it away is the stolen session being
+  used from somewhere it was never established — so the entity these rules
+  group by is the **session**, not the user. That is why the connector work
+  had to land first: `OktaConnector.normalize()` returned `None` for
+  `session_id`, `src_asn`, `user_agent`, `client_browser` and
+  `mfa_satisfied` on a System Log row carrying all five, because the engine
+  flattens `raw_event` exactly one level and `authenticationContext` arrives
+  as a dict — the same shape as the `outcome` hoist in #1279. Four rules:
+  three distinct-value rules at threshold two (a second network, a second
+  client family, a second country for one session) and one ordered sequence
+  at `critical` — an MFA-satisfied sign-in, then the same session from
+  another network within half an hour, which a threshold cannot express.
+  `mfa_satisfied` is three-valued, because treating "this event says nothing
+  about MFA" as `False` would fire on every directory read, and a denied push
+  is an MFA event and emphatically not a satisfied one. On Entra,
+  `correlationId` is deliberately **not** a fallback for `sessionId`: one
+  identifies a request and the other a session, and substituting would make
+  every sign-in its own session so the reuse detection could never fire while
+  looking like it worked. The clause "this event carries a session" is spelled
+  `session_id_neq: null`, using an operator that exists — inventing `_exists`
+  would have been read as a field literally named `session_id_exists`, which
+  is the `approver_role_neq` defect one release later. Fixtures are
+  hand-authored from an Okta System Log row and a Microsoft Graph `signIn`
+  resource rather than synthesised from the rules, and the negative twin
+  inverts only the clause each rule is about — same session, same user, same
+  event type, same outcome, same network. Windowed rules 72 → 76.
 
 - `services/api/app/models/detection_rule.py` maps the `author` column, which
   has existed since `001_init.sql` and was mapped by nothing — while fusion's

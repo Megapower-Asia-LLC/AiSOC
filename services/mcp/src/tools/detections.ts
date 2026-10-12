@@ -5,7 +5,7 @@
  * whole library and filter in this process, which was safe only because the
  * route it reads answered with an empty list on every deployment — nothing
  * wrote a built-in rule into the table it queried (#1273). It now returns
- * the 2,586-rule compiled corpus the detection engine actually runs, so the
+ * the 2,614-rule compiled corpus the detection engine actually runs, so the
  * search term, severity and technique go to the API and the page bound is
  * the tool's own limit.
  *

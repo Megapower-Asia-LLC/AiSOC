@@ -417,6 +417,12 @@ SIDEBAR_PREAMBLE = (
     # pick up and the page has to be named here or it drops out of
     # navigation on the next regeneration.
     "connectors/syslog-listener",
+    # The same reason, for the two receivers depth 4.2 added: the OTLP log
+    # endpoint and the Kafka input are transports in services/ingest with no
+    # schema() either, so they have to be named here or the generator drops
+    # their hand-written pages from navigation.
+    "connectors/otlp-logs",
+    "connectors/kafka-input",
     # Not a connector, so the generated list below does not cover it.
     "connectors/osquery-extensions",
 )

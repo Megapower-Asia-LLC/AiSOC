@@ -240,6 +240,7 @@ does not.
 | `chatops` | **slack-bot** (8009) · **teams-bot** (8010) |
 | `monitoring` | **prometheus** (9091) · **grafana** (3001) · **alertmanager** (9094) · **tempo** (3200) · **otel-collector** (4317/4318) |
 | `osquery` | **osquery-tls** (8091) |
+| `mcp` | **mcp** (8096, streamable-HTTP MCP server, off by default) |
 
 CORE is 16 long-running services, or 17 counting `ollama-pull`, which fetches
 the model once and exits, and `full` is 22. `connectors` and `actions` moved

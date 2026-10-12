@@ -117,6 +117,16 @@ KNOWN_CAPABILITIES: frozenset[str] = frozenset(
         # its honest result ("prompt delivered, nobody has answered") had no
         # LiveActionStatus to land in.
         "chatops_verify",
+        # MAILBOX. Reported-phish remediation across the recipients of one
+        # message. `purge_email` is a soft delete on both vendors and
+        # `restore_email` is its declared reverse, because the rollback for
+        # the most disruptive verb in the product must resolve to a real
+        # executor rather than to nothing.
+        "block_sender",
+        "purge_email",
+        "restore_email",
+        "search_mailboxes",
+        "unblock_sender",
         # TICKET
         "push_case",
         "push_status",

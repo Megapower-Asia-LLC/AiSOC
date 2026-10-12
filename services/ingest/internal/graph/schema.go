@@ -48,7 +48,7 @@ package graph
 // the nodes it already writes, so a traversal can ask "which of these
 // accounts is a person" without leaving the graph. See ActivityNodeProperties
 // below for exactly which keys land where.
-const SchemaVersion = "v1.2"
+const SchemaVersion = "v1.3"
 
 // ActivityNodeProperties names the properties the activity projection adds,
 // per label. Declared here rather than only written in the extractor so the
@@ -130,10 +130,35 @@ const (
 	// The graph must be safe to hand to an agent.
 	NodeSecret NodeLabel = "Secret"
 
+	// ── v1.3: the AI estate ───────────────────────────────────────────
+	// One label with a `kind` property rather than six labels for app,
+	// coding agent, MCP server, IDE extension, provider key and OAuth
+	// grant. Same reasoning as Identity superclassing User and
+	// ServiceAccount: every question asked of this data is asked across the
+	// kinds ("what does this person run", "what runs on this laptop"), so
+	// six labels would make each a six-way union and would give the
+	// vocabulary six places to drift.
+	//
+	// Tenant-scoped, unlike the threat labels below: an agent is somebody's.
+	NodeAIAsset NodeLabel = "AIAsset"
+
 	// ── v1.1: threat depth ────────────────────────────────────────────
 	// These are the global reference labels. They are deliberately not
 	// tenant-scoped, and tenant_deletion.py exempts them from an
 	// offboarding purge.
+	// ── v1.2: session depth (depth plan 2.4) ─────────────────────────
+	// One session as the vendor understands it, or the closest the vendor
+	// lets us get. The node exists so a traversal can ask what else one
+	// session touched; the authoritative row is in Postgres, because
+	// ADR-0010 measured Neo4j at 42.2% of the CORE profile's remaining
+	// memory and kept the graph in `full`.
+	//
+	// `key_kind` is a property and not four labels: a query that has to
+	// name every kind it wants would silently miss one when a fifth is
+	// added, and the kinds are a strength ordering rather than four
+	// different things.
+	NodeSession NodeLabel = "Session"
+
 	NodeIOC         NodeLabel = "IOC"
 	NodeMalware     NodeLabel = "Malware"
 	NodeCampaign    NodeLabel = "Campaign"
@@ -169,6 +194,8 @@ var AllNodeLabels = []NodeLabel{
 	NodeApplication,
 	NodeCloudAccount,
 	NodeSecret,
+	NodeSession,
+	NodeAIAsset,
 	NodeIOC,
 	NodeMalware,
 	NodeCampaign,
@@ -239,7 +266,28 @@ const (
 	// is who an escalation actually goes to.
 	RelOwnedBy RelType = "OWNED_BY"
 
+	// ── v1.3: the AI estate ───────────────────────────────────────────
+	// Two new types rather than reusing OWNED_BY and RUNS. Those two are
+	// declared in the YAML with one source label and one target label each
+	// (Application -> Employee, Resource -> Application), and a second pair
+	// of endpoints cannot be expressed on them without making the schema
+	// file say something that is not true of the edges actually written.
+	RelOperates RelType = "OPERATES" // User -> AIAsset: who runs it
+	RelHosts    RelType = "HOSTS"    // Endpoint -> AIAsset: where it ran
+
 	// ── v1.1: threat depth ────────────────────────────────────────────
+	// ── v1.2: session depth (depth plan 2.4) ─────────────────────────
+	// Identity|User -> Session. "What else did this principal do" without
+	// scanning every event the principal ever produced.
+	RelOpenedSession RelType = "OPENED_SESSION"
+	// Session -> Session. The assumed-role chain. This edge exists on the
+	// issuing STS call and nowhere else: a chained session's own events
+	// name only the role, so without it the person behind the second hop
+	// is unrecoverable once the issuing record ages out of the lake.
+	RelIssuedSession RelType = "ISSUED_SESSION"
+	// Session -> Alert. What the session is accused of.
+	RelSessionRaised RelType = "SESSION_RAISED"
+
 	RelObservedIOC   RelType = "OBSERVED_IOC"   // Alert -> IOC
 	RelIndicates     RelType = "INDICATES"      // IOC -> Malware
 	RelPartOf        RelType = "PART_OF"        // Malware -> Campaign
@@ -274,6 +322,11 @@ var AllRelTypes = []RelType{
 	RelInAccount,
 	RelStores,
 	RelOwnedBy,
+	RelOpenedSession,
+	RelIssuedSession,
+	RelSessionRaised,
+	RelOperates,
+	RelHosts,
 	RelObservedIOC,
 	RelIndicates,
 	RelPartOf,

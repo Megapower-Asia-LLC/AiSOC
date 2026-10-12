@@ -85,6 +85,12 @@ ALLOWED_TEMPLATE_IDS: tuple[str, ...] = (
     # mintable in its own right for a forwarder that posts over HTTP.
     "syslog",
     "leef-syslog",
+    # Depth plan 4.2 — the OTLP logs receiver at POST /v1/logs. An
+    # exporter presents this token as a Bearer header, and the receiver
+    # refuses any token minted with a different template, so leaving it
+    # out here would make the endpoint reject every export with no way for
+    # an operator to mint one that works.
+    "otlp-logs",
     "splunk-hec",
     "email-forwarded",
     # AI estate. Both templates shipped with the feature and both are what
@@ -307,6 +313,17 @@ _TEMPLATE_CATALOG: dict[str, dict[str, str]] = {
             "Mint this for the syslog listener in the ingest service, which accepts UDP and TCP on a port you "
             "choose and reads RFC 5424, RFC 3164, CEF and LEEF. The token is where the tenant comes from: syslog "
             "carries no header and no authenticated principal, so one listener serves one tenant."
+        ),
+        "category": "siem",
+    },
+    "otlp-logs": {
+        "label": "OpenTelemetry logs (OTLP)",
+        "description": (
+            "Mint this for the OTLP logs receiver at POST /v1/logs, which accepts ExportLogsServiceRequest in "
+            "both the protobuf and JSON encodings. Give it to your collector as "
+            'OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>". The token is where the tenant comes '
+            "from: every attribute on an OTLP record is set by the emitter, so none of them can be trusted "
+            "to name one."
         ),
         "category": "siem",
     },

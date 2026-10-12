@@ -1,13 +1,13 @@
 ---
 sidebar_position: 3
 title: Detection rule library
-description: How /detection lists the 2,586 rules the detection engine runs, where they come from, and what disabling one actually does.
+description: How /detection lists the 2,614 rules the detection engine runs, where they come from, and what disabling one actually does.
 ---
 
 # Detection rule library
 
 `/detection` lists every rule the fusion detection engine loads, together with
-any rule this tenant has authored. On a default install that is **2,586
+any rule this tenant has authored. On a default install that is **2,614
 rules**, and the number on the page is derived from the same artefacts the
 engine reads rather than from a second count.
 

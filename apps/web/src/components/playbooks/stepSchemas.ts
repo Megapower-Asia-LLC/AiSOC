@@ -663,6 +663,65 @@ export const STEP_SCHEMAS: Record<StepType, StepSchema> = {
       },
     ],
   },
+  verify_user: {
+    type: 'verify_user',
+    execution: 'executed',
+    label: 'Verify with the user',
+    description:
+      'Asks the affected person whether they recognise the activity, then their manager if ' +
+      'nobody answers, and resumes the run with the signed answer so a later condition can ' +
+      'branch on it. Never sent on a confirmed true positive, and auto-sent only for alert ' +
+      'classes this tenant opted into.',
+    accent: '#a78bfa',
+    bgColor: '#2a2440',
+    icon: '🙋',
+    shortCode: 'vfy',
+    fields: [
+      USER_TARGET,
+      {
+        key: 'channel',
+        label: 'Ask over',
+        kind: 'select',
+        required: false,
+        options: [
+          { value: 'slack', label: 'Slack' },
+          { value: 'teams', label: 'Teams' },
+          { value: 'email', label: 'Email' },
+        ],
+        help: 'Which configured destination the question goes out on. Defaults to Slack.',
+      },
+      {
+        key: 'message_template',
+        label: 'Question',
+        kind: 'textarea',
+        required: false,
+        placeholder: 'We saw a sign-in to your account from a new country. Was this you?',
+        help:
+          'What the person reads. The three answer links are appended automatically; do not ' +
+          'write your own, because only a signed link can be accepted.',
+      },
+      {
+        key: 'manager',
+        label: 'Escalate to',
+        kind: 'string',
+        required: false,
+        placeholder: 'Leave blank to use the directory',
+        help:
+          'Who is asked if the person does not answer. Blank resolves the manager from SCIM; ' +
+          'a name here overrides the directory.',
+      },
+      {
+        key: 'expires_in_hours',
+        label: 'Expires after (hours)',
+        kind: 'number',
+        required: false,
+        placeholder: '24',
+        help:
+          'Leave blank for the deployment default. An unanswered question resumes the run ' +
+          'with a `timed_out` outcome rather than leaving it waiting forever.',
+      },
+    ],
+  },
   disable_user: {
     type: 'disable_user',
     execution: 'governed',

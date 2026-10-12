@@ -2,7 +2,7 @@
  * What `/detection` is allowed to say about rules it cannot see.
  *
  * Issue #1273: the page rendered "No detection rules yet" on a stack loading
- * and firing 2,586 of them. The sentence was the damage — an operator reading
+ * and firing 2,614 of them. The sentence was the damage — an operator reading
  * it concludes their coverage is zero and stops looking, which is worse than
  * an error.
  *
@@ -86,8 +86,8 @@ function page(
 ): DetectionRuleListResult {
   return {
     rules: [builtin('a', 'SQL Injection Attempt in HTTP Query')],
-    total: 2586,
-    builtinTotal: 2586,
+    total: 2614,
+    builtinTotal: 2614,
     customTotal: 0,
     returned: 1,
     offset: 0,
@@ -112,9 +112,9 @@ describe('the rule library on first paint', () => {
     expect(
       screen.getByText('SQL Injection Attempt in HTTP Query'),
     ).toBeInTheDocument();
-    // One rule is on this page; 2,586 are in the library. Rendering the page
+    // One rule is on this page; 2,614 are in the library. Rendering the page
     // length as the total is how a bounded list starts under-reporting.
-    expect(screen.getByText(/2,586 in the library/)).toBeInTheDocument();
+    expect(screen.getByText(/2,614 in the library/)).toBeInTheDocument();
     expect(
       screen.queryByText(/No detection rules yet/i),
     ).not.toBeInTheDocument();
@@ -154,8 +154,8 @@ describe('the rule library on first paint', () => {
 
   it('names a partially missing corpus rather than publishing the short total', () => {
     swrState.data = page({
-      total: 2583,
-      builtinTotal: 2583,
+      total: 2611,
+      builtinTotal: 2611,
       missingArtefacts: ['windowed_builtin_rules.json'],
     });
     render(<DetectionsView />);

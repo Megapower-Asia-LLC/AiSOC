@@ -97,6 +97,24 @@ tests/test_support_bundle.py:jwt:44
 tests/test_support_bundle.py:private-key:62
 tests/test_support_bundle.py:generic-api-key:112
 
+# The session fixtures named by the paragraph above. Each is the literal
+# `ASIAIOSFODNN7EXAMPLE` standing in for the `accessKeyId` a CloudTrail
+# `userIdentity` carries, because that field is the session key and a
+# fixture that holds something other than a key-shaped value would assert
+# the deriver works on input it will never see.
+services/fusion/tests/test_sessions.py:aws-access-token:162
+services/fusion/tests/test_sessions.py:aws-access-token:166
+services/fusion/tests/test_sessions.py:aws-access-token:178
+services/fusion/tests/test_sessions.py:aws-access-token:179
+services/ingest/internal/graph/session_test.go:aws-access-token:97
+services/ingest/internal/graph/session_test.go:aws-access-token:100
+services/ingest/internal/graph/session_test.go:aws-access-token:118
+services/ingest/internal/graph/session_test.go:aws-access-token:121
+services/ingest/internal/graph/session_test.go:aws-access-token:132
+services/ingest/internal/activity/session_test.go:aws-access-token:203
+services/ingest/internal/activity/session_test.go:aws-access-token:207
+services/ingest/internal/activity/session_test.go:aws-access-token:285
+
 # Asserts that `api_key = '...'` in an LLM response is classified as a leak.
 # The string is "sk-AbCdEf0123456789xyz", invented for the assertion.
 services/agents/tests/test_llm_contract_extra.py:generic-api-key:185
@@ -126,3 +144,15 @@ services/connectors/tests/test_kubernetes_audit.py:generic-api-key:218
 # literal the suite signs with so it can then prove a *different* key fails to verify;
 # it authenticates nothing and exists in no deployment.
 services/api/tests/test_evidence_bundle.py:generic-api-key:26
+
+# Depth 4.2 (#1322): the TAXII live job's signing secret is a CI-only literal
+# that names itself as one; the workflow's Postgres and app both live and die
+# inside the job. Not a credential for anything reachable.
+.github/workflows/taxii-live.yml:generic-api-key:65
+
+# Rule-id lock entries: `"<slug>": "det-threat-anomaly-NNN"` pins a detection
+# rule's id so regeneration cannot renumber it. The scanner's key/value
+# heuristic reads the pair as an api key; it is a rule identifier in a
+# generated lock file.
+detections/rule-ids.lock.json:generic-api-key:841
+detections/rule-ids.lock.json:generic-api-key:854

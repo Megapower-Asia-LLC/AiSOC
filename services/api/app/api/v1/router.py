@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin_users,
     agent_tools,
     agents,
+    ai_assets,
     airgap,
     alert_explain,
     alert_writeback,
@@ -43,6 +44,7 @@ from app.api.v1.endpoints import (
     graph,
     graph_ws,
     health,
+    hunt_reports,
     hunts,
     identity_graph,
     identity_timeline,
@@ -58,6 +60,7 @@ from app.api.v1.endpoints import (
     llm_credentials,
     llm_status,
     marketplace,
+    mcp_access,
     mcp_servers,
     metrics,
     mfa,
@@ -91,13 +94,16 @@ from app.api.v1.endpoints import (
     sla,
     sso_connections,
     stix_taxii,
+    taxii,
     tenant_provision,
     tenant_skills,
     tenants,
     threat_intel,
     translation,
     usage,
+    verification_policies,
     waitlist,
+    war_rooms,
     workload_identities,
 )
 
@@ -170,6 +176,12 @@ api_router.include_router(plugins.router)
 api_router.include_router(community.router)
 api_router.include_router(marketplace.router)
 api_router.include_router(mcp_servers.router)
+# Depth 9.1 (parity 6.6): the *inbound* MCP surface. `mcp_servers` above is
+# the outbound registry -- third-party servers the agent may call. These
+# routes are the authority behind AiSOC's own MCP server once it is on the
+# network: per-tenant tool grants, an approval queue for anything that is
+# not a read, and the audit row for every call including the reads.
+api_router.include_router(mcp_access.router)
 # Depth 9.2 (parity 6.5): vector recall over past cases, runbooks and
 # institutional memory, every hit carrying an author, a source, a scope,
 # an expiry and a state. `knowledge_base` above is the full-text half and
@@ -262,6 +274,7 @@ api_router.include_router(saved_views.router)
 # Administering SCIM credentials, which is a console action. The SCIM
 # surface those credentials authenticate is mounted at /scim/v2 in main.py.
 api_router.include_router(scim_tokens.router)
+api_router.include_router(verification_policies.router)
 api_router.include_router(sso_connections.router)
 
 # Wave 3 — operational maturity
@@ -326,11 +339,17 @@ api_router.include_router(evaluations.router)
 api_router.include_router(knowledge_base.router)
 
 # Wave 4 — advanced capabilities
+api_router.include_router(taxii.router)
+api_router.include_router(taxii.admin_router)
 api_router.include_router(threat_intel.router)
 api_router.include_router(posture.router)
 api_router.include_router(easm.router)
 api_router.include_router(identity_graph.router)
 api_router.include_router(reports.router)
+# Depth 9.5: a natural-language hunt or a retro-hunt that found something
+# becomes a readable, cited report, exportable through the same WeasyPrint
+# path the weekly digest already uses.
+api_router.include_router(hunt_reports.router)
 api_router.include_router(retro_hunts.router)
 
 # Wave 7 — customizable dashboard / report builder
@@ -419,3 +438,17 @@ api_router.include_router(graph_ws.router)
 # upgrade and SSE request, deriving the tenant from the verified claim so the
 # fan-out edge is no longer unauthenticated.
 api_router.include_router(realtime.router)
+
+# Observed AI estate — depth 6.1. /ai-assets reads the inventory the fusion
+# recorder writes from the raw-events branch (routes behind ai_estate:read /
+# ai_estate:write; deliberately no create route — an inventory a human can
+# type into stops answering "what is running that nobody told us about").
+# The module shipped in #1303 with no include site, so its three routes were
+# unreachable on that branch; mounted here by the merge train.
+api_router.include_router(ai_assets.router)
+
+# Case war rooms — depth 9.4. One action opens a Slack channel for a case,
+# invites the assignees and mirrors the timeline; the sweep worker is started
+# in main.py. Same story as ai_assets: #1315 shipped the module with no
+# include site, so POST /war-rooms/cases/{id} was unreachable until here.
+api_router.include_router(war_rooms.router)

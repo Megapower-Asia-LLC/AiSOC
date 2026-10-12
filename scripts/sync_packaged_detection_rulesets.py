@@ -3,11 +3,11 @@
 
 Why this exists
 ---------------
-The fusion detection engine loads four things and runs 2,586 rules from them:
+The fusion detection engine loads four things and runs 2,614 rules from them:
 
-    services/fusion/app/data/detection_ruleset.json            741 stateless
+    services/fusion/app/data/detection_ruleset.json            765 stateless
     services/fusion/app/data/detection_ruleset_imported.json  1770 stateless
-    services/fusion/app/data/windowed_ruleset.json              72 (70 windowed + 2 sequence)
+    services/fusion/app/data/windowed_ruleset.json              76 (73 windowed + 3 sequence)
     services/fusion/app/services/windowed_detection.py           3 windowed, declared in Python
 
 The console's rule-management surface could see none of them (#1273). The
