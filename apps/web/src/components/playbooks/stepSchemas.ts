@@ -683,7 +683,11 @@ export const STEP_SCHEMAS: Record<StepType, StepSchema> = {
         label: 'Ask over',
         kind: 'select',
         required: false,
-        options: ['slack', 'teams', 'email'],
+        options: [
+          { value: 'slack', label: 'Slack' },
+          { value: 'teams', label: 'Teams' },
+          { value: 'email', label: 'Email' },
+        ],
         help: 'Which configured destination the question goes out on. Defaults to Slack.',
       },
       {
@@ -699,7 +703,7 @@ export const STEP_SCHEMAS: Record<StepType, StepSchema> = {
       {
         key: 'manager',
         label: 'Escalate to',
-        kind: 'text',
+        kind: 'string',
         required: false,
         placeholder: 'Leave blank to use the directory',
         help:

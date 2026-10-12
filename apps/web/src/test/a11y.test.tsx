@@ -238,6 +238,11 @@ function swrFixture(key: string): unknown {
       pageSize: 25,
     };
   }
+  if (key === "war-rooms" || key.startsWith("war-rooms/")) {
+    // Depth 9.4 panel: a list, and empty is the state every stock install is
+    // in. The panel's empty state is what axe should see.
+    return [];
+  }
   if (key === "case" || key.startsWith("case/") || key.includes("/cases/")) {
     return {
       id: "c1",

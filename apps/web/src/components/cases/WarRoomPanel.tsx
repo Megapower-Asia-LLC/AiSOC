@@ -79,7 +79,7 @@ export function WarRoomPanel({ caseId }: { caseId: string }) {
   return (
     <section className="bg-gray-900/60 border border-gray-800/60 rounded-xl p-4 space-y-3" aria-label="War room">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-200">War room</h3>
+        <h2 className="text-sm font-semibold text-gray-200">War room</h2>
         <div className="flex items-center gap-2">
           <button
             type="button"

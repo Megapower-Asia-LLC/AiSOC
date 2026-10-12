@@ -7336,6 +7336,43 @@ export interface AnalystWorkload {
   unassigned: { open_cases: number; open_high_or_critical: number };
 }
 
+/**
+ * One war room row, as `GET /api/v1/war-rooms/cases/{id}` returns it.
+ *
+ * `last_synced_at: null` means the sweep has never run for this room — a
+ * different fact from "ran and had nothing to say", and the panel renders
+ * them differently. `last_error` is empty on success; a room that has
+ * silently stopped mirroring is worse than one that was never opened, so
+ * the reason is surfaced rather than swallowed.
+ */
+export interface WarRoom {
+  id: string;
+  case_id: string;
+  provider: string;
+  channel_id: string;
+  channel_name: string;
+  channel_url: string;
+  state: string;
+  opened_by: string;
+  last_synced_at: string | null;
+  last_error: string;
+}
+
+// Depth 9.4 — case war rooms. #1315 shipped WarRoomPanel importing this
+// client without adding it, so the component could not typecheck; added by
+// the merge train against the server's own response models.
+export const warRoomApi = {
+  forCase: (caseId: string) => request<WarRoom[]>(`/api/v1/war-rooms/cases/${encodeURIComponent(caseId)}`),
+
+  /** Open fails loudly by design: the analyst pressed a button, so a vendor
+   *  refusal surfaces as the vendor's own sentence rather than a quiet retry. */
+  open: (caseId: string, provider: 'slack' | 'teams') =>
+    request<WarRoom>(`/api/v1/war-rooms/cases/${encodeURIComponent(caseId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ provider }),
+    }),
+};
+
 export const caseDepthApi = {
   /**
    * Apply one triage decision to many alerts.
