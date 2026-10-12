@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [19.0.0] - 2026-10-12
+
 ### BREAKING
 
 - **`PATCH /api/v1/alerts/{id}` now refuses a field it cannot apply.** The
@@ -121,8 +123,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loosened: the tenant comes from the authenticated principal, and the API
   handler was already dropping the field, so the isolation had been an
   accident of schema strictness rather than a control.
-
-### Fixed
 
 - **Seven shipped Okta identity rules can fire for the first time** (#1279).
   Okta carries its result inside an `outcome` *object*, and
@@ -416,6 +416,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resource rather than synthesised from the rules, and the negative twin
   inverts only the clause each rule is about — same session, same user, same
   event type, same outcome, same network. Windowed rules 72 → 76.
+
+- **A session has one producer and three readers** (depth 2.4, ADR-0010).
+  `services/ingest` derives a session key from each vendor's own session
+  field, labels how strong it is (`vendor_session` / `vendor_credential` /
+  `vendor_flow` / `derived`) and writes it once; the Postgres, ClickHouse and
+  Neo4j stores read that projection and derive nothing, held by
+  `check_session_projection.py` so the three stores cannot disagree about
+  which session an event belongs to after the next vendor-schema change.
+- **A real security posture, collected and versioned so a detection can read
+  it at event time** (depth 2.5). `__posture_snapshot__` collectors for AWS,
+  Azure, GCP, Google Workspace and GitHub — plus AWS permission boundaries —
+  write versioned snapshots, so a rule evaluates against the posture that was
+  true when the event happened rather than the posture now.
+- **Behavioural baselines run in CORE as a fusion module** (depth 3.4, ADR-0011),
+  rather than requiring the `full`-profile UEBA service, paired with threat
+  conditions so a baseline deviation is only a signal where a threat condition
+  also holds.
+- **An OTLP logs receiver, a Kafka input for customer topics, and a real
+  TAXII 2.1 server** over the tenant IOC store (depth 4.2). The three share
+  the ingest stream-health failure table and take their tenant from a
+  credential, never a body field.
+- **A cold-tier lake query reports an estimated cost and a progress state**
+  instead of timing out silently (depth 4.3). The job is claimed with an
+  atomic conditional `UPDATE` so two API replicas cannot both start the same
+  scan, and a terminal state is never re-opened by a stale progress read.
+- **Throughput: a required-field rule index, entity partitioning, concurrent
+  triage, and a realistic load mix in the harness** (depth 4.4, ADR-0012).
+  The cloud-hardware run is stated as not done rather than implied.
+- **The Helm chart installs CORE, and exactly one scheduler replica leads**
+  (depth 4.5) through a Postgres lease, so a deployment scaled for
+  availability does not poll every vendor twice. The managed-Kubernetes run
+  is recorded as unmeasured.
+- **A playbook can ask the person who signed in, then their manager, and
+  branch on the signed answer** (depth 5.4–5.6). A `verification` pause
+  suspends the run to a durable store and escalates once to the manager
+  resolved from SCIM when nobody answers; "no, that wasn't me" and "nobody
+  answered" both reach containment behind an analyst approval, while "yes"
+  closes the case. Auto-sent only for alert classes a tenant opts into, and
+  never on a confirmed true positive.
+- **AiSOC's own MCP server speaks streamable HTTP, authorized and audited per
+  call** (depth 9.1). An opt-in `mcp` profile exposes the server over HTTP
+  with per-tenant scoped keys, tools enabled per tenant, an audit row for
+  every call including reads, and approval on anything that is not read-only;
+  the tenant comes from the request credential rather than a parameter.
+- **A case's war room** (depth 9.4). One action opens a Slack or Teams channel
+  for a case, invites the assignees, posts the timeline and verdicts as they
+  change, and syncs decisions back, built on `services/slack-bot` and
+  `services/teams-bot`.
+- **A hunt that finds something becomes a cited report** (depth 9.5). A
+  natural-language hunt or a retro-hunt that returns hits produces a case
+  report — what, how, where, when — with ledger citations, exportable as PDF
+  through the existing report path.
+- **The responder app is an installable build with on-device voice and real
+  push delivery** (depth 9.6). `services/realtime` now routes APNs and FCM
+  subscriptions to their real transports instead of signing every one as
+  web-push; the device-build run is maintainer-blocked and says so in the
+  product, not only in the tracker.
+- **WebAuthn as a console second factor, and MFA enforceable per role**
+  (depth 8.1): a platform authenticator registered and asserted against the
+  real ceremony, enforced per tenant and per role.
+- **An enforced audit retention window that leaves the surviving chain
+  verifiable** (depth 8.1, ADR-0013). The purge runs through a
+  `SECURITY DEFINER` function that writes a re-anchoring checkpoint before it
+  deletes, so an intact chain does not read as tampered with, and the runtime
+  role holds no `DELETE` on `audit_log` so the function is the only path.
+- **axe accessibility coverage reached the case workspace and the alert
+  list, and the four defects it found** (depth 8.1) — the two operator views
+  parity 4.7 had left uncovered.
+- **A tenant's configured entitlement limit can refuse work, when the tenant
+  opts in** (depth 8.1), in `services/api/app/services/entitlements.py`. The
+  six operator console pages the item also names are not built, and that is
+  said rather than implied.
 
 - `services/api/app/models/detection_rule.py` maps the `author` column, which
   has existed since `001_init.sql` and was mapped by nothing — while fusion's
