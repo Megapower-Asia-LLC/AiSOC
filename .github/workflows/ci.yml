@@ -799,7 +799,14 @@ jobs:
       # two scheduler replicas each polled every vendor. Self-test
       # first, on the same tree: nine injected violations, one per rule.
       - name: Deployment completeness gate — self-test
-        run: python3 scripts/check_deployment_completeness.py --self-test
+        # The gate parses the chart and the compose file, so it is the first
+        # step in this job that needs a YAML parser; the runner's Python does
+        # not ship one, and the install two steps down arrived too late for
+        # this gate — which only surfaced once the step before it stopped
+        # failing first.
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/check_deployment_completeness.py --self-test
       - name: Deployment completeness gate
         run: python3 scripts/check_deployment_completeness.py
       # Depth 9.2. The probe set behind the recall measurement has to stay
