@@ -198,6 +198,7 @@ const sidebars: SidebarsConfig = {
         "operations/enterprise-sso",
         "operations/console-mfa",
         "operations/data-governance",
+        "operations/cold-tier-queries",
         "compliance/evidence-pack",
         "compliance/fips-posture",
         "operations/credentials",

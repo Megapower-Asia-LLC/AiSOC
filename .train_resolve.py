@@ -69,6 +69,8 @@ def main() -> None:
             r = ours + theirs
         elif mode == "theirs":
             r = theirs
+        elif mode == "ours":
+            r = ours
         elif mode == "roadmap":
             r = dedupe_matrix_paragraph(theirs)
         elif mode == "checkboxes":

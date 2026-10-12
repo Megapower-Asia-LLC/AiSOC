@@ -984,7 +984,7 @@ endpoint produces once triage falls through to its deterministic scorer.
   hub, and the Data Lake Gen2 listing path has never run against a real
   storage account. The claim row is `PARTIAL` for exactly that reason.
 - [ ] **4.2** Standard inputs (syslog, OTLP, Kafka, TAXII 2.1)
-- [~] **4.3** Retention the tenant chooses. **Two of three bullets
+- [x] **4.3** Retention the tenant chooses. **All three bullets
   closed.** The lake TTL is now a 400-day ceiling rather than a fixed 90
   days, in `001_init.sql`, in the tiering DELETE and in a `MODIFY TTL`
   migration so an existing volume converges; `MAX_LAKE_DAYS` bounds what a
@@ -996,11 +996,57 @@ endpoint produces once triage falls through to its deterministic scorer.
   violations, one per rule) wired into `ci.yml :: python-lint`. 13 new
   tests, api suite 4,569 -> 4,582.
 
-  **Open, and not attempted:** the third bullet — a cold-data query through
-  `/lake/sql` or a hunt reporting an estimated cost and a progress state
-  instead of timing out silently. `/lake/sql`'s `cost` today is a
-  rate-limit token price, not a scan estimate, and there is no progress
-  state at all.
+  **The third bullet is now closed too.** `/lake/sql`'s `cost` was the
+  rate limiter's token price — a number about how often you may ask, not
+  about how much the asking will read — and there was no progress state
+  at all: a cold query either returned inside the published 30-second
+  bound or raised a bare timeout.
+
+  Every figure in the new estimate is ClickHouse's own: rows and parts
+  from `EXPLAIN ESTIMATE`, the warm/cold split from `system.parts`
+  joined to the storage policy's volumes (a part is cold because the
+  server says it is on the cold volume, not because of its age — those
+  disagree whenever a move is in flight), and progress from
+  `system.processes` keyed on a query id we set. There is deliberately
+  **no invented throughput constant**: a predicted duration needs a
+  bytes-per-second figure and the only honest source is a measurement on
+  the deployment's own hardware, so the routing rule is structural — a
+  query goes to a job when the estimate says it must read the cold
+  volume.
+
+  `estimated_usd` is **null** unless the deployment configures
+  `AISOC_LAKE_COLD_RETRIEVAL_USD_PER_GB`.
+  `docs/decisions/storage-cost-model.json` prices residency, not reads;
+  quoting it for a scan would be the wrong number stated confidently.
+  `null` means "we do not know what this costs" and `0.0` means "this
+  costs nothing", and a test pins that they are never confused.
+
+  Jobs are rows (migration `111`), not an in-process registry: the API
+  runs more than one replica, and that shape has been shipped and
+  regretted three times here. 26 pure tests, 12 live ones against real
+  Postgres, eight new rules in `check_retention_window.py`, and
+  `lake-query-jobs-live.yml`.
+
+  **The test that had to be rewritten, because the first one proved
+  nothing.** The claim race originally gathered five concurrent claims
+  and asserted one winner — and it passed under a SELECT-then-UPDATE
+  implementation as well, measured by subverting the claim and watching
+  it stay green. It is now two explicitly interleaved transactions, and
+  that version goes red when the predicate is removed.
+
+  **Two of the eight new gate rules were wrong in the same direction**
+  and were caught by their own injections: the terminal-state rule
+  matched a status string `list_stuck_jobs` legitimately also uses, and
+  the routing rule matched a response *field name* rather than the
+  branch, so an endpoint that reports `touches_cold` and ignores it
+  passed.
+
+  **Not measured, and why: no ClickHouse was exercised.** There is none
+  in CI and none on the machine this was written on, so `EXPLAIN
+  ESTIMATE`, the `system.parts` join and the `system.processes` read are
+  asserted against ClickHouse's documented shapes with the parsing
+  tested on recorded rows. What is proven live is the job lifecycle,
+  which is where the concurrency defects are.
 
   **Two limits on what is closed**, recorded rather than left to be found:
   the lake half is gated statically — no test in CI watches a row survive
@@ -1372,6 +1418,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-07 | 0.3 | `make up` and `make smoke` (10/10) pass. Injection suite and load-harness baselines committed. `make up-full` deferred (D2) and hosted model rows blocked (D3). Fixing D1 was a precondition for the load-harness baseline. |
 | 2026-10-09 | 3.3 | Identity privilege (18 rules) and a per-tenant first-seen store (2) built; 5 rules were never unreachable (gate operator drift, D9); 18 retired with a reason (D10). `MAX_UNREACHABLE` 45 → 2, the two remaining both needing the 3.4 baseline. Two matcher operators three shipped rules already used were implemented. |
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
+| 2026-10-11 | 4.3 | Third bullet closed. Reproduced: `check_retention_window.py` with the new rules reported no cold-query estimator, no job surface and no job table on the pre-fix tree. Built `lake_cold_query.py` (EXPLAIN ESTIMATE + system.parts + system.processes, no invented throughput or price), `lake_query_runner.py` and migration `111`. Negative control: removing the `status = 'queued'` predicate makes both interleaved transactions claim one job and the live suite goes red. The first version of that test — five gathered claims — passed under the broken implementation and was replaced. 26 pure + 12 live tests; matrix 306 rows, 303 GATED. |
 | 2026-10-11 | 4.2 | Reproduced: `check_standard_inputs.py` against the pre-fix tree reported no OTLP package, no Kafka input and no TAXII server — the only TAXII-shaped route being a demo-gated sample list. Built all three, after moving the consumer-health classifier out of `graph_ws` into `streamhealth` so the new Kafka consumer shares the table rather than copying it. Negative controls recorded in the PR: a timestamp-only TAXII cursor loses an indicator in the single-row pagination walk (measured — 3 of 4), and nineteen gate injections each go red. Writing it found four defects, including an OTLP template nobody could mint a token for and a gate rule that read an error message instead of the behaviour. Ingest Go suite green; api projection suite 37; live TAXII suite 15. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
 | 2026-10-11 | 5.4 | Reproduced: `check_stateful_verification.py` against `origin/main` reported eight problems — no `verification.py` at all, `verify_user` absent from the control-flow table, no resume path, no escalation, no `timed_out`, no sweep, no migration and no writer for the opt-in table. Built the stage machine on the existing pause row rather than a second table. Three negative controls recorded in the PR: reverting the run-loop break fails three tests including the `wait` regression (D11), removing `manager_ref=_extract_manager(body)` fails three SCIM tests, and removing `ENABLE ROW LEVEL SECURITY` from migration 102 fails the live tenancy test with "tenant B read tenant A's verification policy". Two pre-existing tests pinned the old shape and were widened rather than relaxed: the control-flow table's membership (still an equality, now of four) and the sweeper's return dict. Writing the gate found a hole in the gate: its first block extractor matched `\n\n\n`, which finds nothing for the *last* function in a module, so the ordering rule was skipped entirely over an injected violation. |
