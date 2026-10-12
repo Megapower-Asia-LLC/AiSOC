@@ -46,6 +46,7 @@ from app.workers.report_scheduler import run_forever as run_report_scheduler
 from app.workers.retention_purge import run_forever as run_retention_purge
 from app.workers.retro_hunt_consumer import run_forever as run_retro_hunt_consumer
 from app.workers.shadow_reconcile import run_forever as run_shadow_reconcile
+from app.workers.war_room_sync import run_forever as run_war_room_sync
 from app.workers.weekly_digest_task import run_forever as run_weekly_digest
 
 _metrics_bearer = HTTPBearer(auto_error=False)
@@ -594,6 +595,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as exc:
             logger.warning("retro_hunt consumer failed to start", error=str(exc))
 
+    # Depth 9.4. Keeps every open war room current with its case. "Posts the
+    # timeline and verdicts as they change" is a sweep, and without one the
+    # feature is a button that posts a header once and goes quiet — worse
+    # than not opening the channel, because the people in it believe they
+    # are watching the case.
+    #
+    # Deliberately not under the scheduler lock, same reasoning as the
+    # outbound-webhook worker: every post is keyed and the posts table has a
+    # unique constraint, so two replicas racing end with one post and one
+    # `ON CONFLICT DO NOTHING`, while a single lock holder stalling every
+    # tenant's rooms would be the worse failure.
+    war_room_sync_task: asyncio.Task | None = None
+    try:
+        war_room_sync_task = asyncio.create_task(run_war_room_sync(), name="war_room_sync_worker")
+        logger.info("war_room_sync worker started")
+    except Exception as exc:
+        logger.warning("war_room_sync worker failed to start", error=str(exc))
+
     # Phase 2.6 — flip /readyz to 200. All lifespan-managed
     # dependencies have been touched at this point (DB, Redis,
     # Neo4j, schedulers); the load balancer can route traffic
@@ -722,7 +741,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as exc:
             logger.warning("shadow_reconcile worker shutdown error", error=type(exc).__name__)
 
-    for task, label in ((report_scheduler_task, "report_scheduler"), (outbound_webhook_task, "outbound_webhook")):
+    for task, label in (
+        (report_scheduler_task, "report_scheduler"),
+        (outbound_webhook_task, "outbound_webhook"),
+        (war_room_sync_task, "war_room_sync"),
+    ):
         if task is not None and not task.done():
             task.cancel()
             try:

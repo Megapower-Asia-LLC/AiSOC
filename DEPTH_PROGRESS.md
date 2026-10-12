@@ -969,6 +969,35 @@ endpoint produces once triage falls through to its deterministic scorer.
   `aisoc_cases.alert_ids` is `uuid[]` while the two columns beside it are
   JSONB, which a stand-in would have accepted.
 - [ ] **9.4** War rooms
+
+- [ ] **9.3** Case depth (parity 5.6 remainder)
+- [~] **9.4** War rooms. **Slack is complete; Teams is built and
+  maintainer-blocked, and the block is stated in the product rather than
+  here.** One action (`POST /war-rooms/cases/{id}`, and a console panel on
+  the case) creates the channel, invites the assignees, posts the case
+  header and records the room; a sweep worker posts the timeline and
+  verdicts as they change; a decision taken in the channel comes back onto
+  the case through a service-token-only route. Idempotency is the design
+  rather than a refinement: every post is keyed by a fingerprint of the
+  *event value*, unique per room, so a retry is a no-op, two replicas cannot
+  double-post, and a case that goes `open → closed → open` posts three times
+  because a re-opened case is news. The sweep derives its events from the
+  case row rather than a cursor, so a missed tick cannot lose one. Opening
+  fails **loudly** (502 carrying the vendor's own sentence) because an
+  analyst pressed a button; syncing fails **soft** and records `last_error`,
+  which the console renders — a room that has silently stopped mirroring is
+  worse than one that was never opened, and "never synced" renders
+  differently from "synced with nothing to say". A chat button reaches four
+  verbs and **`close` is not one of them**. 37 new tests (17 slack-bot, 9
+  teams-bot, 11 API). **Open and stated, not inferred:** creating a Teams
+  channel needs Microsoft Graph with an Entra application registration and
+  admin consent, which no maintainer has provisioned, so that route answers
+  **501 naming all four missing settings** and deliberately does not fall
+  back to the incoming webhook — one shared channel per deployment would put
+  the next incident's traffic in the last one's thread. The Graph calls
+  themselves have therefore never run against a real tenant. Neither has the
+  Slack path against a real workspace: it is covered by 17 tests against a
+  fake client, and no Slack token exists here.
 - [ ] **9.5** Hunt to report
 - [ ] **9.6** Native responder
 
@@ -984,6 +1013,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-11 | 9.3 | Reproduced: the alert merge columns had zero writers outside the ORM model; `grep -rn custom_field services/api` and `grep -rn workload` (excluding workload *identities*) both counted zero; and `grep -rn bulk apps/web/src/components/alerts` found only unrelated comments, so the only bulk verb in the product was `POST /alerts/bulk-close` with no console surface at all. The two-case-table trap named in the brief was already closed by migration 083 and `check_one_case_table.py` reports OK, so `aisoc_cases` is the table this item deepens. Three negative controls recorded in the PR and wired into the live workflow. The live suite found a real defect on its first run: `aisoc_cases.alert_ids` is `uuid[]` while `ioc_ids` and `artifact_ids` beside it are JSONB, and the merge statement had assumed JSONB. |
 
 | 2026-10-11 | 9.1 | Reproduced: on `origin/main` the greps for `StreamableHTTP` in `services/mcp/src/`, for `aisoc-mcp` in `docker-compose.yml` and `infra/helm/`, for a per-tenant tool grant in `services/api/app/`, and for an `mcp:` audit action all counted **zero**, and `check_mcp_over_http.py` reported seven problems. Built the HTTP transport, the authorize/complete pair, the tenant grant table, the approval queue bound to a call's arguments, and the generated tool catalogue held in parity with the TypeScript registry. Four negative controls recorded in the PR; one of them found a hole in the new gate itself, which reported `http.ts` for reading the process-wide API key when the only mention was a comment saying it deliberately does not — the detector now strips comments before matching, and refuses a `{...cfg}` spread as well, because a spread is correct today and a credential fallback the day somebody reorders the literal. |
+| 2026-10-11 | 9.4 | Reproduced: `grep -rn 'conversations.create|channels.create|war_room'` across every service and the console returned four hits, all prose — a playbook template describing a "Notify war-room" step and an eval fixture quoting the phrase. Both bots could only answer: slack-bot had one outbound route (an approval card) and teams-bot posts to a hand-configured webhook. Built the channel creation, the keyed sweep, the decision route and the console panel. Teams is 501 with its four missing settings named, which is the honest state and the one a stock install is in. |
 | 2026-10-11 | 9.2 | Reproduced: `knowledge_base.py` searched with `to_tsvector`/`plainto_tsquery` and nothing else; `grep -rn qdrant services/api/app/` found only the migration runner and the tenant-deletion sweep, no recall path; and no memory row anywhere carried an author, a source, a scope, an expiry or a state. Built the store of record, the Qdrant index over it, the conflict state machine, the case-closure writer and the recall scorer. Two negative controls recorded in the PR: restoring last-write-wins on a contradiction fails three tests, and restoring vector truncation fails one. The measurement is negative and is published as such — see D11, which also records that it caught the truncation defect. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |
