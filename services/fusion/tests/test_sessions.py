@@ -337,6 +337,10 @@ async def test_the_idle_sweep_runs_from_the_worker_rather_than_nowhere():
     worker = consumer_mod.FusionWorker.__new__(consumer_mod.FusionWorker)
     worker._running = True
     worker._lake = None
+    # Depth 6.1 gave the ticker a second optional store; the double carries
+    # it the same way the constructor does, as None, so this test keeps
+    # exercising the real loop rather than an AttributeError in it.
+    worker._ai_assets = None
     worker._sessions = SweepOnlyStore()
 
     # The real period is a quarter of the idle window (~7 minutes). Shortened
