@@ -125,6 +125,7 @@ async def enable_class(
         actor_id=current_user.user_id,
         actor_email=current_user.email,
         changes={"alert_class": body.alert_class},
+        api_key_prefix=getattr(current_user, "api_key_prefix", None),
     )
     await db.commit()
     return VerificationPolicyOut(alert_class=row.alert_class, enabled_by=row.enabled_by, enabled_at=row.enabled_at)
@@ -159,5 +160,6 @@ async def disable_class(
         actor_id=current_user.user_id,
         actor_email=current_user.email,
         changes={"alert_class": folded},
+        api_key_prefix=getattr(current_user, "api_key_prefix", None),
     )
     await db.commit()

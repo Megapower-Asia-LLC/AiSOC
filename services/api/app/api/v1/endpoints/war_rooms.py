@@ -283,6 +283,10 @@ async def channel_decision(
         db=db,
         tenant_id=row["tenant_id"],
         actor_email=body.actor or None,
+        # The credential on this path is the bot's shared service token —
+        # there is no session and no API key, and None records exactly that.
+        # Which human decided is `actor_email`, as the bot reported it.
+        api_key_prefix=None,
         action="war_room:decision",
         resource="case",
         resource_id=str(row["case_id"]),

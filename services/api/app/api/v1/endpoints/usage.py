@@ -311,6 +311,7 @@ async def put_enforcement(
         resource_id=str(current_user.tenant_id),
         changes={"enforce": requested},
         request=request,
+        api_key_prefix=getattr(current_user, "api_key_prefix", None),
     )
     await db.commit()
     return EnforcementPolicy(enforce=requested)

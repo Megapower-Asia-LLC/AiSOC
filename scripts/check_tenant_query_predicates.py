@@ -406,6 +406,23 @@ RATCHET: dict[str, str] = {
         "the posted-keys read is scoped to one war_room_id — the room decides the tenant, and the "
         "unique constraint on (war_room_id, event_key) is what makes the sweep idempotent"
     ),
+    "services/api/app/services/lake_query_runner.py::claim_statement::LakeQueryJob": (
+        "the claim is one conditional UPDATE by job id where status = 'queued' — a worker claiming "
+        "work enqueued by tenant-scoped routes, the same shape as approval_expiry.run_once. The "
+        "routes that create and read jobs bind the tenant; the runner executes whichever replica won, "
+        "and the policy's unbound-session arm is what admits its GUC-less session"
+    ),
+    "services/api/app/services/lake_query_runner.py::_record_progress::LakeQueryJob": (
+        "progress lands on the claimed job by id; the claim above is what decided whose job it is"
+    ),
+    "services/api/app/services/lake_query_runner.py::_finish::LakeQueryJob": (
+        "terminal state lands on the claimed job by id, guarded so a finished job is never revived; "
+        "same claim-then-act shape as _record_progress"
+    ),
+    "services/api/app/services/lake_query_runner.py::list_stuck_jobs::LakeQueryJob": (
+        "the stuck sweep asks 'which running jobs lost their runner', tenant-unbound by the same "
+        "discover-a-working-set reasoning as due_deliveries; it only moves jobs to a terminal state"
+    ),
     "services/api/app/workers/war_room_sync.py::<module>::aisoc_case_war_rooms": (
         "the sweep worker's 'which rooms are open' discovery, the same cross-tenant working-set "
         "shape as report_scheduler.run_once; sync_war_room then handles one room at a time"
@@ -471,11 +488,14 @@ RATCHET: dict[str, str] = {
 # answer link and verification sweeper, 9.4's war-room sweep, decision route
 # and worker discovery — each the credential-lookup or discover-a-working-set
 # shape already recorded above, verified in code before being recorded. Four
-# more were written for the lake job runner and then deleted again in the same
-# change: fixing lake_query_jobs' WITH CHECK (the unbound-session arm every
-# sibling policy carries) moved those statements onto the RLS-context credit,
-# which this gate's stale-entry check correctly refused to double-count.
-MAX_RATCHET = 50
+# more cover the lake job runner's ORM statements — keyed on the model class
+# (LakeQueryJob), the way every ORM entry here is keyed, which is the detail
+# the first attempt got wrong: keyed on the table name they matched nothing,
+# so the same four entries read as stale and the four statements as unscoped
+# in one run. The policy's unbound-session arm (fixed in the same train) is
+# what admits the runner's GUC-less session at the database; this entry is
+# what records the query-layer decision.
+MAX_RATCHET = 54
 
 
 # ---------------------------------------------------------------------------
