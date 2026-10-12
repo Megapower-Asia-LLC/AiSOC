@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     autonomy_policy,
     branding,
     business_context,
+    case_depth,
     cases,
     community,
     compliance,
@@ -97,7 +98,6 @@ from app.api.v1.endpoints import (
     translation,
     usage,
     waitlist,
-    war_rooms,
     workload_identities,
 )
 
@@ -119,10 +119,12 @@ api_router.include_router(alert_explain.router)
 # Dry-run by default; AISOC_SIEM_WRITEBACK_EXECUTE opts in to the vendor call.
 api_router.include_router(alert_writeback.router)
 api_router.include_router(cases.router)
-# Depth 9.4: one action opens a Slack or Teams channel for a case, the
-# sweep posts the timeline and verdicts as they change, and a decision
-# taken in the channel comes back onto the case.
-api_router.include_router(war_rooms.router)
+# Depth 9.3 (parity 5.6 remainder): alert and case merge, bulk triage,
+# tenant custom fields and per-analyst workload. Its own prefix rather
+# than hanging off /alerts and /cases, because a path parameter compiles
+# to `[^/]+` and `/alerts/merge` beside `/alerts/{alert_id}` is the exact
+# shape that had `GET /{hunt_id}` swallowing its sibling `/runs`.
+api_router.include_router(case_depth.router)
 # Attack-chain timeline (T3.3 — v8.0 parallel team plan).
 # Backs the attack-chain view in apps/web/src/components/cases/CaseWorkspace.tsx with a
 # ranked timeline (graph-distance + temporal proximity + risk overlap)
