@@ -999,6 +999,30 @@ endpoint produces once triage falls through to its deterministic scorer.
   Slack path against a real workspace: it is covered by 17 tests against a
   fake client, and no Slack token exists here.
 - [ ] **9.5** Hunt to report
+- [x] **9.5** Hunt to report. A natural-language hunt or a retro-hunt
+  sighting becomes a stored report answering what, how, where and when, with
+  ledger citations, readable as JSON or HTML and exportable as PDF through
+  the **same WeasyPrint path and the same unavailability error** the weekly
+  digest uses — one renderer, because two drift and the PDF stops matching
+  the page somebody approved. Three refusals carry the item: a hunt that has
+  never run is refused (a report about an unexecuted query is a statement
+  about the query, not the estate), an **uncited report is refused at
+  persist time** (an uncited report is an assertion), and a section that
+  cannot be derived stays **empty** and renders as "not recorded" rather
+  than as a confident sentence about nothing. The retro-hunt builder
+  computes the gap between when intelligence arrived and when the estate
+  first saw the indicator, which is the number a retro-hunt exists to
+  produce and which a reader would otherwise get by subtracting two
+  timestamps. Graded by `.github/workflows/hunt-report-live.yml` against a
+  real Postgres with three negative controls. 14 new tests. The live suite
+  earned its keep three times on its first run: `alerts` has no singular
+  `affected_host` (it is `affected_hosts`, a JSONB array, and `entities` is
+  what fusion actually writes), `investigation_events` has **no `case_id` at
+  all** so the ledger is only reachable by joining `investigation_runs`, and
+  that table's `case_id` is TEXT rather than UUID so binding a UUID raises
+  in asyncpg instead of coercing. Each would have shipped under a SQLite
+  stand-in, and the middle one would have cited an empty set on every
+  report.
 - [ ] **9.6** Native responder
 
 ## Phase 10: Close the books
@@ -1014,6 +1038,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 
 | 2026-10-11 | 9.1 | Reproduced: on `origin/main` the greps for `StreamableHTTP` in `services/mcp/src/`, for `aisoc-mcp` in `docker-compose.yml` and `infra/helm/`, for a per-tenant tool grant in `services/api/app/`, and for an `mcp:` audit action all counted **zero**, and `check_mcp_over_http.py` reported seven problems. Built the HTTP transport, the authorize/complete pair, the tenant grant table, the approval queue bound to a call's arguments, and the generated tool catalogue held in parity with the TypeScript registry. Four negative controls recorded in the PR; one of them found a hole in the new gate itself, which reported `http.ts` for reading the process-wide API key when the only mention was a comment saying it deliberately does not — the detector now strips comments before matching, and refuses a `{...cfg}` spread as well, because a spread is correct today and a credential fallback the day somebody reorders the literal. |
 | 2026-10-11 | 9.4 | Reproduced: `grep -rn 'conversations.create|channels.create|war_room'` across every service and the console returned four hits, all prose — a playbook template describing a "Notify war-room" step and an eval fixture quoting the phrase. Both bots could only answer: slack-bot had one outbound route (an approval card) and teams-bot posts to a hand-configured webhook. Built the channel creation, the keyed sweep, the decision route and the console panel. Teams is 501 with its four missing settings named, which is the honest state and the one a stock install is in. |
+| 2026-10-11 | 9.5 | Reproduced: `grep -n hunt` across `app/services/report_builder.py` and `app/api/v1/endpoints/reports.py` returned nothing — the report surface and the hunt surface did not know about each other, so a hunt produced rows and a retro-hunt produced a sightings row and neither produced anything a person could read or forward. Built the four-section report, the citation rule, the two builders and the JSON/HTML/PDF export. Three negative controls in the live workflow: allowing an uncited report, filling an empty section with a sentence, and reporting a hunt that never ran each have to turn the suite red. The live run found three schema facts a stand-in would have hidden, recorded in the item above. |
 | 2026-10-11 | 9.2 | Reproduced: `knowledge_base.py` searched with `to_tsvector`/`plainto_tsquery` and nothing else; `grep -rn qdrant services/api/app/` found only the migration runner and the tenant-deletion sweep, no recall path; and no memory row anywhere carried an author, a source, a scope, an expiry or a state. Built the store of record, the Qdrant index over it, the conflict state machine, the case-closure writer and the recall scorer. Two negative controls recorded in the PR: restoring last-write-wins on a contradiction fails three tests, and restoring vector truncation fails one. The measurement is negative and is published as such — see D11, which also records that it caught the truncation defect. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |

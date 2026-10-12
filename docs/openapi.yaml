@@ -18737,6 +18737,155 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/hunt-reports/from-hunt/{saved_hunt_id}:
+    post:
+      tags:
+      - hunt-reports
+      summary: From Hunt
+      operationId: from_hunt_api_v1_hunt_reports_from_hunt__saved_hunt_id__post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: saved_hunt_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Saved Hunt Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuildRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HuntReportOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/hunt-reports/from-retro-hunt/{sighting_id}:
+    post:
+      tags:
+      - hunt-reports
+      summary: From Retro Hunt
+      operationId: from_retro_hunt_api_v1_hunt_reports_from_retro_hunt__sighting_id__post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: sighting_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Sighting Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuildRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HuntReportOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/hunt-reports:
+    get:
+      tags:
+      - hunt-reports
+      summary: List Reports
+      operationId: list_reports_api_v1_hunt_reports_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: case_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Case Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HuntReportOut'
+                title: Response List Reports Api V1 Hunt Reports Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/hunt-reports/{report_id}:
+    get:
+      tags:
+      - hunt-reports
+      summary: Get Report
+      operationId: get_report_api_v1_hunt_reports__report_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Report Id
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(json|html|pdf)$
+          default: json
+          title: Format
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/retro-hunts/settings:
     get:
       tags:
@@ -23629,6 +23778,16 @@ components:
           title: Footer Text
       type: object
       title: BrandingIn
+    BuildRequest:
+      properties:
+        case_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Case Id
+      type: object
+      title: BuildRequest
     BuildTimelineRequest:
       properties:
         identity_kind:
@@ -29180,6 +29339,67 @@ components:
       - timestamp
       - source
       title: HuntPreviewItem
+    HuntReportOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        source_kind:
+          type: string
+          title: Source Kind
+        source_id:
+          type: string
+          title: Source Id
+        case_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Case Id
+        title:
+          type: string
+          title: Title
+        what:
+          type: string
+          title: What
+        how:
+          type: string
+          title: How
+        where:
+          type: string
+          title: Where
+        when:
+          type: string
+          title: When
+        citations:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Citations
+        match_count:
+          type: integer
+          title: Match Count
+        generated_by:
+          type: string
+          title: Generated By
+        created_at:
+          type: string
+          title: Created At
+      type: object
+      required:
+      - id
+      - source_kind
+      - source_id
+      - case_id
+      - title
+      - what
+      - how
+      - where
+      - when
+      - match_count
+      - generated_by
+      - created_at
+      title: HuntReportOut
     HuntRequest:
       properties:
         rule_ids:
