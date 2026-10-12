@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from app.services.taxii import (
@@ -40,7 +41,7 @@ NOW = datetime(2026, 10, 11, 9, 0, 0, tzinfo=UTC)
 
 
 def row(**overrides) -> IndicatorRow:
-    base = {
+    base: dict[str, Any] = {
         "id": uuid.UUID("11111111-1111-1111-1111-111111111111"),
         "ioc_type": "domain",
         "value": "evil.example.com",

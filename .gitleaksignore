@@ -144,3 +144,15 @@ services/connectors/tests/test_kubernetes_audit.py:generic-api-key:218
 # literal the suite signs with so it can then prove a *different* key fails to verify;
 # it authenticates nothing and exists in no deployment.
 services/api/tests/test_evidence_bundle.py:generic-api-key:26
+
+# Depth 4.2 (#1322): the TAXII live job's signing secret is a CI-only literal
+# that names itself as one; the workflow's Postgres and app both live and die
+# inside the job. Not a credential for anything reachable.
+.github/workflows/taxii-live.yml:generic-api-key:65
+
+# Rule-id lock entries: `"<slug>": "det-threat-anomaly-NNN"` pins a detection
+# rule's id so regeneration cannot renumber it. The scanner's key/value
+# heuristic reads the pair as an api key; it is a rule identifier in a
+# generated lock file.
+detections/rule-ids.lock.json:generic-api-key:841
+detections/rule-ids.lock.json:generic-api-key:854

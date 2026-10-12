@@ -259,6 +259,14 @@ async def post_to_war_room(
         )
     tenant, client_id, secret, team_id = config
     channel_id = require_channel_id(body.channel_id)
+    # The taint tracker does not follow that guard across the function
+    # boundary, so the same fullmatch is restated here, in the frame that
+    # builds the URL: the value interpolated below is the regex's own match,
+    # not the request's string.
+    matched = _CHANNEL_ID_RE.fullmatch(channel_id)
+    if matched is None:  # pragma: no cover — require_channel_id already raised
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="channel_id is not a Microsoft Graph channel id.")
+    channel_id = matched.group(0)
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as http:
         token = await _graph_token(tenant, client_id, secret, http)

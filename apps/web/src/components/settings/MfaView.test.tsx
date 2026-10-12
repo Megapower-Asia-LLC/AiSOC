@@ -19,6 +19,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mfaApi } from "@/lib/api";
 import { MfaView } from "./MfaView";
 
 const status = vi.fn();
@@ -127,5 +128,58 @@ describe("MfaView", () => {
     // tell an administrator they can reach something they cannot.
     expect(screen.queryByRole("button", { name: /^platform admin$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^admin$/i })).toBeNull();
+  });
+
+  it("enrolment walks begin → secret shown → confirm → recovery codes shown once", async () => {
+    status.mockResolvedValue(aStatus());
+    vi.mocked(mfaApi.enrollBegin).mockResolvedValue({
+      secret: "JBSWY3DPEHPK3PXP",
+      otpauth_uri: "otpauth://totp/AiSOC:alice?secret=JBSWY3DPEHPK3PXP",
+    });
+    vi.mocked(mfaApi.enrollConfirm).mockResolvedValue({
+      recovery_codes: ["aaaa-bbbb", "cccc-dddd"],
+    });
+    const user = userEvent.setup();
+    render(<MfaView />);
+    await user.click(await screen.findByRole("button", { name: "Set up" }));
+
+    // The shared secret is rendered for the authenticator, then the code
+    // the app shows is what confirms — not the secret itself.
+    expect(await screen.findByText("JBSWY3DPEHPK3PXP")).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("123456"), "000000");
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+
+    expect(vi.mocked(mfaApi.enrollConfirm)).toHaveBeenCalledWith("000000");
+    expect(await screen.findByText(/Save these recovery codes/)).toBeInTheDocument();
+    expect(screen.getByText("aaaa-bbbb")).toBeInTheDocument();
+  });
+
+  it("removing the factor requires a current code and sends it", async () => {
+    status.mockResolvedValue(aStatus({ enrolled: true, has_totp: true, recovery_codes_remaining: 7 }));
+    vi.mocked(mfaApi.disable).mockResolvedValue(undefined as never);
+    const user = userEvent.setup();
+    render(<MfaView />);
+
+    expect(await screen.findByText(/7 recovery codes left/)).toBeInTheDocument();
+    const remove = screen.getByRole("button", { name: "Remove" });
+    // No code, no removal: a stolen session cannot strip the factor.
+    expect(remove).toBeDisabled();
+    await user.type(screen.getByPlaceholderText("Code or recovery code"), "11112222");
+    await user.click(remove);
+    await waitFor(() => expect(vi.mocked(mfaApi.disable)).toHaveBeenCalledWith("11112222"));
+  });
+
+  it("a refused confirmation surfaces an actionable alert, not silence", async () => {
+    status.mockResolvedValue(aStatus());
+    vi.mocked(mfaApi.enrollBegin).mockResolvedValue({ secret: "S", otpauth_uri: "otpauth://x" });
+    vi.mocked(mfaApi.enrollConfirm).mockRejectedValue(new Error("422"));
+    const user = userEvent.setup();
+    render(<MfaView />);
+    await user.click(await screen.findByRole("button", { name: "Set up" }));
+    await user.type(await screen.findByPlaceholderText("123456"), "999999");
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    // The component deliberately translates the refusal into what to do
+    // about it — the clock hint — rather than echoing a bare status.
+    expect(await screen.findByRole("alert")).toHaveTextContent(/That code is not valid/);
   });
 });

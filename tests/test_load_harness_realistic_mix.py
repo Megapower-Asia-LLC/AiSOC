@@ -32,6 +32,10 @@ PRODUCER_GO = REPO_ROOT / "services" / "demo-producer" / "main.go"
 
 def _load(name: str, relative: str):
     spec = importlib.util.spec_from_file_location(name, REPO_ROOT / relative)
+    # `spec_from_file_location` is `ModuleSpec | None`, and a None here means
+    # the harness file moved — a sentence beats an AttributeError three lines
+    # down, and the narrowing is what lets mypy read the rest.
+    assert spec is not None and spec.loader is not None, f"no loadable module at {relative}"
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)

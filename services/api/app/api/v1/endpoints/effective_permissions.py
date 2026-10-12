@@ -114,8 +114,10 @@ async def _record_snapshot(
         await db.rollback()
         logger.warning(
             "effective_permissions.snapshot_not_recorded provider=%s: %s",
-            provider,
-            str(exc).replace("\n", " ")[:200],
+            # Caller-influenced; sanitised inline because the taint tracker
+            # does not follow a helper (the py/log-injection house pattern).
+            str(provider).replace("\r", "").replace("\n", " ")[:64],
+            str(exc).replace("\r", "").replace("\n", " ")[:200],
         )
 
 

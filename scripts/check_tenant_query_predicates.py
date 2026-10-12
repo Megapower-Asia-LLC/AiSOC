@@ -379,6 +379,53 @@ RATCHET: dict[str, str] = {
         "SQL is seed_tenant_catalog's INSERT INTO permissions/roles/"
         "role_permissions/user_roles, each bound to :t"
     ),
+    # ── the 2026-10-12 merge train (depth 5.4, 9.4, 4.3) ────────────────────
+    "services/agents/app/playbook/pause.py::find_verification_by_token::aisoc_playbook_pauses": (
+        "the signed answer link is the whole credential, exactly the find_wait_by_token shape above: "
+        "the person clicking holds no AiSOC session, so there is no tenant to filter by. The HMAC "
+        "covers (token, answer, stage) so a guessed token still answers nothing, and "
+        "`kind = 'verification'` is in the predicate so an approval cannot be discharged this way"
+    ),
+    "services/agents/app/playbook/pause.py::due_verifications::aisoc_playbook_pauses": (
+        "the verification sweeper asks 'which prompts passed their stage deadline', the same "
+        "discover-a-working-set shape as due_waits beside it; escalation then acts on one row at a "
+        "time with the tenant read off the row"
+    ),
+    "services/api/app/api/v1/endpoints/war_rooms.py::channel_decision::aisoc_case_war_rooms": (
+        "the bot presents the shared service token and a war-room id; it holds no tenant and the "
+        "request body deliberately has no tenant field to get wrong. The handler reads the row by "
+        "id, binds set_rls_context to the row's own tenant before acting, and refuses without the "
+        "token — the tenant comes from the row the bot named, never from the caller"
+    ),
+    "services/api/app/services/lake_query_runner.py::claim_statement::lake_query_jobs": (
+        "the claim is one conditional UPDATE by job id where status = 'queued' — a worker claiming "
+        "work enqueued by tenant-scoped routes, the same shape as approval_expiry.run_once. The "
+        "routes that create and read jobs bind the tenant; the runner executes whichever replica won"
+    ),
+    "services/api/app/services/lake_query_runner.py::_record_progress::lake_query_jobs": (
+        "progress lands on the claimed job by id; the claim above is what decided whose job it is"
+    ),
+    "services/api/app/services/lake_query_runner.py::_finish::lake_query_jobs": (
+        "terminal state lands on the claimed job by id, guarded so a finished job is never revived; "
+        "same claim-then-act shape as _record_progress"
+    ),
+    "services/api/app/services/lake_query_runner.py::list_stuck_jobs::lake_query_jobs": (
+        "the stuck sweep asks 'which running jobs lost their runner', tenant-unbound by the same "
+        "discover-a-working-set reasoning as due_deliveries; it only moves jobs to a terminal state"
+    ),
+    "services/api/app/services/war_room.py::sync_war_room::aisoc_case_war_rooms": (
+        "the sweep is a pure function of the case row: it reads the room by id handed to it by the "
+        "worker's cross-tenant discovery below, and every post it writes is keyed to that room; the "
+        "analyst-facing routes in endpoints/war_rooms.py all filter on the session tenant"
+    ),
+    "services/api/app/services/war_room.py::sync_war_room::aisoc_war_room_posts": (
+        "the posted-keys read is scoped to one war_room_id — the room decides the tenant, and the "
+        "unique constraint on (war_room_id, event_key) is what makes the sweep idempotent"
+    ),
+    "services/api/app/workers/war_room_sync.py::<module>::aisoc_case_war_rooms": (
+        "the sweep worker's 'which rooms are open' discovery, the same cross-tenant working-set "
+        "shape as report_scheduler.run_once; sync_war_room then handles one room at a time"
+    ),
 }
 
 #: Raising this is a deliberate act with a diff attached. Appending to RATCHET

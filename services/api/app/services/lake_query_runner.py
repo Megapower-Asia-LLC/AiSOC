@@ -232,7 +232,7 @@ async def run_job(
     finally:
         poller.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await poller
+            _ = await poller  # the await is the point: let the cancellation settle
 
     await _finish(
         session_factory,

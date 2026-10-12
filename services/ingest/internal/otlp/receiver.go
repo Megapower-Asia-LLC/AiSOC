@@ -398,6 +398,18 @@ func assign(payload map[string]any, key string, value any) {
 	cur := payload
 	for i, p := range parts {
 		if i == len(parts)-1 {
+			if existing, isMap := cur[p].(map[string]any); isMap {
+				if _, incomingIsMap := value.(map[string]any); !incomingIsMap {
+					// The mirror of the scalar-in-the-way case below, which
+					// map iteration order decides: `service.name` arrived
+					// first and built a map, and the scalar `service` would
+					// overwrite it, silently dropping the attribute. Demote
+					// the map's entries to their literal dotted names first —
+					// the exact payload the opposite arrival order produces,
+					// so the outcome stops depending on iteration order.
+					flattenInto(payload, strings.Join(parts, "."), existing)
+				}
+			}
 			cur[p] = value
 			return
 		}
@@ -414,6 +426,21 @@ func assign(payload map[string]any, key string, value any) {
 			cur[p] = next
 		}
 		cur = next
+	}
+}
+
+// flattenInto writes a nested map's leaves under their literal dotted names,
+// never overwriting a key that already exists.
+func flattenInto(payload map[string]any, prefix string, m map[string]any) {
+	for k, v := range m {
+		full := prefix + "." + k
+		if sub, ok := v.(map[string]any); ok {
+			flattenInto(payload, full, sub)
+			continue
+		}
+		if _, occupied := payload[full]; !occupied {
+			payload[full] = v
+		}
 	}
 }
 

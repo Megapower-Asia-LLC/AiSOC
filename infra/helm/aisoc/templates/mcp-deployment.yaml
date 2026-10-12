@@ -32,6 +32,11 @@ spec:
         {{- include "aisoc.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp
     spec:
+      # The MCP server talks to the AiSOC API, never the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: mcp
           image: "{{ required "mcp.image.repository must be set to install the MCP server; no image is published for it yet" .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag | default .Chart.AppVersion }}"

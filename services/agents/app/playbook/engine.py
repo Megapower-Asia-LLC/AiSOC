@@ -1755,6 +1755,8 @@ def _verification_ttl(step: PlaybookStep) -> float:
         if raw is not None:
             return float(raw)
     except (TypeError, ValueError):
+        # An unparseable author value falls through to the derived default
+        # below — a wrong TTL must not stop the question being asked.
         pass
     total = verification.user_stage_seconds() + verification.manager_stage_seconds()
     return max(DEFAULT_VERIFICATION_TTL_HOURS, (total / 3600.0) * 2)

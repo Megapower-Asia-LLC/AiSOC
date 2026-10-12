@@ -51,8 +51,17 @@ spec:
         checksum/litellm-config: {{ .Values.llmGateway.config | sha256sum }}
     spec:
       serviceAccountName: {{ include "aisoc.serviceAccountName" . }}
+      # None of these processes talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: litellm
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [\"ALL\"]
           image: "{{ .Values.llmGateway.image.repository }}:{{ .Values.llmGateway.image.tag }}"
           imagePullPolicy: {{ .Values.llmGateway.image.pullPolicy }}
           args: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
@@ -84,6 +93,13 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.llmGateway.resources | nindent 12 }}
+          # The args above name /etc/litellm/config.yaml; without this mount
+          # the gateway boots into a config that does not exist and the probe
+          # below reports a live process that fails every completion.
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm
+              readOnly: true
       volumes:
         - name: config
           configMap:
@@ -138,8 +154,17 @@ spec:
         app.kubernetes.io/component: ollama
     spec:
       serviceAccountName: {{ include "aisoc.serviceAccountName" . }}
+      # None of these processes talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ollama
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [\"ALL\"]
           image: "{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
           imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
           ports:
@@ -228,8 +253,17 @@ spec:
         app.kubernetes.io/component: qdrant
     spec:
       serviceAccountName: {{ include "aisoc.serviceAccountName" . }}
+      # None of these processes talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: qdrant
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [\"ALL\"]
           image: "{{ .Values.qdrant.image.repository }}:{{ .Values.qdrant.image.tag }}"
           imagePullPolicy: {{ .Values.qdrant.image.pullPolicy }}
           ports:

@@ -110,6 +110,10 @@ PUBLIC_ROUTES: dict[str, str] = {
     # -- Prometheus scrape endpoints, gated by METRICS_TOKEN in the handler ---
     "services/api/app/main.py::metrics": "Prometheus scrape; refuses without METRICS_TOKEN outside a development environment",
     "services/fusion/app/api/router.py::metrics": "Prometheus scrape of worker counters; no tenant data, numeric series only",
+    "services/fusion/app/api/router.py::scale_hint": (
+        "lag-based autoscaling signal (depth 4.4): a cluster scaler scrapes it on the same footing as /metrics — "
+        "a lag count and a replica suggestion, no tenant data. AiSOC publishes it and does not act on it (ADR-0012)"
+    ),
     # -- sign-in: the request that establishes a credential cannot carry one --
     "services/api/app/api/v1/endpoints/auth.py::login": "the sign-in request itself; it is what mints the credential",
     "services/api/app/api/v1/endpoints/auth.py::sso_status": (
@@ -163,6 +167,13 @@ PUBLIC_ROUTES: dict[str, str] = {
 #: Routes whose credential is verified inside the handler. ``(verifier, reason)``
 #: — the verifier must still be called or the exemption lapses.
 IN_BAND_CREDENTIAL_ROUTES: dict[str, tuple[str, str]] = {
+    "services/agents/app/api/playbooks.py::answer_verification": (
+        "resume_verification",
+        "the signed answer link is the whole credential (depth 5.4): resume_verification recomputes the HMAC over "
+        "(token, answer, stage) with hmac.compare_digest and refuses with one sentence for every failure shape, so "
+        "the route is not an oracle for whether a token was ever valid. The person clicking holds no AiSOC session "
+        "by design — the prompt went to chat or email",
+    ),
     "services/slack-bot/app/main.py::slack_events": (
         "SlackRequestHandler",
         "Slack Bolt verifies the request signature against SLACK_SIGNING_SECRET before the handler sees the body",

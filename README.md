@@ -17,7 +17,7 @@
 
 ## What AiSOC does
 
-Telemetry arrives from your security tools. AiSOC normalizes it, runs the 2511 executable rules of
+Telemetry arrives from your security tools. AiSOC normalizes it, runs the 2535 executable rules of
 its 6991-rule library, groups what fires into incidents, investigates each one with an AI agent whose
 every prompt and tool call is recorded, and proposes an action. New threat intelligence re-sweeps the
 history you already collected, and a human approves before anything reaches a vendor.

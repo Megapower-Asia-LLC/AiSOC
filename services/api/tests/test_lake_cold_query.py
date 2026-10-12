@@ -13,6 +13,8 @@ that.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from app.services.lake_cold_query import (
     COLD_VOLUME_NAMES,
@@ -155,7 +157,7 @@ def test_zero_cold_bytes_with_a_price_is_zero_not_none(monkeypatch):
 
 
 def _estimate(**overrides) -> ScanEstimate:
-    base = {
+    base: dict[str, Any] = {
         "estimated_rows": 1_000,
         "estimated_parts": 3,
         "estimated_bytes": 2_000,

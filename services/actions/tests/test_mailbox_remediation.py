@@ -291,6 +291,7 @@ class TestTheRequestShapeIsWhatTheVendorDocuments:
             return_value=httpx.Response(200, json=GMAIL_LIST)
         )
         client = factories._gmail_client(GMAIL_CREDENTIALS)
+        assert client is not None, "the factory refused credentials the fixture declares complete"
         # Minting a token needs a real RSA key; the search itself is what is
         # under test, so the token cache is primed directly.
         client._tokens[MAILBOX] = ("unit-test-token", 2**31)
@@ -536,7 +537,9 @@ class TestVendorSelection:
             for capability in STATE_CHANGING_VERBS:
                 executor = registry.get_executor(vendor, capability)
                 assert executor is not None
-                assert executor._vendor_pin == vendor  # noqa: SLF001
+                # The pin is the concrete adapter's own attribute; the registry's
+                # base type deliberately does not declare it.
+                assert executor._vendor_pin == vendor  # type: ignore[attr-defined]  # noqa: SLF001
 
     def test_each_adapters_strip_list_is_its_factorys_key_set(self) -> None:
         """The hand-copied list is the shape that let a 'dry run' reach production Splunk."""
@@ -548,7 +551,8 @@ class TestVendorSelection:
             for capability in STATE_CHANGING_VERBS:
                 executor = registry.get_executor(vendor, capability)
                 assert executor is not None
-                assert set(executor._credential_keys) == expected[vendor]  # noqa: SLF001
+                # Same: an adapter internal asserted on purpose, absent from the base type.
+                assert set(executor._credential_keys) == expected[vendor]  # type: ignore[attr-defined]  # noqa: SLF001
 
     @pytest.mark.parametrize(
         ("vendor", "factory", "credentials"),

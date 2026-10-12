@@ -95,10 +95,15 @@ BEGIN
     EXECUTE 'ALTER TABLE lake_query_jobs ENABLE ROW LEVEL SECURITY';
     EXECUTE 'ALTER TABLE lake_query_jobs FORCE ROW LEVEL SECURITY';
     EXECUTE 'DROP POLICY IF EXISTS tenant_isolation ON lake_query_jobs';
+    -- The unbound-session arm in WITH CHECK mirrors USING, and is the same
+    -- shape 079/081/104/117/118 use: the claim runner and the stuck sweep are
+    -- GUC-less worker sessions whose UPDATEs re-check the new row, so without
+    -- it no job could ever be claimed or finished under the runtime role —
+    -- the live suite caught exactly that once its DSN moved off the owner.
     EXECUTE
         'CREATE POLICY tenant_isolation ON lake_query_jobs '
         'USING (tenant_id = current_tenant_id() OR current_tenant_id() IS NULL) '
-        'WITH CHECK (tenant_id = current_tenant_id())';
+        'WITH CHECK (tenant_id = current_tenant_id() OR current_tenant_id() IS NULL)';
 
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'aisoc_app') THEN
         EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON lake_query_jobs TO aisoc_app';
