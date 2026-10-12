@@ -488,7 +488,7 @@ Instead, every selector field, `group-by` and `distinct_by` is checked
 against the emitted-field namespace with **no ceiling**, which caught three
 invented fields on the first run of the gate.
 
-### D11 -- A durable `wait` suspended the run and then carried on
+### D15 -- A durable `wait` suspended the run and then carried on
 
 Found while building 5.4 on 5.3's pause, and fixed here because 5.4 inherits
 it. `_control_wait` writes a pause row and returns `StepStatus.PENDING` with
@@ -510,7 +510,7 @@ Negative control: reverting that break fails
 `test_a_durable_pause_stops_the_run` plus two others, recorded in the pull
 request.
 
-### D12 -- The manager comes from SCIM only, and the lookup is three sources deep
+### D16 -- The manager comes from SCIM only, and the lookup is three sources deep
 
 The plan says "from SCIM or IdP data". Implemented as the step's own
 `manager` parameter, then the run context (where identity enrichment puts one
@@ -529,7 +529,7 @@ that outcome rather than hanging.
 fourth source. Not used: the agents service has an asyncpg pool and no Neo4j
 driver, and adding one for an escalation is a dependency the item does not
 justify.
-### D11 -- The plan says `valid_to`; this schema says `valid_until`
+### D17 -- The plan says `valid_to`; this schema says `valid_until`
 
 Item 2.5 asks for versioned snapshots with `valid_from` / `valid_to`. The one
 existing table in this database that bounds a fact in time is `identity_edges`
@@ -540,7 +540,7 @@ they were in before they could write a `WHERE`. The existing spelling wins;
 `posture_snapshots` uses `valid_from` / `valid_until`, and the deviation is
 recorded here rather than made silently.
 
-### D12 -- Eleven API tests are already failing on `main`, and nothing grades them
+### D18 -- Eleven API tests are already failing on `main`, and nothing grades them
 
 The full `services/api` suite run for 2.5 reported 4,774 passed and 11 failed.
 All eleven are in `test_alert_list_priority_sort.py` and
@@ -609,7 +609,7 @@ the number would have looked right in a diff. It would also have fired the
 rule on most of the internet. Five such age-of-a-thing fields are named in a
 test that forbids the first-seen store from ever growing them.
 
-### D11 -- Identity privilege reads a table a tenant must populate
+### D19 -- Identity privilege reads a table a tenant must populate
 
 The `*_priv` booleans resolve from `identity_nodes.privilege_tier >= 2`, the
 column migration 018 created for the question. The table's only writer is
@@ -626,7 +626,7 @@ are among the 18 above. Each has no subject field any source emits, and
 guessing a subject would produce a boolean that is confidently wrong rather
 than absent.
 
-### D12 -- The "behavioural baseline" family named the wrong piece of work
+### D20 -- The "behavioural baseline" family named the wrong piece of work
 
 `check_detection_fields.py` classified an unreachable field into a family so
 the headline number would be actionable. Its behavioural pattern was
@@ -657,7 +657,7 @@ And D9's lesson repeated one level up: a gate that keeps its own description
 of another component drifts from it, and here the drift was in the
 classifier rather than in the operator list.
 
-### D13 -- D9, D10 and D11 were written, merged, and lost on `main`
+### D21 -- D9, D10 and D19 were written, merged, and lost on `main`
 
 PR #1226 (depth 3.3) added three deviation sections. None of them is on
 `main`. The item log still cites "(gate operator drift, D9)" and "18 retired
@@ -673,10 +673,10 @@ documented remedy — keep both sides' paragraphs, never take one side whole —
 is the one that would have prevented it.
 
 All three are restored here verbatim from the merge commit rather than
-rewritten from memory, which is why D11 keeps its original number and this
-phase's own new deviations take D12 and D13.
+rewritten from memory. At restoration the trio kept its numbers; the 2026-10-12
+merge train renumbered them D19/D20/D22 because parallel lanes had taken D11-D14 on `main` first.
 
-### D14 -- A rule of this lane's own was a bare anomaly, and its own gate caught it
+### D22 -- A rule of this lane's own was a bare anomaly, and its own gate caught it
 
 Depth plan 3.5 is explicit that an anomaly is *"a typed signal, not an alert
 on its own"*. `ta-saas-oauth-app-volume-spike` was written with
@@ -865,7 +865,7 @@ endpoint produces once triage falls through to its deterministic scorer.
   reachability gate's "behavioural baseline" family was **narrowed**: it
   matched `^active_`, which swept in a systemd unit state and an ITSM
   lookup and reported both as blocked on a baseline that would never have
-  helped either (D12). `MAX_UNREACHABLE` stays at 2, now with accurate
+  helped either (D20). `MAX_UNREACHABLE` stays at 2, now with accurate
   reasons.
 - [x] **3.5** Threat-and-anomaly condition rules — 24 in a new
   `threat-anomaly` category (`scripts/detection_specs_part4_threat_anomaly.py`),
@@ -885,7 +885,7 @@ endpoint produces once triage falls through to its deterministic scorer.
   positive silences the rule, and one rule fires **end to end in CORE on a
   baseline earned from replayed traffic** with no `full` service running —
   the phase's second "Done when", as an assertion. The decorative-clause
-  control caught a rule of this lane's own that was a bare anomaly (D14).
+  control caught a rule of this lane's own that was a bare anomaly (D22).
 - [ ] **3.6** 395 → at least 800 cloud, identity, SaaS and code conditions
 - [ ] **3.7** Detection engineering agent (gap-closure Phase 9 / parity 6.2)
 
@@ -1222,7 +1222,7 @@ endpoint produces once triage falls through to its deterministic scorer.
   (self-test: eleven injected violations, one per rule) wired into
   `ci.yml :: python-lint`, plus `verification-live.yml` driving the real SQL
   against real Postgres. 20 new offline tests, 12 live, 5 SCIM; shipped
-  playbook `user-verification-containment.playbook.json`. Deviation D11
+  playbook `user-verification-containment.playbook.json`. Deviation D15
   records the `wait` defect this item found and fixed.
 - [ ] **5.5** Executor arms 74 → at least 150
 - [ ] **5.6** Plain-language playbooks
@@ -1560,7 +1560,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-11 | 4.3 | Third bullet closed. Reproduced: `check_retention_window.py` with the new rules reported no cold-query estimator, no job surface and no job table on the pre-fix tree. Built `lake_cold_query.py` (EXPLAIN ESTIMATE + system.parts + system.processes, no invented throughput or price), `lake_query_runner.py` and migration `111`. Negative control: removing the `status = 'queued'` predicate makes both interleaved transactions claim one job and the live suite goes red. The first version of that test — five gathered claims — passed under the broken implementation and was replaced. 26 pure + 12 live tests; matrix 306 rows, 303 GATED. |
 | 2026-10-11 | 4.2 | Reproduced: `check_standard_inputs.py` against the pre-fix tree reported no OTLP package, no Kafka input and no TAXII server — the only TAXII-shaped route being a demo-gated sample list. Built all three, after moving the consumer-health classifier out of `graph_ws` into `streamhealth` so the new Kafka consumer shares the table rather than copying it. Negative controls recorded in the PR: a timestamp-only TAXII cursor loses an indicator in the single-row pagination walk (measured — 3 of 4), and nineteen gate injections each go red. Writing it found four defects, including an OTLP template nobody could mint a token for and a gate rule that read an error message instead of the behaviour. Ingest Go suite green; api projection suite 37; live TAXII suite 15. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
-| 2026-10-11 | 5.4 | Reproduced: `check_stateful_verification.py` against `origin/main` reported eight problems — no `verification.py` at all, `verify_user` absent from the control-flow table, no resume path, no escalation, no `timed_out`, no sweep, no migration and no writer for the opt-in table. Built the stage machine on the existing pause row rather than a second table. Three negative controls recorded in the PR: reverting the run-loop break fails three tests including the `wait` regression (D11), removing `manager_ref=_extract_manager(body)` fails three SCIM tests, and removing `ENABLE ROW LEVEL SECURITY` from migration 102 fails the live tenancy test with "tenant B read tenant A's verification policy". Two pre-existing tests pinned the old shape and were widened rather than relaxed: the control-flow table's membership (still an equality, now of four) and the sweeper's return dict. Writing the gate found a hole in the gate: its first block extractor matched `\n\n\n`, which finds nothing for the *last* function in a module, so the ordering rule was skipped entirely over an injected violation. |
+| 2026-10-11 | 5.4 | Reproduced: `check_stateful_verification.py` against `origin/main` reported eight problems — no `verification.py` at all, `verify_user` absent from the control-flow table, no resume path, no escalation, no `timed_out`, no sweep, no migration and no writer for the opt-in table. Built the stage machine on the existing pause row rather than a second table. Three negative controls recorded in the PR: reverting the run-loop break fails three tests including the `wait` regression (D15), removing `manager_ref=_extract_manager(body)` fails three SCIM tests, and removing `ENABLE ROW LEVEL SECURITY` from migration 102 fails the live tenancy test with "tenant B read tenant A's verification policy". Two pre-existing tests pinned the old shape and were widened rather than relaxed: the control-flow table's membership (still an equality, now of four) and the sweeper's return dict. Writing the gate found a hole in the gate: its first block extractor matched `\n\n\n`, which finds nothing for the *last* function in a module, so the ordering rule was skipped entirely over an injected violation. |
 | 2026-10-11 | 6.2 | Reproduced: 13 of 16 new cases failed, driving the shapes the four endpoint connectors actually emit. Root cause was 6.1's endpoint branch reading `process.name` off OCSF, which the canonical profile never populates — it found `None` on every real source while its own tests passed. Fixed by reconstructing the connector namespace. Shipped the osquery pack (5 queries, packs 5 -> 6), the source-capability table, the operator doc and a 6-rule gate. Fusion suite 683 -> 700. Claim row is PARTIAL: no osquery agent runs in CI, and the EDR connectors return vendor detections rather than process telemetry, so the plan's "CrowdStrike, Defender, SentinelOne" wording is not satisfiable with these connectors. |
 | 2026-10-11 | 6.1 | Reproduced: the new gate reported nine problems across five of eight rules on the unmodified tree. Built `aisoc_ai_assets` (migration 110), its routes behind a new `ai_estate:*` permission pair, the fusion recorder that writes it on the default profile, the `AIAsset` graph label with `OPERATES`/`HOSTS` edges, and the `/ai-estate` page. Two negative controls against a real PostgreSQL: reverting `NULLS NOT DISTINCT` turns one provider-key row into three, and a `USING (true)` policy leaks across tenants. Claim matrix 302 -> 303 rows, 300 GATED. Writing the gate found two blind spots in the gate itself. |
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |
@@ -1596,7 +1596,7 @@ The claim row returns to GATED when a live tenant is available. Nothing was
 weakened to accommodate this: the row says PARTIAL, the operations page says
 "treat the first run against your own tenant as the first run", and the
 CHANGELOG entry says it too.
-| 2026-10-11 | 2.5 | Reproduced: `test_posture_snapshot_coverage.py` on the unmodified tree asserted the *gap* — every resolver in `effective_permissions/` was pure and the only production snapshot source returned `{}`, so every live call 412'd and the subsystem had never answered a question about a real estate. Five collectors now exist under `services/connectors/app/connectors/posture/`, reached by a `__posture_snapshot__` sentinel through each connector's `get_resource_config`, and the coverage test is inverted: it now fails when a registered resolver has no declared collector. Building it found three things worth recording. (a) `BaseConnector.get_resource_config` declares `at_ts: str | None = None` while AWS, Okta and GitHub each required a positional `ts`, so a caller written against the base class raised `TypeError` on three of the connectors — standardised, with `test_every_implementation_matches_the_base_signature` holding it. (b) Google Workspace's directory read needs scopes the audit-log credential is not consented for, so the JWT is now built per scope: asking for both in one assertion would have broken alert polling on every tenant that had not pre-consented the new ones. (c) A snapshot is only an answer if you know *when* it was true — an alert is triaged minutes to days after the event, and a single mutable "current posture" row answers "what can this identity do now" while appearing to answer "what could it do when it acted", which is the worse failure because the number looks right. Migration 103 therefore versions snapshots on `valid_from`/`valid_until` (`valid_to` in the plan; `valid_from`/`valid_until` is the existing spelling in migration 018 and two spellings of one concept in one schema is worse than a recorded deviation — D11). Negative controls, both run against live Postgres and both restored: dropping `posture_snapshots_live_idx` leaves `test_a_second_live_row_is_refused_by_the_database` reporting `DID NOT RAISE IntegrityError`, and defeating the content-hash comparison in `save_snapshot` fails `test_unchanged_recollection_does_not_open_a_version` with two distinct row ids — without that comparison an unchanged estate re-collected hourly writes a version an hour and "when did this posture last change" becomes unanswerable because every row is a change. Evidence: 12 posture-store tests against live Postgres with the migration chain applied, 65 across the posture and effective-permission suites, 1,145 connector tests, 4,774 API tests. Eleven API failures are pre-existing on `main` and unrelated — recorded as D12. |
+| 2026-10-11 | 2.5 | Reproduced: `test_posture_snapshot_coverage.py` on the unmodified tree asserted the *gap* — every resolver in `effective_permissions/` was pure and the only production snapshot source returned `{}`, so every live call 412'd and the subsystem had never answered a question about a real estate. Five collectors now exist under `services/connectors/app/connectors/posture/`, reached by a `__posture_snapshot__` sentinel through each connector's `get_resource_config`, and the coverage test is inverted: it now fails when a registered resolver has no declared collector. Building it found three things worth recording. (a) `BaseConnector.get_resource_config` declares `at_ts: str | None = None` while AWS, Okta and GitHub each required a positional `ts`, so a caller written against the base class raised `TypeError` on three of the connectors — standardised, with `test_every_implementation_matches_the_base_signature` holding it. (b) Google Workspace's directory read needs scopes the audit-log credential is not consented for, so the JWT is now built per scope: asking for both in one assertion would have broken alert polling on every tenant that had not pre-consented the new ones. (c) A snapshot is only an answer if you know *when* it was true — an alert is triaged minutes to days after the event, and a single mutable "current posture" row answers "what can this identity do now" while appearing to answer "what could it do when it acted", which is the worse failure because the number looks right. Migration 103 therefore versions snapshots on `valid_from`/`valid_until` (`valid_to` in the plan; `valid_from`/`valid_until` is the existing spelling in migration 018 and two spellings of one concept in one schema is worse than a recorded deviation — D17). Negative controls, both run against live Postgres and both restored: dropping `posture_snapshots_live_idx` leaves `test_a_second_live_row_is_refused_by_the_database` reporting `DID NOT RAISE IntegrityError`, and defeating the content-hash comparison in `save_snapshot` fails `test_unchanged_recollection_does_not_open_a_version` with two distinct row ids — without that comparison an unchanged estate re-collected hourly writes a version an hour and "when did this posture last change" becomes unanswerable because every row is a change. Evidence: 12 posture-store tests against live Postgres with the migration chain applied, 65 across the posture and effective-permission suites, 1,145 connector tests, 4,774 API tests. Eleven API failures are pre-existing on `main` and unrelated — recorded as D18. |
 | 2026-10-11 | 7.3 | Reproduced: `OktaConnector.normalize()` returned `None` for `session_id`, `src_asn`, `user_agent`, `client_browser` and `mfa_satisfied` on a System Log row carrying all five, so the family had nothing to group by and could not have been written. Same shape as the `outcome` hoist in #1279 -- the engine flattens `raw_event` one level and `authenticationContext` arrives as a dict. Hoisted the session, network and client fields on Okta and Entra, then wrote four rules grouping by **session** rather than by user: three distinct-value rules at threshold 2 and one ordered sequence at critical. Fixtures hand-authored from an Okta System Log row and a Graph `signIn` resource; the negative twin inverts only the clause each rule is about. Windowed 72 -> 76; executable detections unchanged at 2,511, because a windowed rule is not in that corpus. Negative controls: removing the `session_id` hoist reds 4 connector tests; switching one rule's `group_by` to `actor_email` reds 2 engine tests. Two findings recorded as D-7.3a (the threshold engine windows by arrival and only sequences window by event time) and D-7.3b (the reported-message link is deferred with a reason). |
 
 ### D-7.3a -- The threshold engine windows by arrival, not by event time
