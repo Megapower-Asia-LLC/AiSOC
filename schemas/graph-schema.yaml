@@ -20,7 +20,7 @@
 # are reconciled from configuration snapshots and carry `snapshot_id` and a
 # `valid_from`/`valid_to` window instead.
 
-version: v1.2
+version: v1.3
 
 # ---------------------------------------------------------------------------
 # Node labels
@@ -386,6 +386,27 @@ node_labels:
       - { name: last_seen_at,      type: datetime, required: true  }
       - { name: ended_at,          type: datetime, required: false }
       - { name: event_count,       type: int,      required: false }
+  # ── v1.3: the AI estate ────────────────────────────────────────────────────
+  - label: AIAsset
+    description: >-
+      One observed AI asset: an AI application, a coding agent, an MCP server,
+      an IDE extension, a model-provider key or an OAuth grant to an AI app.
+      One label with a `kind` property rather than six labels, because every
+      question asked of this data is asked across the kinds — what does this
+      person run, what runs on this laptop — and six labels would make each
+      of those a six-way union. Tenant-scoped: an agent is somebody's.
+      Written by `extractAIEstate` from `ai-runtime` / `ai-finding` telemetry
+      and from process activity naming a known agent binary. The durable
+      record is `aisoc_ai_assets` in Postgres; this is the projection an
+      investigation traverses.
+    properties:
+      - { name: id,           type: string, required: true  }
+      - { name: tenant_id,    type: string, required: true  }
+      - { name: kind,         type: string, required: true  }
+      - { name: external_id,  type: string, required: true  }
+      - { name: display_name, type: string, required: false }
+      - { name: vendor,       type: string, required: false }
+      - { name: model,        type: string, required: false }
 
   # ── v1.1: threat depth ─────────────────────────────────────────────────────
   # Malware, Campaign, ThreatActor, Technique and Tactic are *global*
@@ -754,6 +775,18 @@ relationships:
     description: >-
       "What else did this principal do", without scanning every event the
       principal ever produced.
+  # ── v1.3: the AI estate ────────────────────────────────────────────────────
+  # Two new types rather than a second pair of endpoints on OWNED_BY and
+  # RUNS: each relationship here declares one source label and one target
+  # label, so reusing them would make this file assert something untrue of
+  # the edges the extractor actually writes.
+  - name: OPERATES
+    source_label: User
+    target_label: AIAsset
+    event_edge: true
+    description: >-
+      The person an AI asset acted for. Absent rather than guessed when the
+      source did not say: an unlinked agent is the finding, not a blank.
     properties:
       - { name: ts,              type: datetime, required: true }
       - { name: source_event_id, type: string,   required: true }
@@ -781,6 +814,13 @@ relationships:
     target_label: Alert
     event_edge: true
     description: What the session is accused of.
+  - name: HOSTS
+    source_label: Endpoint
+    target_label: AIAsset
+    event_edge: true
+    description: >-
+      The device an AI asset ran on. This is the edge containment reads:
+      without it a kill-switch has nowhere to act.
     properties:
       - { name: ts,              type: datetime, required: true }
       - { name: source_event_id, type: string,   required: true }

@@ -231,6 +231,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Endpoint discovery of the AI estate, with no new agent** (depth plan 6.2).
+  `packs/aisoc-ai-estate.yaml` finds coding agents and MCP server processes,
+  the configuration files the popular MCP clients read, AI IDE extensions and
+  model-provider credential files, through the osquery agent a fleet already
+  runs. `apps/docs/docs/concepts/ai-estate-discovery.md` records what each
+  source can **and cannot** see, which is the half that makes an empty column
+  readable: a device missing from a provider-audit row is not a finding,
+  because no provider audit log has ever carried one.
+
+  The finding that made this a fix as well as a feature: the endpoint branch
+  of the recorder read `process.name` off the OCSF event, and the canonical
+  OCSF profile carries `title`, `external_id` and the identity aliases and
+  nothing else. `fleetdm`, `osctrl`, `auditd` and `windows_event` all put
+  their process fields in the connector payload under `raw_data`, so that
+  branch found `None` on every endpoint source this product has and could
+  never have produced one row — while its own tests passed, because they
+  built events in the shape the module expected. It now reconstructs the same
+  flat namespace `DetectionEngine._raw_fields` does, and
+  `scripts/check_ai_endpoint_discovery.py` makes reading it a rule.
+
+  Recorded rather than implied: `crowdstrike`, `sentinelone` and
+  `azure_defender` poll the vendor's own **detections**, not raw process
+  telemetry, so they cannot supply a process start. An operator running an
+  EDR and nothing else has a coverage gap here, not a quiet estate, and the
+  documentation says so in a callout.
+
+- **An AI-estate inventory built from observation rather than registration**
+  (depth plan 6.1). `aisoc_ai_assets` (migration `110`, tenant-scoped with
+  forced row-level security) holds every AI app, coding agent, MCP server,
+  IDE extension, model-provider key and OAuth grant AiSOC has seen, with the
+  person and device behind each. The gap it closes is that `aisoc_mcp_servers`
+  records what an operator *declared*, and the row that matters in an AI
+  governance review is the one present in observation and absent from the
+  declaration.
+
+  Measured the way the recurring defect here demands: the writer is in the
+  fusion consumer's raw-events branch, the one path every normalized event
+  already travels on the default profile, because a recorder behind a flag or
+  in a service CORE does not start is a table nothing writes and a page that
+  renders "no AI estate" to a tenant that has one.
+  `scripts/check_ai_asset_inventory.py` makes that a rule rather than a
+  comment — it requires the consumer to call the recorder *and* the service
+  to construct it, since an unconstructed recorder is a `None` every call
+  site skips in silence. `ai-estate-live.yml` writes a fixture estate of
+  three kinds into a real PostgreSQL as the DML-only `aisoc_app` role, and
+  two negative controls re-inject real defects: reverting `NULLS NOT
+  DISTINCT` on the identity constraint turns one provider-key row into
+  three, and a tenant policy of `USING (true)` lets one tenant read
+  another's estate.
+
+  Also: graph schema `v1.2 → v1.3` adds the `AIAsset` label with
+  `(:User)-[:OPERATES]->(:AIAsset)` and `(:Endpoint)-[:HOSTS]->(:AIAsset)`,
+  emitted by `services/ingest` as a post-pass rather than a connector case —
+  AI telemetry arrives on three connector types and as plain process
+  activity, so keying on the connector would have covered one of them and
+  looked complete. A new `ai_estate:read` / `ai_estate:write` permission
+  pair, held by real roles and mintable into an API key, because the
+  inventory names which agent on which laptop holds which provider key and
+  `hunts:read` already demonstrated what a permission no role holds is worth.
+
 - `services/api/app/models/detection_rule.py` maps the `author` column, which
   has existed since `001_init.sql` and was mapped by nothing — while fusion's
   tenant overlay reads it on every reload to say *who* silenced a rule when it

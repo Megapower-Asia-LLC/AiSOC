@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging, logger
 from app.memory.provider import MemoryPriorProvider
 from app.services import ioc_match
+from app.services.ai_asset_recorder import AiAssetRecorder
 from app.services.alert_enricher import AlertEnricher
 from app.services.alert_sink import AlertSink
 from app.services.attack_chain_grouper import AttackChainGrouper
@@ -137,6 +138,14 @@ async def lifespan(app: FastAPI):
     # capture None and drop every dead letter.
     dlq = PostgresDLQ(lambda: sink._pool) if sink is not None else None
 
+    # Depth 6.1 — the observed AI estate. Shares the alert sink's pool for
+    # the same reason the dead-letter queue does: one Postgres connection
+    # pool per service, opened by `sink.start()` during `worker.start()`.
+    # Passed as a callable because that happens after this point, and
+    # capturing `sink._pool` eagerly would capture None and silently drop
+    # every sighting for the life of the process.
+    ai_assets = AiAssetRecorder(lambda: sink._pool) if sink is not None else None
+
     worker = FusionWorker(
         engine,
         sink=sink,
@@ -156,6 +165,7 @@ async def lifespan(app: FastAPI):
         # an alert to is a row nobody reads.
         sessions=SessionStore(_fusion_pool()) if settings.alert_sink_enabled else None,
         ueba_cache=ueba_cache,
+        ai_assets=ai_assets,
     )
     set_worker(worker)
 

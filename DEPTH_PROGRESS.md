@@ -86,6 +86,19 @@ it. Both lanes had claimed before writing, as the plan requires -- what the
 rule cannot prevent is two lanes claiming the same free number before either
 merges, so re-read `services/api/migrations/` **and** this table before
 picking one.
+| migration `110` | 6.1 — `110_ai_assets.sql` | claimed |
+| migration `111` | 6.4 — `111_ai_agent_identities.sql` | claimed |
+| ADR `0011` | 6.6 — AI containment arms off by default, and the rollback a kill-switch needs | claimed |
+| — | 5.4 — `104_playbook_verification.sql` on `depth/5.4-5.6-lane-c`, and 7.1 — `104_phishing_campaigns.sql` on `depth/7.1-7.3-phishing` | **collision, unresolved here.** Both lanes wrote a `104` on a branch without a row in this table. Phase 9's `104` is the one with a claim, so these two need renumbering by their own lanes; recorded rather than renamed from outside, because renaming another lane's migration from here is how a branch comes back to a file that no longer exists |
+
+Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
+so `095`--`101` were taken by sibling lanes between the capture above and this
+claim; re-read `services/api/migrations/` rather than trusting the capture row.
+
+The same is true of this table: `104` was already written on two sibling
+lanes' branches with no row here, which is how lanes collide. Phase 6's
+numbers were picked after reading `services/api/migrations/` on `main` **and**
+`git ls-tree` over every `origin/*` branch, not from the row above.
 
 Phase 9 re-read `services/api/migrations/` on 2026-10-11 before claiming:
 `101_audit_immutable_nullify.sql` was still the highest on `main`, and `102`
@@ -99,6 +112,15 @@ already spoken for above, so 8.1 takes `110`--`112` and ADR `0011`. The three
 sub-items that need no schema — the containerised-IdP CI leg,
 internationalisation and accessibility — claim no number. The same release
 rule applies: an unused number is struck, not silently skipped.
+
+**Phase 6 moved `105`/`106` to `110`/`111` on 2026-10-11**, because Phase 9's
+claim for `104`--`109` reached this table on `main` first and a claim table
+nobody defers to is not a coordination mechanism. The lesson is the one this
+section already states and that three lanes still fell to: the table is
+authoritative only for lanes that write to it **before** the file, and four
+branches now carry a `104` or a `105` that was never claimed here. Reading
+`main` is not enough; read `git ls-tree` over every `origin/*` branch as
+well, which is what found this.
 
 ## Phase 0: Kickoff
 
@@ -694,8 +716,96 @@ endpoint produces once triage falls through to its deterministic scorer.
 
 ## Phase 6: AI agent security
 
-- [ ] **6.1** AI asset inventory
-- [ ] **6.2** Endpoint discovery with no new agent
+- [x] **6.1** AI asset inventory. Reproduced:
+  `scripts/check_ai_asset_inventory.py` on the unmodified tree reported nine
+  problems across five of its eight rules — no migration creates the table,
+  no model maps it, no route reads it, no writer exists, and the graph
+  vocabulary has no label for an AI asset. Implemented `aisoc_ai_assets`
+  (migration `110`, tenant-scoped, `FORCE ROW LEVEL SECURITY`, granted to
+  `aisoc_app`), the ORM model, `GET /ai-assets`, `GET /ai-assets/{id}` and
+  `POST /ai-assets/{id}/sanction` behind a new `ai_estate:read` /
+  `ai_estate:write` pair held by five roles and mintable into an API key,
+  `AiAssetRecorder` in the fusion consumer's raw-events branch, the `AIAsset`
+  graph label with `OPERATES` and `HOSTS` edges emitted at ingest (schema
+  `v1.2 -> v1.3`), and the `/ai-estate` console page. 21 new fusion tests
+  (suite 662 -> 683), 8 new Go tests in `internal/graph`, 5 live-Postgres
+  cases in `tests/isolation/test_ai_estate_live.py`.
+
+  **The writer is the whole item**, and the gate says so rather than the
+  prose: the `WRITER` rule requires the consumer to call the recorder *and*
+  `main.py` to construct it, because an unconstructed recorder is a `None`
+  every call site skips in silence and the page would render "no AI estate"
+  to a tenant that has one — the second half of this repository's recurring
+  defect, the half module reachability cannot see.
+
+  Two negative controls, both re-injecting a real defect rather than an
+  invented one, both run against a real PostgreSQL 16 with every migration
+  applied and the suite connected as the DML-only `aisoc_app` role: reverting
+  the identity constraint from `UNIQUE NULLS NOT DISTINCT` to plain `UNIQUE`
+  turns one provider-key row into **three**, each claiming to be first seen
+  now (measured, not predicted — a provider key has no device, so under the
+  default NULL semantics every sighting inserts); and a tenant policy of
+  `USING (true)` lets tenant A read tenant B's estate. Each fails the suite
+  and each is a step in `ai-estate-live.yml`. The gate's own self-test
+  injects one violation per rule and found two blind spots in the gate while
+  being written — it read its own component's docstring as a fabrication, and
+  a `NodeAIAsset,` substring match would have passed on a commented-out
+  `// NodeAIAsset,`.
+
+  **Two limits, stated rather than left to be found.** Phase 2.5 is open, so
+  `effective_permissions` is a column with a resolver behind it and nothing
+  writing it yet; the risk scorer returns `False` for an absent snapshot
+  rather than treating unknown as privileged, and the console says in words
+  that permissions did not contribute. And the three discovery sources see
+  genuinely different things — runtime telemetry never carries a device, a
+  provider audit log never carries either — so `discovery_source` is stored
+  per row and the page prints what each source can and cannot see, because
+  an unlinked device and an unlinkable one are different facts.
+- [x] **6.2** Endpoint discovery with no new agent. Reproduced:
+  `services/fusion/tests/test_ai_endpoint_discovery.py` was written first and
+  **13 of its 16 cases failed** on the tree as 6.1 left it, driving payloads
+  in the shapes `windows_event`, `auditd`, `fleetdm` and `osctrl` actually
+  emit — read out of each connector's own `normalize()` rather than invented.
+
+  **The root cause is the one this repository keeps paying for, in its second
+  form.** 6.1's endpoint branch read `process.name` off the OCSF event. The
+  canonical OCSF profile maps `title`, `external_id` and the identity aliases
+  and *nothing else*; all four endpoint connectors put their process fields in
+  the connector payload, which `services/ingest` stores as a JSON string under
+  `raw_data`. So the branch resolved `None` on every real source and could
+  never have produced one row — and its own unit tests passed throughout,
+  because they built events in the shape the module expected. The recorder now
+  reconstructs the same flat namespace `DetectionEngine._raw_fields` does, and
+  `PROCESS_FIELDS` / `COMMAND_LINE_FIELDS` name each connector's own spelling.
+
+  Built: `packs/aisoc-ai-estate.yaml` (5 queries — coding-agent processes, MCP
+  server processes, MCP client configuration files, AI IDE extensions,
+  provider key files; loaded through the real `pack_loader`, 5 packs -> 6),
+  `SOURCE_CAPABILITIES` declaring what each of the five discovery sources sees
+  *and* cannot see, `apps/docs/docs/concepts/ai-estate-discovery.md`, and
+  `scripts/check_ai_endpoint_discovery.py` (6 rules, self-test injects one
+  violation each). Fusion suite 683 -> 700.
+
+  Negative controls: an ordinary process (`falcon-sensor`, `osqueryd`,
+  `nginx`, `chrome`, `MsMpEng.exe`, `node`), an unrelated IDE extension
+  (`esbenp.prettier-vscode`) and an unrelated `package.json` each produce no
+  asset, and an endpoint sighting is asserted to carry no model or provider —
+  because filling those from a default would make the inventory assert
+  something no source observed. The gate's own self-test re-injects the
+  original defect (`fields = _connector_fields(ocsf)` -> `fields = dict(ocsf)`)
+  and requires NAMESPACE to catch it; writing it found the same
+  read-your-own-docstring blind spot a second time, now fixed by stripping the
+  docstring before matching.
+
+  **Honest limit, and the reason the claim row is PARTIAL:** `crowdstrike`,
+  `sentinelone` and `azure_defender` poll the vendor's own **detections**, not
+  process telemetry — `crowdstrike.py` reads `/detects/queries/detects/v1` —
+  so they cannot supply a process start, and the plan's wording that endpoint
+  discovery comes from them is not satisfiable with the connectors this tree
+  has. The documentation says so in a callout rather than leaving a reader to
+  assume their EDR covers it. Separately, no osquery agent runs in CI: the
+  pack is asserted to load and to select the columns the recorder reads, but
+  no test has watched a real `osqueryd` execute one of its queries.
 - [ ] **6.3** Provider coverage beyond OpenAI and Anthropic
 - [ ] **6.4** Agent identity and baselines (parity 6.7)
 - [ ] **6.5** AI rule pack
@@ -808,6 +918,8 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
 | 2026-10-11 | 5.4 | Reproduced: `check_stateful_verification.py` against `origin/main` reported eight problems — no `verification.py` at all, `verify_user` absent from the control-flow table, no resume path, no escalation, no `timed_out`, no sweep, no migration and no writer for the opt-in table. Built the stage machine on the existing pause row rather than a second table. Three negative controls recorded in the PR: reverting the run-loop break fails three tests including the `wait` regression (D11), removing `manager_ref=_extract_manager(body)` fails three SCIM tests, and removing `ENABLE ROW LEVEL SECURITY` from migration 102 fails the live tenancy test with "tenant B read tenant A's verification policy". Two pre-existing tests pinned the old shape and were widened rather than relaxed: the control-flow table's membership (still an equality, now of four) and the sweeper's return dict. Writing the gate found a hole in the gate: its first block extractor matched `\n\n\n`, which finds nothing for the *last* function in a module, so the ordering rule was skipped entirely over an injected violation. |
+| 2026-10-11 | 6.2 | Reproduced: 13 of 16 new cases failed, driving the shapes the four endpoint connectors actually emit. Root cause was 6.1's endpoint branch reading `process.name` off OCSF, which the canonical profile never populates — it found `None` on every real source while its own tests passed. Fixed by reconstructing the connector namespace. Shipped the osquery pack (5 queries, packs 5 -> 6), the source-capability table, the operator doc and a 6-rule gate. Fusion suite 683 -> 700. Claim row is PARTIAL: no osquery agent runs in CI, and the EDR connectors return vendor detections rather than process telemetry, so the plan's "CrowdStrike, Defender, SentinelOne" wording is not satisfiable with these connectors. |
+| 2026-10-11 | 6.1 | Reproduced: the new gate reported nine problems across five of eight rules on the unmodified tree. Built `aisoc_ai_assets` (migration 110), its routes behind a new `ai_estate:*` permission pair, the fusion recorder that writes it on the default profile, the `AIAsset` graph label with `OPERATES`/`HOSTS` edges, and the `/ai-estate` page. Two negative controls against a real PostgreSQL: reverting `NULLS NOT DISTINCT` turns one provider-key row into three, and a `USING (true)` policy leaks across tenants. Claim matrix 302 -> 303 rows, 300 GATED. Writing the gate found two blind spots in the gate itself. |
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |
 | 2026-10-11 | 8.1 | parity 4.1's containerised-IdP leg **observed to pass**, both halves: `keycloak-oidc` verifies a real `id_token` against Keycloak's published JWKS with an audience-mismatch negative control, and `keycloak-saml` walks the whole SP-initiated flow to the real ACS and signs `alice@example.com` in as `infosec`, with an untrusted-key control answering 400. Run `38124780886`, as `ENVIRONMENT=test` against the DML-only `aisoc_app` role. The SSO claim row moves PARTIAL → GATED on that evidence. Building it found two shipped defects no self-authored provider could expose: `resolve_saml_connection` bound `:i` untyped so `:i IS NULL` raised on asyncpg, and Keycloak's default role-list mapper emits one `<Attribute Name="Role">` per role, which python3-saml refuses. |
 | 2026-10-11 | 8.1 | WebAuthn as a console second factor and MFA enforced per role. Fixing the branch's own gates found three `passkey_credentials` reads scoped by user id alone on a tenant-scoped table, and a permission-model violation where the MFA policy route imported `ROLE_PERMISSIONS` directly; the role *vocabulary* now has one owner in `role_grants.known_roles()`. 23 of 23 live cases pass against real Postgres, and deleting the login integration fails 14 of them — measured, where the workflow had said eight. |

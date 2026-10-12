@@ -48,7 +48,7 @@ package graph
 // the nodes it already writes, so a traversal can ask "which of these
 // accounts is a person" without leaving the graph. See ActivityNodeProperties
 // below for exactly which keys land where.
-const SchemaVersion = "v1.2"
+const SchemaVersion = "v1.3"
 
 // ActivityNodeProperties names the properties the activity projection adds,
 // per label. Declared here rather than only written in the extractor so the
@@ -130,6 +130,18 @@ const (
 	// The graph must be safe to hand to an agent.
 	NodeSecret NodeLabel = "Secret"
 
+	// ── v1.3: the AI estate ───────────────────────────────────────────
+	// One label with a `kind` property rather than six labels for app,
+	// coding agent, MCP server, IDE extension, provider key and OAuth
+	// grant. Same reasoning as Identity superclassing User and
+	// ServiceAccount: every question asked of this data is asked across the
+	// kinds ("what does this person run", "what runs on this laptop"), so
+	// six labels would make each a six-way union and would give the
+	// vocabulary six places to drift.
+	//
+	// Tenant-scoped, unlike the threat labels below: an agent is somebody's.
+	NodeAIAsset NodeLabel = "AIAsset"
+
 	// ── v1.1: threat depth ────────────────────────────────────────────
 	// These are the global reference labels. They are deliberately not
 	// tenant-scoped, and tenant_deletion.py exempts them from an
@@ -183,6 +195,7 @@ var AllNodeLabels = []NodeLabel{
 	NodeCloudAccount,
 	NodeSecret,
 	NodeSession,
+	NodeAIAsset,
 	NodeIOC,
 	NodeMalware,
 	NodeCampaign,
@@ -253,6 +266,15 @@ const (
 	// is who an escalation actually goes to.
 	RelOwnedBy RelType = "OWNED_BY"
 
+	// ── v1.3: the AI estate ───────────────────────────────────────────
+	// Two new types rather than reusing OWNED_BY and RUNS. Those two are
+	// declared in the YAML with one source label and one target label each
+	// (Application -> Employee, Resource -> Application), and a second pair
+	// of endpoints cannot be expressed on them without making the schema
+	// file say something that is not true of the edges actually written.
+	RelOperates RelType = "OPERATES" // User -> AIAsset: who runs it
+	RelHosts    RelType = "HOSTS"    // Endpoint -> AIAsset: where it ran
+
 	// ── v1.1: threat depth ────────────────────────────────────────────
 	// ── v1.2: session depth (depth plan 2.4) ─────────────────────────
 	// Identity|User -> Session. "What else did this principal do" without
@@ -303,6 +325,8 @@ var AllRelTypes = []RelType{
 	RelOpenedSession,
 	RelIssuedSession,
 	RelSessionRaised,
+	RelOperates,
+	RelHosts,
 	RelObservedIOC,
 	RelIndicates,
 	RelPartOf,

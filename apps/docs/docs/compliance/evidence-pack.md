@@ -35,6 +35,8 @@ and says so.
 
 The last row is the one worth reading first. It is the honest index: 301 rows
 `GATED`, 2 `PARTIAL`, and a ratchet that refuses to let a row sit at
+
+`GATED`, 4 `PARTIAL`, and a ratchet that refuses to let a row sit at
 `NO GATE`. Re-read the figure from the table rather than from here — a count
 copied into prose goes stale in silence, which is why
 `scripts/readme_gates.py` cross-checks this sentence against the matrix.

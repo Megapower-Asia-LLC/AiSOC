@@ -1,6 +1,7 @@
 """ORM models package - imports all models for Alembic and SQLAlchemy."""
 
 from app.db.database import Base
+from app.models.ai_asset import AiAsset
 from app.models.alert import Alert
 from app.models.asset import AlertAssetCorrelation, Asset, AssetVulnerability
 from app.models.branding import OrgBrandAsset, OrgBranding
@@ -102,6 +103,7 @@ __all__ = [
     "TenantInboxToken",
     "TenantLlmCredential",
     "McpServer",
+    "AiAsset",
     "PasskeyCredential",
     "PasskeyChallenge",
     "OnCallStatus",
