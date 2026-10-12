@@ -86,9 +86,37 @@ SESSION_FIELD_PATTERNS: tuple[tuple[str, str], ...] = (
 #: Files that read these fields for a reason other than deriving a session.
 #: Each entry needs a reason; an empty allowlist is the goal and the list is
 #: never a convenient place to put a new violation.
+#:
+#: The distinction that keeps the list honest: the hazard this gate exists for
+#: is a **consumer of the session projection** — `sessions.py` (Postgres),
+#: `lake_writer.py` (ClickHouse) or the Neo4j writer in Go — re-deriving the
+#: key, after which the three stores disagree about which session an event
+#: belongs to. A *connector* that lifts the vendor's session field into its
+#: own normalized output is not that: it runs upstream of the one producer,
+#: it writes nothing into `activity.session`, and the field it produces feeds
+#: the detection engine's namespace, which `windowed_detection._fields()`
+#: builds from the connector's `raw_data`/`raw_event` and **never** from
+#: `activity.session`. So the AiTM rules cannot read the projection even in
+#: principle, and the lift is the only way the session id reaches them. None
+#: of the three store-consumers is on this list, and each would still trip.
 ALLOWED: dict[str, str] = {
     "scripts/check_session_projection.py": "this gate, which has to name the patterns it looks for",
     "services/ingest/internal/activity/session_test.go": "the producer's own tests, which assert on these fields by name",
+    "services/connectors/app/connectors/okta.py": (
+        "the Okta connector lifts authenticationContext.externalSessionId to a top-level "
+        "`session_id` in normalize() so the windowed AiTM rules (depth 7.3) can group on it — "
+        "the detection namespace is built from the connector's output, not from activity.session, "
+        "so this is detection-field normalization upstream of the producer, not a second consumer "
+        "re-deriving the projection key. session.go stays the sole producer of activity.session."
+    ),
+    "services/connectors/tests/connectors/test_aitm_session_fields_reach_detection.py": (
+        "asserts the connector's session_id lift reaches the detection engine; names the vendor "
+        "field by name to build the fixture, same reason as the producer's own tests"
+    ),
+    "services/fusion/tests/test_okta_identity_rules_are_reachable.py": (
+        "builds Okta fixtures that carry externalSessionId to prove the identity rules fire; "
+        "names the vendor field to construct the event, not to derive a projection key"
+    ),
 }
 
 #: A consumer that falls back to building a key when the block is absent.

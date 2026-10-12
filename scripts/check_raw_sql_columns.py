@@ -241,6 +241,14 @@ PARSER_ARTEFACTS: dict[tuple[str, str], str] = {
         "the",
     ): "Prose in the module docstring, not a statement. The word follows `SELECT` in an English sentence.",
     (
+        "services/api/app/services/lake_query_runner.py",
+        "elapsed",
+    ): (
+        "Prose in the module docstring, not a statement: \"Nothing here derives a percentage "
+        "from elapsed time\" puts the word after `from` in an English sentence. The module's "
+        "real statements are SQLAlchemy Core, not raw strings."
+    ),
+    (
         "services/api/app/services/alert_bulk_close.py",
         "a",
     ): (
@@ -280,6 +288,15 @@ DYNAMIC_SQL: dict[tuple[str, str], str] = {
         "The ClickHouse lake's own migration ledger: the table is `MIGRATION_TABLE` "
         "('aisoc._migrations'), interpolated, and this module creates it. Same reason as "
         "`aisoc_schema_migrations` above, one store over."
+    ),
+    (
+        "services/connectors/app/leader_lease.py",
+        "scheduler_leases",
+    ): (
+        "The module docstring's illustrative fragment — `UPDATE scheduler_leases SET ... WHERE "
+        "scope = :scope AND expires_at < now()` — whose literal ellipsis is unparsable on "
+        "purpose. The five statements the module actually sends all parse and are compared "
+        "against migration 115 (`--credits` names each one)."
     ),
     (
         "services/api/app/services/alert_bulk_close.py",
