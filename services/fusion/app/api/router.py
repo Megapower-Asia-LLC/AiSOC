@@ -43,6 +43,28 @@ async def metrics():
     return {"status": "ok", "metrics": FusionWorker.get_metrics()}
 
 
+@router.get("/scale-hint")
+async def scale_hint():
+    """Lag-based autoscaling signal (parity 6.9 / depth 4.4).
+
+    AiSOC publishes this and does not act on it. An autoscaler belongs to
+    the cluster, not to the application; ADR-0011 records why, and
+    `apps/docs/docs/operations/performance.md` shows the KEDA
+    `ScaledObject` that consumes it.
+
+    Unauthenticated for the same reason `/metrics` is: a scaler scrapes
+    it on the cluster network and it carries no tenant data — a lag count
+    and a replica suggestion.
+    """
+    if _worker_ref is None:
+        # Not a zero. A hint of "one replica, no backlog" from a service
+        # whose worker never started is a scaler being told everything is
+        # fine by a process that is not consuming anything.
+        return {"status": "worker not started", "lag_measured": False}
+    hint = await _worker_ref.scale_hint()
+    return {"status": "ok", **hint}
+
+
 @router.get("/ml/status")
 async def ml_status(principal: ScopedPrincipal):
     """Return current ML model training status."""

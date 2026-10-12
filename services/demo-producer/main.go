@@ -408,10 +408,161 @@ func loadEvent(runID string, seq int64, sentNanos int64) map[string]interface{} 
 	}
 }
 
+// BenignMarkerPrefix opens the title of every *non-alerting* load event.
+// Distinct from MarkerPrefix so the harness can count the two populations
+// separately: the alerting ones are what latency is measured over, and the
+// benign ones existing in the lake while producing no alert is the property
+// the realistic mix is for.
+const BenignMarkerPrefix = "aisoc-load-benign"
+
+// benignLoadEvent is the other 99% of a real estate's telemetry.
+//
+// Depth plan 4.4. The load harness used to send one event shape, every
+// instance of which became an alert. That measures a pipeline nobody runs:
+// in a real deployment almost every event is routine, and the work fusion
+// actually does is evaluating the corpus against traffic that matches
+// nothing. A harness in which every event alerts over-measures the alert
+// path and *under*-measures detection, which is the stage parity 6.9 is
+// about.
+//
+// Deliberately shaped like real telemetry rather than as a near-miss of
+// the alerting event: a benign event built by mutating the malicious one
+// shares its field namespace, so it exercises the same handful of rules
+// and tells you nothing about the corpus.
+//
+// Identity telemetry specifically, and that is a finding rather than a
+// preference. The first run of this mix reported a benign alert rate of
+// **1.00**: every "benign" event became an alert, because the load path
+// sends an undeclared connector type, the ingest normalizer's generic
+// fallback files it as class 2001 Security Finding, and the promoter
+// promotes OCSF category 2 unconditionally. Eight of the twelve declared
+// profiles are category 2, so on those connectors *no event can be
+// benign* whatever it contains. `okta_system_log` is class 3002
+// (Authentication), where promotion depends on `severity_id >= 4` — on
+// the event rather than on the connector — so a routine sign-in is
+// routine. `severity: info` keeps these below that bar and below the
+// detection corpus's, which is what makes an alert from one of them a
+// real finding about the pipeline rather than an artefact of the fixture.
+func benignLoadEvent(runID string, seq int64, sentNanos int64) map[string]interface{} {
+	shapes := []map[string]interface{}{
+		{
+			"event_type":  "user.session.start",
+			"description": "sign-in succeeded",
+			"user":        fmt.Sprintf("analyst%03d", seq%200),
+			"src_ip":      fmt.Sprintf("198.51.100.%d", seq%250),
+			"action":      "allow",
+			"outcome":     "success",
+			"mfa":         "true",
+			"app":         "okta",
+			"user_agent":  "Mozilla/5.0",
+		},
+		{
+			"event_type":  "user.authentication.auth_via_mfa",
+			"description": "MFA challenge satisfied",
+			"user":        fmt.Sprintf("analyst%03d", seq%200),
+			"src_ip":      fmt.Sprintf("198.51.100.%d", seq%250),
+			"action":      "allow",
+			"outcome":     "success",
+			"factor":      "webauthn",
+			"app":         "okta",
+		},
+		{
+			"event_type":  "user.session.access_admin_app",
+			"description": "read-only console view",
+			"user":        fmt.Sprintf("analyst%03d", seq%200),
+			"src_ip":      fmt.Sprintf("198.51.100.%d", seq%250),
+			"action":      "allow",
+			"outcome":     "success",
+			"app":         "okta",
+			"target":      "reporting",
+		},
+	}
+	event := map[string]interface{}{}
+	for k, v := range shapes[seq%int64(len(shapes))] {
+		event[k] = v
+	}
+	event["severity"] = "info"
+	event["host"] = fmt.Sprintf("LOADB-%s-%06d", runID, seq)
+	event["title"] = fmt.Sprintf("%s %s seq=%d t=%d", BenignMarkerPrefix, runID, seq, sentNanos)
+	event["timestamp"] = time.Unix(0, sentNanos).UTC().Format(time.RFC3339Nano)
+	return event
+}
+
+// loadEventFor picks the shape for this sequence number from the configured
+// mix.
+//
+// Deterministic rather than random: the same seq always produces the same
+// shape, so two runs of the same configuration push the same traffic and a
+// difference between them is the system rather than the dice. `alertEvery`
+// of 0 means every event alerts, which is the previous behaviour and the
+// default.
+func loadEventFor(runID string, seq int64, sentNanos int64, alertEvery int64) (map[string]interface{}, bool) {
+	if alertEvery <= 1 {
+		return loadEvent(runID, seq, sentNanos), true
+	}
+	if seq%alertEvery == 0 {
+		return loadEvent(runID, seq, sentNanos), true
+	}
+	return benignLoadEvent(runID, seq, sentNanos), false
+}
+
+// BenignConnectorType is the connector the benign population is sent as.
+//
+// Class 3002 (Authentication) in the ingest normalizer, where the promoter
+// requires `severity_id >= 4`. That makes promotion a property of the
+// event rather than of the connector, which is the only way a benign
+// event can stay benign: eight of the twelve declared profiles are
+// category 2 and are promoted unconditionally.
+const BenignConnectorType = "okta_system_log"
+
+// AlertingConnectorType is the historical load connector.
+const AlertingConnectorType = "crowdstrike"
+
+// postPopulations sends each population under its own connector type.
+//
+// Both halves are counted into the same stats, because the harness's
+// ingest throughput figure is about the whole mix. An empty half is
+// skipped rather than sent as an empty batch: an empty request is a
+// round trip that measures the network.
+func postPopulations(
+	ctx context.Context,
+	client *http.Client,
+	opts options,
+	alerting []map[string]interface{},
+	benign []map[string]interface{},
+	st *stats,
+) error {
+	for _, population := range []struct {
+		events        []map[string]interface{}
+		connectorType string
+	}{
+		{alerting, AlertingConnectorType},
+		{benign, BenignConnectorType},
+	} {
+		if len(population.events) == 0 {
+			continue
+		}
+		err := postBatch(ctx, client, opts, ingestRequest{
+			ConnectorID:   "load-" + opts.runID,
+			ConnectorType: population.connectorType,
+			SourceFormat:  "json",
+			Events:        population.events,
+		}, st)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type loadSummary struct {
 	RunID           string           `json:"run_id"`
 	Mode            string           `json:"mode"`
 	MarkerPrefix    string           `json:"marker_prefix"`
+	BenignPrefix    string           `json:"benign_marker_prefix"`
+	AlertEvery      int64            `json:"alert_every"`
+	AlertingSent    int64            `json:"alerting_events_sent"`
+	BenignSent      int64            `json:"benign_events_sent"`
 	IngestURL       string           `json:"ingest_url"`
 	Tenant          string           `json:"tenant"`
 	StartedAt       string           `json:"started_at"`
@@ -441,6 +592,11 @@ func runLoad(ctx context.Context, opts options) loadSummary {
 	st := newStats()
 	var seq atomic.Int64
 	var issued atomic.Int64
+	// Counted here rather than derived from `total / alertEvery`: the run
+	// can stop early, and a computed expectation would then disagree with
+	// what was sent in exactly the case the harness needs it most.
+	var alertingSent atomic.Int64
+	var benignSent atomic.Int64
 
 	// A shared bucket rather than a per-worker ticker: pacing per worker makes
 	// the aggregate rate depend on how many workers happen to be blocked.
@@ -487,16 +643,26 @@ func runLoad(ctx context.Context, opts options) loadSummary {
 					}
 				}
 				batch := make([]map[string]interface{}, 0, size)
+				benignBatch := make([]map[string]interface{}, 0, size)
 				now := time.Now().UnixNano()
 				for i := 0; i < size; i++ {
-					batch = append(batch, loadEvent(opts.runID, seq.Add(1)-1, now))
+					next := seq.Add(1) - 1
+					event, alerting := loadEventFor(opts.runID, next, now, opts.alertEvery)
+					if alerting {
+						alertingSent.Add(1)
+						batch = append(batch, event)
+					} else {
+						benignSent.Add(1)
+						benignBatch = append(benignBatch, event)
+					}
 				}
-				err := postBatch(ctx, client, opts, ingestRequest{
-					ConnectorID:   "load-" + opts.runID,
-					ConnectorType: "crowdstrike",
-					SourceFormat:  "json",
-					Events:        batch,
-				}, st)
+				// Two requests, not one, when the mix is on. The
+				// connector type is a property of the request and the
+				// ingest normalizer picks the OCSF class from it, so a
+				// single batch would force both populations through one
+				// profile — which is how the first run of this mix
+				// reported every benign event as an alert.
+				err := postPopulations(ctx, client, opts, batch, benignBatch, st)
 				if err != nil && ctx.Err() == nil {
 					fmt.Fprintf(os.Stderr, "[load] %v\n", err)
 					if isFatalRequest(err) {
@@ -522,6 +688,10 @@ func runLoad(ctx context.Context, opts options) loadSummary {
 		RunID:           opts.runID,
 		Mode:            "load",
 		MarkerPrefix:    MarkerPrefix,
+		BenignPrefix:    BenignMarkerPrefix,
+		AlertEvery:      opts.alertEvery,
+		AlertingSent:    alertingSent.Load(),
+		BenignSent:      benignSent.Load(),
 		IngestURL:       opts.ingestURL,
 		Tenant:          opts.tenant,
 		StartedAt:       started.UTC().Format(time.RFC3339Nano),
@@ -565,6 +735,9 @@ type options struct {
 	workers   int
 	targetEPS int
 	summary   string
+	// alertEvery shapes the mix: one alerting event every N, benign
+	// telemetry in between. 1 is the historical all-alerting load.
+	alertEvery int64
 }
 
 func main() {
@@ -581,6 +754,8 @@ func main() {
 	flag.IntVar(&opts.workers, "workers", 8, "Load mode: concurrent senders")
 	flag.IntVar(&opts.targetEPS, "target-eps", 0, "Load mode: pace to this many events per second (0 = saturate)")
 	flag.StringVar(&opts.summary, "summary", "", "Load mode: write the run summary as JSON to this path")
+	flag.Int64Var(&opts.alertEvery, "alert-every", 1, "Load mode: send an alerting event every Nth event and benign telemetry in between. "+
+		"1 (the default) is the historical all-alerting mix; 100 is a realistic estate where almost nothing alerts")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
