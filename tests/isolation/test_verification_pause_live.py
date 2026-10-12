@@ -130,7 +130,9 @@ async def wired(pool: Any, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[tup
 
     tenant_id = str(uuid.uuid4())
     async with pool.acquire() as conn:
-        await conn.execute("INSERT INTO tenants (id, name) VALUES ($1::uuid, 'live')", tenant_id)
+        # `slug` is NOT NULL since 001_init; derived from the id so two
+        # module-scoped runs cannot collide on the UNIQUE constraint.
+        await conn.execute("INSERT INTO tenants (id, name, slug) VALUES ($1::uuid, 'live', 'live-' || left($1, 8))", tenant_id)
     yield playbook_pause, tenant_id
 
 
@@ -267,7 +269,11 @@ async def test_the_policy_table_is_tenant_scoped_and_default_deny(pool: object) 
 
     tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
     async with pool.acquire() as conn:  # type: ignore[attr-defined]
-        await conn.execute("INSERT INTO tenants (id, name) VALUES ($1::uuid, 'a'), ($2::uuid, 'b')", tenant_a, tenant_b)
+        await conn.execute(
+            "INSERT INTO tenants (id, name, slug) VALUES ($1::uuid, 'a', 'a-' || left($1, 8)), ($2::uuid, 'b', 'b-' || left($2, 8))",
+            tenant_a,
+            tenant_b,
+        )
         await conn.execute(
             "INSERT INTO aisoc_verification_policies (tenant_id, alert_class) VALUES ($1::uuid, 'impossible_travel')",
             tenant_a,

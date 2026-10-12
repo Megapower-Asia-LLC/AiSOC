@@ -397,22 +397,6 @@ RATCHET: dict[str, str] = {
         "id, binds set_rls_context to the row's own tenant before acting, and refuses without the "
         "token — the tenant comes from the row the bot named, never from the caller"
     ),
-    "services/api/app/services/lake_query_runner.py::claim_statement::lake_query_jobs": (
-        "the claim is one conditional UPDATE by job id where status = 'queued' — a worker claiming "
-        "work enqueued by tenant-scoped routes, the same shape as approval_expiry.run_once. The "
-        "routes that create and read jobs bind the tenant; the runner executes whichever replica won"
-    ),
-    "services/api/app/services/lake_query_runner.py::_record_progress::lake_query_jobs": (
-        "progress lands on the claimed job by id; the claim above is what decided whose job it is"
-    ),
-    "services/api/app/services/lake_query_runner.py::_finish::lake_query_jobs": (
-        "terminal state lands on the claimed job by id, guarded so a finished job is never revived; "
-        "same claim-then-act shape as _record_progress"
-    ),
-    "services/api/app/services/lake_query_runner.py::list_stuck_jobs::lake_query_jobs": (
-        "the stuck sweep asks 'which running jobs lost their runner', tenant-unbound by the same "
-        "discover-a-working-set reasoning as due_deliveries; it only moves jobs to a terminal state"
-    ),
     "services/api/app/services/war_room.py::sync_war_room::aisoc_case_war_rooms": (
         "the sweep is a pure function of the case row: it reads the room by id handed to it by the "
         "worker's cross-tenant discovery below, and every post it writes is keyed to that room; the "
@@ -483,7 +467,15 @@ RATCHET: dict[str, str] = {
 # ceiling with a spare slot in it and the list held 41. The ceiling now
 # equals the list, so the next unscoped statement has to be argued for
 # rather than absorbed — which is what this number is for.
-MAX_RATCHET = 44
+# 44 -> 50 (the 2026-10-12 merge train): seven entries for depth 5.4's signed
+# answer link and verification sweeper, 9.4's war-room sweep, decision route
+# and worker discovery — each the credential-lookup or discover-a-working-set
+# shape already recorded above, verified in code before being recorded. Four
+# more were written for the lake job runner and then deleted again in the same
+# change: fixing lake_query_jobs' WITH CHECK (the unbound-session arm every
+# sibling policy carries) moved those statements onto the RLS-context credit,
+# which this gate's stale-entry check correctly refused to double-count.
+MAX_RATCHET = 50
 
 
 # ---------------------------------------------------------------------------

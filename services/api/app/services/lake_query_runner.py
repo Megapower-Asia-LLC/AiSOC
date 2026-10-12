@@ -28,7 +28,6 @@ again.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -231,8 +230,10 @@ async def run_job(
         return
     finally:
         poller.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            _ = await poller  # the await is the point: let the cancellation settle
+        # Bound rather than discarded, the shape the fusion ticker test pins:
+        # `return_exceptions=True` hands back how the poller ended instead of
+        # raising it, and the cancellation is settled either way.
+        _ = await asyncio.gather(poller, return_exceptions=True)
 
     await _finish(
         session_factory,
