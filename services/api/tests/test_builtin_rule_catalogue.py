@@ -66,9 +66,9 @@ PACKAGED = REPO / "services" / "api" / "app" / "data" / "detections"
 #: regeneration that silently empties one is a failure here rather than a
 #: quieter comparison of two numbers that moved together.
 ARTEFACTS: dict[str, int] = {
-    "detection_ruleset.json": 741,
+    "detection_ruleset.json": 765,
     "detection_ruleset_imported.json": 1770,
-    "windowed_ruleset.json": 72,
+    "windowed_ruleset.json": 76,
 }
 
 #: Windowed rules declared in fusion's Python rather than in any artefact.
@@ -76,11 +76,13 @@ ARTEFACTS: dict[str, int] = {
 #: why the loaded windowed count is 73 against a file holding 72.
 PYTHON_RESIDENT_WINDOWED = 3
 
-#: 741 + 1770 stateless, 73 windowed (70 of the 72 file entries plus the three
-#: above), 2 sequence (the other two file entries). Measured, not assumed —
+#: 765 + 1770 stateless, 76 windowed (73 of the 76 file entries plus the three
+#: above), 3 sequence (the other three file entries). Measured, not assumed —
 #: `test_catalogue_matches_what_fusion_actually_loads` re-derives it by running
-#: fusion's loaders.
-FUSION_LOADED_TOTAL = 2586
+#: fusion's loaders. The 2026-10-12 merge train moved it 2586 -> 2614: +24
+#: native rules (depth 3.4's enrichment inputs) and +4 windowed (depth 7.3's
+#: AitM family).
+FUSION_LOADED_TOTAL = 2614
 
 TENANT = uuid.UUID("aaaaaaaa-0000-0000-0000-00000000a173")
 ACTOR = uuid.UUID("bbbbbbbb-0000-0000-0000-00000000b173")

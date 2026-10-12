@@ -90,6 +90,13 @@ class FakeSession:
             return FakeScalarResult(self._policies)
         if sql.strip().upper().startswith("SELECT COUNT(*) FROM ALERTS"):
             return FakeScalarResult(self._alert_counts.get(str((params or {}).get("tenant_id")), 0))
+        if "FROM audit_log" in sql:
+            # Depth 8.1 gave the worker an audit leg (`_purge_audit` counts and
+            # then calls `audit_retention_truncate`). Zero rows past the window
+            # keeps the leg quiet here — these cases pin the lake and alert
+            # stores' behaviour, and a double that cannot answer this query
+            # reads as an audit-store failure in every pinned error list.
+            return FakeScalarResult(0)
         return FakeScalarResult(None)
 
     async def commit(self) -> None:

@@ -1,5 +1,5 @@
 {
-  "count": 72,
+  "count": 76,
   "rules": [
     {
       "category": "application",
@@ -289,6 +289,77 @@
       "severity": "medium",
       "threshold": 100,
       "window_seconds": 120
+    },
+    {
+      "category": "identity",
+      "distinct_by": "src_asn",
+      "group_by": "session_id",
+      "id": "wd-aitm-session-replayed-from-new-asn",
+      "match_when": {
+        "session_id_neq": null
+      },
+      "mitre": [
+        "T1539",
+        "T1557"
+      ],
+      "name": "One session used from two different networks",
+      "severity": "high",
+      "threshold": 2,
+      "window_seconds": 3600
+    },
+    {
+      "category": "identity",
+      "distinct_by": "client_browser",
+      "group_by": "session_id",
+      "id": "wd-aitm-session-replayed-from-new-client",
+      "match_when": {
+        "session_id_neq": null
+      },
+      "mitre": [
+        "T1539",
+        "T1550.004"
+      ],
+      "name": "One session used from two different client families",
+      "severity": "high",
+      "threshold": 2,
+      "window_seconds": 3600
+    },
+    {
+      "category": "identity",
+      "distinct_by": "src_country",
+      "group_by": "session_id",
+      "id": "wd-aitm-session-left-the-country-it-started-in",
+      "match_when": {
+        "session_id_neq": null
+      },
+      "mitre": [
+        "T1539"
+      ],
+      "name": "One session used from two different countries",
+      "severity": "high",
+      "threshold": 2,
+      "window_seconds": 3600
+    },
+    {
+      "category": "identity",
+      "group_by": "session_id",
+      "id": "wd-aitm-mfa-then-session-from-new-asn",
+      "mitre": [
+        "T1557",
+        "T1539"
+      ],
+      "name": "An MFA-satisfied sign-in, then the same session used from another network",
+      "ordered": true,
+      "sequence": [
+        {
+          "mfa_satisfied": true
+        },
+        {
+          "session_id_neq": null
+        }
+      ],
+      "severity": "critical",
+      "window_seconds": 1800
     },
     {
       "category": "application",
