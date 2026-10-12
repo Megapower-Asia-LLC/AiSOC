@@ -83,7 +83,7 @@ def main() -> None:
         n += 1
     out.append(t[idx:])
     res = "".join(out)
-    if "<<<<<<<" in res or ">>>>>>>" in res:
+    if re.search(r"^(<<<<<<< |>>>>>>> |=======$)", res, re.MULTILINE):
         raise SystemExit(f"{path}: markers left behind")
     p.write_text(res)
     print(f"{path}: {n} hunks -> {mode}")

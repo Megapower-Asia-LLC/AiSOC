@@ -93,6 +93,7 @@ from app.api.v1.endpoints import (
     sla,
     sso_connections,
     stix_taxii,
+    taxii,
     tenant_provision,
     tenant_skills,
     tenants,
@@ -336,6 +337,8 @@ api_router.include_router(evaluations.router)
 api_router.include_router(knowledge_base.router)
 
 # Wave 4 — advanced capabilities
+api_router.include_router(taxii.router)
+api_router.include_router(taxii.admin_router)
 api_router.include_router(threat_intel.router)
 api_router.include_router(posture.router)
 api_router.include_router(easm.router)
