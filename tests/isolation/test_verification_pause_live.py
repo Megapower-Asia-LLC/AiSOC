@@ -281,26 +281,24 @@ async def test_the_policy_table_is_tenant_scoped_and_default_deny(pool: object) 
             tenant_a,
         )
 
-    # A non-superuser, because RLS is bypassed by the owner and by a
-    # superuser — the exact mistake that made 92 policies decorative in
-    # this repository once already.
-    async with pool.acquire() as conn:  # type: ignore[attr-defined]
-        # Created if absent rather than dropped and recreated: the role
-        # holds grants, so `DROP ROLE` fails on the second run of this
-        # suite against the same database and the failure reads as a
-        # tenancy problem rather than as test housekeeping.
-        await conn.execute(
-            "DO $$ BEGIN "
-            "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lanec_reader') THEN "
-            "CREATE ROLE lanec_reader LOGIN PASSWORD 'lanec_reader_pw'; END IF; END $$"
-        )
-        await conn.execute("GRANT SELECT ON aisoc_verification_policies TO lanec_reader")
-        await conn.execute("GRANT USAGE ON SCHEMA public TO lanec_reader")
-
-    dsn = _dsn()
-    reader_dsn = dsn.replace("postgres:lanec@", "lanec_reader:lanec_reader_pw@").replace("postgres@", "lanec_reader@")
-    reader = await asyncpg.connect(reader_dsn)
+    # A fresh connection on the suite's own DSN, which in CI is the DML-only
+    # runtime role `aisoc_app`. The table is FORCE ROW LEVEL SECURITY, so the
+    # only roles RLS cannot bind are superusers and BYPASSRLS holders — the
+    # exact mistake that made 92 policies decorative in this repository once
+    # already. That property is proved rather than assumed: a DSN quietly
+    # re-pointed at a superuser would turn both assertions below into
+    # tautologies, and the suite must fail loudly instead. (An earlier
+    # revision created a dedicated reader role here, which needs CREATEROLE —
+    # a privilege the runtime role rightly does not hold.)
+    reader = await asyncpg.connect(_dsn())
     try:
+        caps = await reader.fetchrow("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")
+        assert caps is not None and not caps["rolsuper"] and not caps["rolbypassrls"], (
+            "the suite DSN resolves to a role RLS cannot bind (superuser or BYPASSRLS), "
+            "so this test would prove nothing — point ISOLATION_VERIFICATION_DSN at a "
+            "plain DML role such as aisoc_app"
+        )
+
         await reader.execute("SELECT set_config('app.current_tenant_id', $1, false)", tenant_b)
         rows = await reader.fetch("SELECT alert_class FROM aisoc_verification_policies")
         assert rows == [], "tenant B read tenant A's verification policy"

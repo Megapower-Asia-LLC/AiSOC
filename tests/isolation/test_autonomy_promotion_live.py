@@ -585,8 +585,12 @@ class TestTheTransitionsAreInTheHashChainedLog:
         """The plan asks for the hash-chained log, so being append-only is the claim.
 
         A grant an operator can quietly remove the record of is a grant with
-        no audit trail. The trigger refuses the DELETE, and this asserts the
-        refusal rather than assuming it.
+        no audit trail. Two layers refuse the DELETE and either one proves
+        the claim: migration 117 revokes DELETE on `audit_log` from the
+        runtime role outright (`permission denied`, the arm this suite hits
+        because it connects as `aisoc_app`), and the trigger behind it
+        answers `immutable` for any role that does hold the privilege. This
+        asserts the refusal rather than assuming it.
         """
         async with probe() as (session, tenant_id, user_id):
             from sqlalchemy import text
@@ -595,7 +599,7 @@ class TestTheTransitionsAreInTheHashChainedLog:
             await _record(session, tenant_id, count=20, verdict=FALSE_POSITIVE, disposition=FALSE_POSITIVE, resolved_at=base)
             await _promote(session, tenant_id, user_id, override=True, override_reason="Pilot")
 
-            with pytest.raises(Exception, match="immutable"):
+            with pytest.raises(Exception, match="immutable|permission denied"):
                 await session.execute(text("DELETE FROM audit_log WHERE tenant_id = :t"), {"t": tenant_id})
             await session.rollback()
 
