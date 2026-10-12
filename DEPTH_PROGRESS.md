@@ -92,6 +92,9 @@ picking one.
 | — | 5.4 — `104_playbook_verification.sql` on `depth/5.4-5.6-lane-c`, and 7.1 — `104_phishing_campaigns.sql` on `depth/7.1-7.3-phishing` | **collision, unresolved here.** Both lanes wrote a `104` on a branch without a row in this table. Phase 9's `104` is the one with a claim, so these two need renumbering by their own lanes; recorded rather than renamed from outside, because renaming another lane's migration from here is how a branch comes back to a file that no longer exists |
 | migration `110` | 7.1 — `110_phishing_campaigns.sql` | claimed |
 | migration `111` | 7.2 — `111_phishing_message_analysis.sql` | claimed |
+| ~~migration `110`~~ | ~~3.4 — `110_entity_baselines.sql`~~ | **released**, ADR-0011 put the baselines in the Redis fusion already runs, so there is no table |
+| migration `111` | 3.7 — `111_detection_coverage.sql` | claimed |
+| ADR `0011` | 3.4 — behavioural baselines in CORE | **landed**, `docs/decisions/0011-behavioural-baselines-in-core.md`, accepted |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
 so `095`--`101` were taken by sibling lanes between the capture above and this
@@ -132,6 +135,11 @@ moves. Recorded because the next lane will hit it too: re-read
 `DEPTH_PROGRESS.md` on `origin/main`, not only the migrations directory, and
 expect to renumber if a sibling merged between the claim and the pull
 request.
+Phase 3 re-read `services/api/migrations/` on 2026-10-11 before claiming:
+`101_audit_immutable_nullify.sql` was still the highest on `main` and `102`
+through `109` were already spoken for above, so Phase 3 takes `110` for the
+3.4 baseline store and `111` for the 3.7 coverage store. ADR `0011` is the
+next free number in `docs/decisions/` after 2.7 landed `0010`.
 
 ## Phase 0: Kickoff
 
@@ -535,6 +543,135 @@ Fixing them belongs to item 2.6, which wires the priority score and the queue
 ordering these very tests cover; the fix lands there together with a workflow
 that actually runs them against a database, because repairing the assertions
 without that would restore a test nothing executes.
+### D9 -- Five of the 45 "unreachable" rules were never unreachable
+
+`scripts/check_detection_fields.py` carries its own copy of the matcher's
+operator suffixes, under a comment saying it mirrors
+`detection_matcher.OPERATORS`. It did not. `neq` had been added to the
+matcher and not to the gate, so `approver_role_neq: "codeowner"` — which the
+engine reads correctly as `approver_role` with `!=` — was reported as a rule
+naming a field called `approver_role_neq`. Five rules were counted against
+the ratchet for a defect that had already been fixed.
+
+The same comparison in the other direction found a worse one: the gate
+listed `not_startswith_any` and `not_endswith`, which the **matcher** did not
+implement. Three shipped rules use `path_not_startswith_any`, so the matcher
+read the whole string as a field name and all three could never fire — while
+the gate, stripping a suffix nothing implemented, reported them reachable.
+Both operators are now implemented in the vendored matcher and the canonical
+one, the fixture synthesiser knows them, and
+`test_the_gate_and_the_matcher_agree_on_every_operator` compares the two
+lists in both directions.
+
+### D10 -- 18 rules are retired rather than fixed, and why each one is
+
+The plan says of one family: "build them where cheap, otherwise quarantine
+with a reason". Applied to all three families, that leaves 18 rules that need
+work belonging to another item, recorded individually in
+`scripts/enrichment_decisions.py`:
+
+| kind | n | needs |
+|---|---|---|
+| `needs-connector-field` | 9 | a field the vendor has and no connector surfaces — depth plan 2.2 |
+| `needs-external-source` | 6 | a registry, a credential report or a factor record — 2.5 and beyond |
+| `needs-inventory` | 3 | an inventory this platform does not hold (DC machine accounts, privileged OAuth scopes) |
+
+`scripts/check_enrichment_decisions.py` is what stops this being a way to
+move the ratchet: it fails if a retired rule's fields are all resolvable.
+Proved by retiring a working rule and watching it fail.
+
+The line that mattered most was refusing a plausible substitute.
+`domain_age_days` wants a domain's registration age from a registry; the
+first-seen store could have answered "when this deployment first saw it" and
+the number would have looked right in a diff. It would also have fired the
+rule on most of the internet. Five such age-of-a-thing fields are named in a
+test that forbids the first-seen store from ever growing them.
+
+### D11 -- Identity privilege reads a table a tenant must populate
+
+The `*_priv` booleans resolve from `identity_nodes.privilege_tier >= 2`, the
+column migration 018 created for the question. The table's only writer is
+`POST /api/v1/identity-graph/nodes`, so a tenant that has imported no
+directory gets **no key at all** and those 18 rules stay silent — they are
+reachable "when the tenant has identity data", the same standard this gate
+already applies to a vendor-payload field. That is weaker than "reachable on
+any deployment" and is stated rather than glossed. Depth plan 2.5's posture
+collectors are what will populate it automatically.
+
+Four booleans in the same family are deliberately **not** computed —
+`scope_priv`, `act_as_user_priv`, `gpo_link_priv` and `account_is_dc` — and
+are among the 18 above. Each has no subject field any source emits, and
+guessing a subject would produce a boolean that is confidently wrong rather
+than absent.
+
+### D12 -- The "behavioural baseline" family named the wrong piece of work
+
+`check_detection_fields.py` classified an unreachable field into a family so
+the headline number would be actionable. Its behavioural pattern was
+`_baseline|_deviation|^active_|_is_first_`, and `^active_` is not a
+behavioural shape at all. It matched the only two rules left on the ratchet:
+
+| rule | field | what it actually needs |
+|---|---|---|
+| `det-endpoint-146` | `active_state` | a systemd unit state from a host agent |
+| `det-identity-015` | `active_p0_or_p1_incident` | the tenant's ITSM incident queue |
+
+So the gate reported "2 rules need depth plan 3.4" when the true answer was
+**zero**, and building 3.4 exactly as specified would not have moved the
+number by one. A gate pointing at the wrong piece of work is worse than one
+pointing at none, because the named thing gets built and the next reader
+concludes the fix failed.
+
+The pattern now matches the shape `baselines.py` actually produces
+(`^baseline_|_baseline$|_deviation$`), and a new `external system context`
+family carries the ITSM rule. `MAX_UNREACHABLE` stays at **2** — this is a
+reclassification and not a fix, and lowering a ceiling on the strength of
+relabelling is the move this file exists to refuse.
+
+Two consequences worth stating. The behavioural family is now genuinely
+empty, so 3.4 closes no unreachable rule and is not credited with any; it
+earns its place by making 3.5's rules possible, which is a different claim.
+And D9's lesson repeated one level up: a gate that keeps its own description
+of another component drifts from it, and here the drift was in the
+classifier rather than in the operator list.
+
+### D13 -- D9, D10 and D11 were written, merged, and lost on `main`
+
+PR #1226 (depth 3.3) added three deviation sections. None of them is on
+`main`. The item log still cites "(gate operator drift, D9)" and "18 retired
+with a reason (D10)", so the tracker has spent two days pointing at
+explanations a reader could not find, and the same merge truncated 3.2's
+checklist paragraph mid-sentence and left a stale unchecked duplicate
+beneath it.
+
+Nothing was wrong with the branch; the loss happened in a conflict
+resolution that took `main`'s side of this file wholesale. That is the
+documented failure mode for a file several lanes write to at once, and the
+documented remedy — keep both sides' paragraphs, never take one side whole —
+is the one that would have prevented it.
+
+All three are restored here verbatim from the merge commit rather than
+rewritten from memory, which is why D11 keeps its original number and this
+phase's own new deviations take D12 and D13.
+
+### D14 -- A rule of this lane's own was a bare anomaly, and its own gate caught it
+
+Depth plan 3.5 is explicit that an anomaly is *"a typed signal, not an alert
+on its own"*. `ta-saas-oauth-app-volume-spike` was written with
+`baseline_oauth_app_volume_z_gte` as its entire clause -- an alert on an
+anomaly, which is the one thing the item says not to build. It passed
+`generate_detections --check`, the truth table, the reachability gate and
+the generic fixture replay, because every one of those asks whether a rule
+is well-formed and can fire, and it was and it could.
+
+What caught it was the family's own gate asserting that each rule reads a
+threat condition *as well as* a baseline. The rule now also requires
+`event_type: oauth_token_event`.
+
+The reusable half is that the generic gates could not have caught it. A
+corpus-wide gate checks the properties every rule shares; a property that
+belongs to one family has to be asserted by that family, and writing that
+assertion is part of adding the family rather than a later tidy-up.
 
 ## Phase 1: Verdict quality you can publish
 
@@ -668,11 +805,65 @@ endpoint produces once triage falls through to its deterministic scorer.
 - [x] **3.1** Translate the 74 windowed `det-*` rules — 50 translated, 24
   refused with a reason. `MAX_UNREACHABLE` 119 → 45.
 - [x] **3.2** Ordered sequences and Sigma correlations — the windowed engine
-  stages ordered and unordered sequences; all four translatable Sigma
-- [ ] **3.2** Ordered sequences and Sigma correlations
-- [ ] **3.3** Enrichment inputs (parity 5.5)
-- [ ] **3.4** Behavioural baselines in CORE
-- [ ] **3.5** Threat-and-anomaly condition rules
+  stages ordered and unordered sequences (`SequenceRule` in
+  `services/fusion/app/services/windowed_detection.py`, loaded by
+  `load_sequence_rules` from the same artefact the counting rules use); all
+  four translatable Sigma correlation types compile through
+  `scripts/sigma_correlation.py`, held by `scripts/check_sigma_correlations.py`,
+  with seven refusal reasons recorded rather than approximated. No upstream
+  Sigma correlation rule exists in this tree to import (D8), so the corpus is
+  first-party and labelled as such.
+- [x] **3.3** Enrichment inputs (parity 5.5) — identity privilege (18 rules)
+  resolved from the Phase 2.5 posture and SCIM attributes, and a per-tenant
+  first-seen store keyed by principal and attribute
+  (`services/fusion/app/services/first_seen.py`, Redis with a lake backstop)
+  closing 2 more. 5 rules were never unreachable — the gate kept its own copy
+  of the matcher's operator list and had drifted from it (D9) — and 18 were
+  retired with a reason rather than given fields nothing emits (D10).
+  `MAX_UNREACHABLE` 45 → 2, and the two that remain both need the 3.4
+  baseline, so they are named rather than hidden. Two matcher operators that
+  three shipped rules already used were implemented.
+- [x] **3.4** Behavioural baselines in CORE — the scoring core moved into
+  fusion as `services/fusion/app/services/baselines.py` rather than UEBA
+  moving into CORE, measured and recorded in ADR-0011: the UEBA image is
+  145.4 MB on disk with a 63.3 MiB import floor, against zero new
+  containers and a measured 2,412 bytes of Redis per principal (200
+  principals over 10,000 events, `used_memory` read before and after
+  against a real Redis 7). All three families the plan names are there —
+  per-principal rarity of actions, resources, client families and
+  locations; peer-group deviation; volume per principal and per OAuth app —
+  each a typed `AnomalySignal`, never an alert on its own. Wired into
+  `DetectionEngine.evaluate_async` beside the 3.3 first-seen store, so a
+  CORE install computes them with no `full` service running. 22 tests,
+  one of which caught this work's own worst defect: the first draft
+  resolved client-family rarity from three field names **no connector
+  emits**, so that signal could never have been computed anywhere. Every
+  subject chain is now held against the gate's own emitted-field
+  namespace, proved by reinstating the broken chain. The
+  reachability gate's "behavioural baseline" family was **narrowed**: it
+  matched `^active_`, which swept in a systemd unit state and an ITSM
+  lookup and reported both as blocked on a baseline that would never have
+  helped either (D12). `MAX_UNREACHABLE` stays at 2, now with accurate
+  reasons.
+- [x] **3.5** Threat-and-anomaly condition rules — 24 in a new
+  `threat-anomaly` category (`scripts/detection_specs_part4_threat_anomaly.py`),
+  each pairing a threat condition with a 3.4 baseline score, across AWS 6,
+  Okta 4, Workspace 3, Azure/Entra 2, GitHub 2, Kubernetes 2 and one each
+  of M365, Slack, Salesforce, GitLab and generic identity. Executable
+  2,511 → **2,535** (`generate_corpus_stats.py --check`), on disk 6,991 →
+  7,015, counted as its own `make stats` line because the claim differs: a
+  rule here also needs a warmed baseline, so a day-one install has the
+  rule before it has the signal. **Every fixture is hand-authored** and
+  every negative is the benign twin of its positive — the same threat
+  action by a principal for whom it is routine — so the pair differs only
+  in the clause the rule is about. `test_threat_anomaly_replay.py` (147
+  assertions) drives the real `DetectionEngine` and holds four properties
+  a synthesised fixture cannot: the twin moves a baseline field, no
+  negative uses the `not-` sentinel, stripping the baseline from a
+  positive silences the rule, and one rule fires **end to end in CORE on a
+  baseline earned from replayed traffic** with no `full` service running —
+  the phase's second "Done when", as an assertion. The decorative-clause
+  control caught a rule of this lane's own that was a bare anomaly (D14).
 - [ ] **3.6** 395 → at least 800 cloud, identity, SaaS and code conditions
 - [ ] **3.7** Detection engineering agent (gap-closure Phase 9 / parity 6.2)
 

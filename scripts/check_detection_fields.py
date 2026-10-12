@@ -272,6 +272,30 @@ _FIRST_SEEN_DERIVED_FIELDS = frozenset(
     }
 )
 
+#: Per-principal behavioural scores the **baseline store** computes
+#: (`services/fusion/app/services/baselines.py`). Depth plan 3.4.
+#:
+#: Every one is reported only when the principal has enough history to
+#: support it, and is absent otherwise — so a rule reading one of these
+#: fires on a measured deviation and not on a quiet tenant. `ADR-0011`
+#: records why these are computed in fusion rather than in the
+#: `full`-profile UEBA service.
+#:
+#: `services/fusion/tests/test_baselines.py` asserts this set and
+#: `baselines.DERIVED_FIELDS` agree in both directions, so the two cannot
+#: drift the way the matcher's operator list did.
+_BASELINE_DERIVED_FIELDS = frozenset(
+    {
+        "baseline_action_rarity",
+        "baseline_resource_rarity",
+        "baseline_client_family_rarity",
+        "baseline_location_rarity",
+        "baseline_principal_volume_z",
+        "baseline_oauth_app_volume_z",
+        "baseline_peer_deviation",
+    }
+)
+
 #: `<left>_eq_<right>` / `<left>_neq_<right>`, resolved by comparing two
 #: fields of the same event. Reachable only when *both* sides are in the
 #: namespace — a comparison against a field nothing emits is still dead, and
@@ -282,7 +306,12 @@ _DERIVED_COMPARISON_RE = re.compile(r"^(?P<left>.+?)_(?:eq|neq)_(?P<right>.+)$")
 
 def _is_derivable(field: str, namespace: set[str]) -> bool:
     """True when the engine can compute this field from what it already has."""
-    if field in _DERIVED_TIME_FIELDS or field in _TENANT_DERIVED_FIELDS or field in _FIRST_SEEN_DERIVED_FIELDS:
+    if (
+        field in _DERIVED_TIME_FIELDS
+        or field in _TENANT_DERIVED_FIELDS
+        or field in _FIRST_SEEN_DERIVED_FIELDS
+        or field in _BASELINE_DERIVED_FIELDS
+    ):
         return True
     match = _DERIVED_COMPARISON_RE.match(field)
     if not match:
@@ -304,7 +333,25 @@ _FIELD_FAMILIES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("identity enrichment", re.compile(r"_priv$|_is_admin$|_is_dc$")),
     ("per-tenant allowlist", re.compile(r"_in_allowlist$|_not_in_allowlist$")),
     ("age / first-seen enrichment", re.compile(r"_age_days$|_age_hours$|_seen_before$")),
-    ("behavioural baseline", re.compile(r"_baseline|_deviation|^active_|_is_first_")),
+    # Narrowed in depth plan 3.4. This used to read `^active_`, which is not
+    # a behavioural shape at all: it swept in `active_state` (a systemd unit
+    # state an endpoint agent would emit) and `active_p0_or_p1_incident` (an
+    # ITSM lookup), and reported both as blocked on a baseline that would
+    # never have helped either. The whole family therefore read "2 rules
+    # need depth plan 3.4" when the true answer was zero — a gate pointing
+    # at the wrong piece of work is worse than one pointing at none, because
+    # building the named thing does not move the number and the next reader
+    # concludes the fix failed.
+    #
+    # The shape a baseline field actually has is the one `baselines.py`
+    # produces, so the pattern now matches that and nothing else.
+    ("behavioural baseline", re.compile(r"^baseline_|_baseline$|_deviation$")),
+    # Answered by a system outside the event and outside this platform: the
+    # tenant's ITSM, change calendar or ticket queue. Distinct from identity
+    # enrichment, which AiSOC can answer from its own directory import, and
+    # from "nothing emits it", which is a content mistake rather than a
+    # missing integration.
+    ("external system context", re.compile(r"_incident$|^change_ticket|_approved_change$")),
     (
         # Both operands invented by the rule author. Distinct from the rest:
         # the engine can compute a comparison, it just cannot compare two

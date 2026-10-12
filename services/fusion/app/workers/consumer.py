@@ -71,6 +71,7 @@ class FusionWorker:
         detector: DetectionEngine | None = None,
         windowed_detector: WindowedDetectionEngine | None = None,
         first_seen: Any | None = None,
+        baselines: Any | None = None,
         ueba_cache: UebaSignalCache | None = None,
         overlays: OverlayCache | None = None,
         sessions: SessionStore | None = None,
@@ -82,6 +83,8 @@ class FusionWorker:
         self._detector = detector
         self._windowed = windowed_detector
         self._first_seen = first_seen
+        #: Depth plan 3.4 behavioural baselines, computed in CORE.
+        self._baselines = baselines
         self._ueba_cache = ueba_cache
         #: Depth 6.1 — the observed AI estate. Optional in the same sense the
         #: lake writer is: a deployment that passes nothing behaves exactly
@@ -401,7 +404,7 @@ class FusionWorker:
             # {tenant}:{entity}:{tactic} for the console, which is where the
             # N-into-1 view belongs.
             if self._detector is not None:
-                for hit in await self._detector.evaluate_async(payload, overlay, self._first_seen):
+                for hit in await self._detector.evaluate_async(payload, overlay, self._first_seen, self._baselines):
                     det_alert = self._detector.build_alert(payload, hit)
                     if det_alert is not None:
                         _METRICS["detected"] += 1

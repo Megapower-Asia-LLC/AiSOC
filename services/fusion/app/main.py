@@ -16,6 +16,7 @@ from app.services.ai_asset_recorder import AiAssetRecorder
 from app.services.alert_enricher import AlertEnricher
 from app.services.alert_sink import AlertSink
 from app.services.attack_chain_grouper import AttackChainGrouper
+from app.services.baselines import BaselineStore
 from app.services.confidence import ConfidenceScorer
 from app.services.correlator import Correlator
 from app.services.deduplicator import Deduplicator
@@ -128,6 +129,10 @@ async def lifespan(app: FastAPI):
     # Depth plan 3.3 — per-tenant first-seen memory, sharing the fusion Redis
     # the windowed engine already uses for sliding-window state.
     first_seen = FirstSeenStore(redis_client)
+    # Depth plan 3.4 — per-principal behavioural baselines in CORE, on the
+    # same Redis. ADR-0011 records why this is a fusion module rather than
+    # the `full`-profile UEBA service.
+    baselines = BaselineStore(redis_client)
     # Dead letters go to Postgres so they can be read back. Until now the
     # worker defaulted to LoggingDLQ, so a dropped event produced a log
     # line and nothing else — and an invisible drop is indistinguishable
@@ -154,6 +159,7 @@ async def lifespan(app: FastAPI):
         detector=detector,
         windowed_detector=windowed_detector,
         first_seen=first_seen,
+        baselines=baselines,
         # Parity 5.4. Per-tenant detection tuning as a versioned overlay
         # with hot reload. Without it the engine evaluated the shared
         # corpus and nothing else, so a tenant who disabled a noisy rule
