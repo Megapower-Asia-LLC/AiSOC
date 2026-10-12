@@ -147,6 +147,29 @@ _V2_ACTIVITY_PROJECTION = (
 # starts accumulating toward the new ceiling from here.
 _V3_RETENTION_CEILING = ("ALTER TABLE aisoc.raw_events MODIFY TTL toDateTime(event_time) + INTERVAL 400 DAY",)
 
+# ── 004: sessions per principal ────────────────────────────────────────────
+#
+# Depth plan 2.4. The lake is the third store that has to agree on a session,
+# beside the `sessions` table (migration 102) and the Neo4j Session node, and
+# all three carry the same deterministic uuid so a hunt can join them without
+# any of them having coordinated at write time.
+#
+# `session_key_kind` is a column and not a derivable detail: a query counting
+# events per session means something different for a vendor session than for
+# a principal+address+client grouping this product derived, and a hunter who
+# cannot see which they have will mix the two in one result set.
+#
+# A bloom filter on `session_id` rather than on `session_key`: the id is what
+# a join uses, and the key is high-cardinality free text that is read after
+# the id has already narrowed the scan.
+_V4_SESSIONS = (
+    "ALTER TABLE aisoc.raw_events ADD COLUMN IF NOT EXISTS session_id String DEFAULT ''",
+    "ALTER TABLE aisoc.raw_events ADD COLUMN IF NOT EXISTS session_key String DEFAULT ''",
+    "ALTER TABLE aisoc.raw_events ADD COLUMN IF NOT EXISTS session_key_kind LowCardinality(String) DEFAULT ''",
+    "ALTER TABLE aisoc.raw_events ADD COLUMN IF NOT EXISTS session_originating_human String DEFAULT ''",
+    "ALTER TABLE aisoc.raw_events ADD INDEX IF NOT EXISTS idx_session_id session_id TYPE bloom_filter(0.01) GRANULARITY 4",
+)
+
 
 MIGRATIONS: tuple[LakeMigration, ...] = (
     LakeMigration(
@@ -178,6 +201,16 @@ MIGRATIONS: tuple[LakeMigration, ...] = (
         statements=_V3_RETENTION_CEILING,
         needs_cluster_ddl=True,
         tags=("retention", "depth-4.3"),
+    ),
+    LakeMigration(
+        id="004_sessions",
+        description=(
+            "Adds the session columns (deterministic id shared with Postgres and the graph, the vendor's own "
+            "key, how strong the grouping is, and the originating human) to aisoc.raw_events."
+        ),
+        statements=_V4_SESSIONS,
+        needs_cluster_ddl=True,
+        tags=("sessions", "depth-2.4"),
     ),
 )
 

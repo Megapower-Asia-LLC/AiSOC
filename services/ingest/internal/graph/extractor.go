@@ -91,6 +91,11 @@ func ExtractFromOCSF(eventID, tenantID, connectorType string, ocsf map[string]in
 	// for one source.
 	applyActivityProperties(ev, ocsf)
 
+	// The session this event belongs to, and the assumed-role chain when the
+	// event issued one. A post-pass for the same reason as the line above:
+	// the session is a property of the event, not of the connector.
+	applySessionGraph(ev, ocsf)
+
 	if len(ev.Nodes) == 0 && len(ev.Edges) == 0 {
 		return nil
 	}

@@ -192,4 +192,12 @@ def _fused(index: int):  # noqa: ANN202
         narrative="",
         anomaly_score=0.0,
         correlated_events=[],
+        # Depth plan 2.4. Same reason as the alert fields above: a double
+        # more *limited* than the real model raised inside the sink's own
+        # except clause and every row came back FAILED. None is also the
+        # right value here — these rows are not normalized events and
+        # genuinely have no session.
+        session_id=None,
+        session_key_kind=None,
+        originating_human=None,
     )

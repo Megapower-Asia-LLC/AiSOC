@@ -81,6 +81,19 @@ CREATE TABLE IF NOT EXISTS aisoc.raw_events (
     -- itself the finding.
     client_raw      String DEFAULT '',
     outcome         LowCardinality(String) DEFAULT '',
+
+    -- Sessions per principal (depth plan 2.4). `session_id` is the same
+    -- deterministic uuid the Postgres `sessions` row and the Neo4j Session
+    -- node carry, so a hunt joins the three without any of them having
+    -- coordinated at write time. `session_key_kind` is a column rather than a
+    -- derivable detail: a query counting events per session means something
+    -- different for a vendor session than for a grouping this product
+    -- derived, and a hunter who cannot see which they have will mix them.
+    session_id      String DEFAULT '',
+    session_key     String DEFAULT '',
+    session_key_kind LowCardinality(String) DEFAULT '',
+    session_originating_human String DEFAULT '',
+
     -- Data-skipping (bloom-filter) indexes so hunts over high-cardinality
     -- needles (file hash, user, host, IOCs) skip granules instead of scanning
     -- the whole ZSTD blob. GRANULARITY 4 = one index block per 4 * 8192 rows.
@@ -90,7 +103,10 @@ CREATE TABLE IF NOT EXISTS aisoc.raw_events (
     INDEX idx_iocs iocs TYPE bloom_filter(0.01) GRANULARITY 4,
     INDEX idx_techniques mitre_techniques TYPE bloom_filter(0.01) GRANULARITY 4,
     INDEX idx_action action TYPE bloom_filter(0.01) GRANULARITY 4,
-    INDEX idx_resource_id resource_id TYPE bloom_filter(0.01) GRANULARITY 4
+    INDEX idx_resource_id resource_id TYPE bloom_filter(0.01) GRANULARITY 4,
+    -- The id is what a join uses; the key is high-cardinality free text
+    -- read only after the id has already narrowed the scan.
+    INDEX idx_session_id session_id TYPE bloom_filter(0.01) GRANULARITY 4
 )
 -- ReplacingMergeTree collapses rows sharing the ORDER BY key, keeping the row
 -- with the greatest ingest_time. Ingest now stamps a replay-stable event_id
