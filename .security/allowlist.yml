@@ -207,8 +207,23 @@ ceilings:
     #
     # If the snapshot is ever reshaped to write into one fixed table keyed by
     # a run id, both findings go away and this ceiling should come back down.
-    total: 105
-    error: 40
+    #
+    # 105/40 -> 109/44. Four `avoid-sqlalchemy-text` findings, all on
+    # `services/api/app/services/posture_store.py`, where three statements
+    # interpolate `_COLUMNS` into a `RETURNING` or `SELECT` list.
+    #
+    # Counted rather than suppressed, same reasoning as the bulk-close pair
+    # above. `_COLUMNS` is a module-level string literal naming fourteen
+    # columns; nothing assigns to it and no caller reaches it, so there is no
+    # path by which request data becomes part of the statement. A column list
+    # cannot be a bind parameter in SQL, which is why interpolation is the
+    # only way to write one -- the same reason a table name is interpolated
+    # two entries up.
+    #
+    # If the store is ever rewritten against the ORM rather than `text()`,
+    # all four go away and this ceiling should come back down.
+    total: 109
+    error: 44
     measured_with: "1.86.0"
   checkov:
     failed: 219

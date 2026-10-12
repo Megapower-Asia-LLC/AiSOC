@@ -499,6 +499,42 @@ that outcome rather than hanging.
 fourth source. Not used: the agents service has an asyncpg pool and no Neo4j
 driver, and adding one for an escalation is a dependency the item does not
 justify.
+### D11 -- The plan says `valid_to`; this schema says `valid_until`
+
+Item 2.5 asks for versioned snapshots with `valid_from` / `valid_to`. The one
+existing table in this database that bounds a fact in time is `identity_edges`
+(migration 018), and it spells the closing column `valid_until`. Adopting the
+plan's spelling would put two names for one concept in one schema, and the
+next person to write a point-in-time query would have to know which table
+they were in before they could write a `WHERE`. The existing spelling wins;
+`posture_snapshots` uses `valid_from` / `valid_until`, and the deviation is
+recorded here rather than made silently.
+
+### D12 -- Eleven API tests are already failing on `main`, and nothing grades them
+
+The full `services/api` suite run for 2.5 reported 4,774 passed and 11 failed.
+All eleven are in `test_alert_list_priority_sort.py` and
+`test_alert_tiles_cover_the_whole_result_set.py`, neither of which this branch
+touches, and all eleven fail identically on a clean `git archive origin/main`
+export with the same error: `list_alerts() missing 1 required positional
+argument: 'http_request'`. The handler grew a `Request` parameter; the two
+test files call it directly and were not updated.
+
+What makes this worth a deviation rather than a footnote is why it is still
+open on a branch-protected `main` with twenty-eight required checks. Both
+files open with "Run against live Postgres: the defect is an `ORDER BY`, and a
+fake session that answers any query cannot tell one ordering from another" --
+and their fixture skips when no database answers. The only job that runs them
+is `Python — Tests`, which sets `DATABASE_URL` to a host with no Postgres
+behind it, so the fixture skips and the job is green. Neither file is named by
+any workflow in `.github/workflows/`, so no live-Postgres job runs them
+either. The suite that exists to prove the priority ordering has therefore
+never graded it, and the signature break has been invisible since it landed.
+
+Fixing them belongs to item 2.6, which wires the priority score and the queue
+ordering these very tests cover; the fix lands there together with a workflow
+that actually runs them against a database, because repairing the assertions
+without that would restore a test nothing executes.
 
 ## Phase 1: Verdict quality you can publish
 
@@ -621,6 +657,8 @@ endpoint produces once triage falls through to its deterministic scorer.
   projection, three consumers (Postgres, ClickHouse, Neo4j), held by
   `check_session_projection.py`
 - [ ] **2.5** `__posture_snapshot__` collectors (AWS, Azure, GCP, Workspace, GitHub)
+- [ ] **2.4** Sessions per principal
+- [x] **2.5** `__posture_snapshot__` collectors (AWS, Azure, GCP, Workspace, GitHub)
 - [ ] **2.6** Use the posture everywhere
 - [x] **2.7** Entity context in CORE (ADR first) — ADR-0010 accepted;
   Postgres in CORE, Neo4j stays in `full`
@@ -993,3 +1031,4 @@ The claim row returns to GATED when a live tenant is available. Nothing was
 weakened to accommodate this: the row says PARTIAL, the operations page says
 "treat the first run against your own tenant as the first run", and the
 CHANGELOG entry says it too.
+| 2026-10-11 | 2.5 | Reproduced: `test_posture_snapshot_coverage.py` on the unmodified tree asserted the *gap* — every resolver in `effective_permissions/` was pure and the only production snapshot source returned `{}`, so every live call 412'd and the subsystem had never answered a question about a real estate. Five collectors now exist under `services/connectors/app/connectors/posture/`, reached by a `__posture_snapshot__` sentinel through each connector's `get_resource_config`, and the coverage test is inverted: it now fails when a registered resolver has no declared collector. Building it found three things worth recording. (a) `BaseConnector.get_resource_config` declares `at_ts: str | None = None` while AWS, Okta and GitHub each required a positional `ts`, so a caller written against the base class raised `TypeError` on three of the connectors — standardised, with `test_every_implementation_matches_the_base_signature` holding it. (b) Google Workspace's directory read needs scopes the audit-log credential is not consented for, so the JWT is now built per scope: asking for both in one assertion would have broken alert polling on every tenant that had not pre-consented the new ones. (c) A snapshot is only an answer if you know *when* it was true — an alert is triaged minutes to days after the event, and a single mutable "current posture" row answers "what can this identity do now" while appearing to answer "what could it do when it acted", which is the worse failure because the number looks right. Migration 103 therefore versions snapshots on `valid_from`/`valid_until` (`valid_to` in the plan; `valid_from`/`valid_until` is the existing spelling in migration 018 and two spellings of one concept in one schema is worse than a recorded deviation — D11). Negative controls, both run against live Postgres and both restored: dropping `posture_snapshots_live_idx` leaves `test_a_second_live_row_is_refused_by_the_database` reporting `DID NOT RAISE IntegrityError`, and defeating the content-hash comparison in `save_snapshot` fails `test_unchanged_recollection_does_not_open_a_version` with two distinct row ids — without that comparison an unchanged estate re-collected hourly writes a version an hour and "when did this posture last change" becomes unanswerable because every row is a change. Evidence: 12 posture-store tests against live Postgres with the migration chain applied, 65 across the posture and effective-permission suites, 1,145 connector tests, 4,774 API tests. Eleven API failures are pre-existing on `main` and unrelated — recorded as D12. |
