@@ -115,6 +115,26 @@ class TestNothingElseChanged:
             "event_type": "user.session.start",
             "outcome": "FAILURE",
             "outcome_reason": "INVALID_CREDENTIALS",
+            # Depth 7.3 added these. The fixture above is a trimmed row that
+            # carries none of them, so every one is None -- which is the
+            # right answer and is pinned here deliberately: a connector that
+            # started inventing a session id for an event that has none
+            # would red this test, and an AiTM rule grouping by an invented
+            # id would group unrelated events together.
+            "session_id": None,
+            "authentication_step": None,
+            "src_asn": None,
+            "src_asn_org": None,
+            "src_isp": None,
+            "is_proxy": None,
+            "src_country": None,
+            "user_agent": None,
+            "client_browser": None,
+            "client_os": None,
+            # None rather than False: this event says nothing about MFA, and
+            # a detection reading False would treat silence as a negative
+            # result.
+            "mfa_satisfied": None,
             "raw_event": OKTA_FAILED_LOGIN,
             "created_at": "2026-10-10T09:15:00.000Z",
         }

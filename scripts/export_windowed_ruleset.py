@@ -330,6 +330,105 @@ WINDOWED_RULES: list[dict] = [
         # Script-driven enumeration and mass encryption both look like this.
         # Build agents and installers do too, so this is deliberately medium.
     },
+    # ── Adversary-in-the-middle, on sessions (depth 7.3) ────────────────────
+    #
+    # An AiTM proxy relays the victim's credentials *and* their MFA response,
+    # so the sign-in is legitimate by every check the identity provider
+    # makes: SPF on the lure passes or fails elsewhere, the password is
+    # right, the push is approved by the real person. There is no failed
+    # authentication to count and no impossible travel to measure, because
+    # the proxy often sits in the same country.
+    #
+    # What gives it away is the *stolen session* being used from somewhere
+    # the session was never established. So the entity these rules group by
+    # is `session_id`, not the user — which is why 7.3 needed the connector
+    # hoist first: Okta and Entra both carry a session identity and neither
+    # `normalize()` emitted it, so this family had nothing to group by and
+    # could not have been written at all.
+    #
+    # Thresholds are 2 rather than a larger number on purpose. These are
+    # `distinct_by` rules: two *different* networks for one session is the
+    # whole signal, and raising it to three would mean the detection only
+    # fires on an attacker careless enough to rotate twice.
+    #
+    # `session_id_neq: None` is "the event carries a session id", spelled
+    # with an operator that exists rather than an `_exists` one that does
+    # not: `_check` returns False for a missing field under `neq` and True
+    # for a present one, which is exactly the test. Inventing `_exists`
+    # would have read as a field literally named `session_id_exists`, which
+    # nothing emits — the `approver_role_neq` defect, one release later.
+    {
+        "id": "wd-aitm-session-replayed-from-new-asn",
+        "name": "One session used from two different networks",
+        "severity": "high",
+        "category": "identity",
+        "mitre": ["T1539", "T1557"],
+        "match_when": {"session_id_neq": None},
+        "group_by": "session_id",
+        "distinct_by": "src_asn",
+        "threshold": 2,
+        "window_seconds": 3600,
+        # An hour, because a session cookie is worth stealing precisely
+        # because it outlives the sign-in; a five-minute window would miss
+        # the replay and a day-long one would catch a laptop moving from an
+        # office to a home connection, which is the same shape and is not
+        # this.
+    },
+    {
+        "id": "wd-aitm-session-replayed-from-new-client",
+        "name": "One session used from two different client families",
+        "severity": "high",
+        "category": "identity",
+        "mitre": ["T1539", "T1550.004"],
+        "match_when": {"session_id_neq": None},
+        "group_by": "session_id",
+        "distinct_by": "client_browser",
+        "threshold": 2,
+        "window_seconds": 3600,
+        # The second half of the same signal, and the one a network-level
+        # evasion does not avoid: a session established in a browser and
+        # next used by a toolkit's HTTP client changes the client family
+        # whatever address it comes from. Browser rather than the raw user
+        # agent, because a Chrome auto-update changes the string and not the
+        # family.
+    },
+    {
+        "id": "wd-aitm-session-left-the-country-it-started-in",
+        "name": "One session used from two different countries",
+        "severity": "high",
+        "category": "identity",
+        "mitre": ["T1539"],
+        "match_when": {"session_id_neq": None},
+        "group_by": "session_id",
+        "distinct_by": "src_country",
+        "threshold": 2,
+        "window_seconds": 3600,
+        # Deliberately a *session* rule and not an impossible-travel rule.
+        # Impossible travel compares two sign-ins by one user and is defeated
+        # by a proxy in the victim's own country; this compares two uses of
+        # one session, where any country change at all is a claim the session
+        # cannot support.
+    },
+    {
+        "id": "wd-aitm-mfa-then-session-from-new-asn",
+        "name": "An MFA-satisfied sign-in, then the same session used from another network",
+        "severity": "critical",
+        "category": "identity",
+        "mitre": ["T1557", "T1539"],
+        "sequence": [
+            {"mfa_satisfied": True},
+            {"session_id_neq": None},
+        ],
+        "ordered": True,
+        "group_by": "session_id",
+        "window_seconds": 1800,
+        # Critical, and the only one of the family that is. The ordering is
+        # the detection: a session used from two networks is suspicious, and
+        # a session that *satisfied MFA* and was then used elsewhere within
+        # half an hour is the AiTM pattern with the step the attacker needed
+        # the proxy for already recorded. A threshold rule cannot express it
+        # — that is the whole reason 3.2's ordered sequences exist.
+    },
 ]
 
 

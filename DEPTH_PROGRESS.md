@@ -864,7 +864,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 
 - [x] **7.1** Intake to purge (gap-closure Phase 10 / parity 6.4)
 - [x] **7.2** Header, URL and attachment analysis
-- [ ] **7.3** Adversary-in-the-middle session reuse
+- [x] **7.3** Adversary-in-the-middle session reuse
 
 ## Phase 8: Enterprise gates
 
@@ -1032,3 +1032,51 @@ weakened to accommodate this: the row says PARTIAL, the operations page says
 "treat the first run against your own tenant as the first run", and the
 CHANGELOG entry says it too.
 | 2026-10-11 | 2.5 | Reproduced: `test_posture_snapshot_coverage.py` on the unmodified tree asserted the *gap* — every resolver in `effective_permissions/` was pure and the only production snapshot source returned `{}`, so every live call 412'd and the subsystem had never answered a question about a real estate. Five collectors now exist under `services/connectors/app/connectors/posture/`, reached by a `__posture_snapshot__` sentinel through each connector's `get_resource_config`, and the coverage test is inverted: it now fails when a registered resolver has no declared collector. Building it found three things worth recording. (a) `BaseConnector.get_resource_config` declares `at_ts: str | None = None` while AWS, Okta and GitHub each required a positional `ts`, so a caller written against the base class raised `TypeError` on three of the connectors — standardised, with `test_every_implementation_matches_the_base_signature` holding it. (b) Google Workspace's directory read needs scopes the audit-log credential is not consented for, so the JWT is now built per scope: asking for both in one assertion would have broken alert polling on every tenant that had not pre-consented the new ones. (c) A snapshot is only an answer if you know *when* it was true — an alert is triaged minutes to days after the event, and a single mutable "current posture" row answers "what can this identity do now" while appearing to answer "what could it do when it acted", which is the worse failure because the number looks right. Migration 103 therefore versions snapshots on `valid_from`/`valid_until` (`valid_to` in the plan; `valid_from`/`valid_until` is the existing spelling in migration 018 and two spellings of one concept in one schema is worse than a recorded deviation — D11). Negative controls, both run against live Postgres and both restored: dropping `posture_snapshots_live_idx` leaves `test_a_second_live_row_is_refused_by_the_database` reporting `DID NOT RAISE IntegrityError`, and defeating the content-hash comparison in `save_snapshot` fails `test_unchanged_recollection_does_not_open_a_version` with two distinct row ids — without that comparison an unchanged estate re-collected hourly writes a version an hour and "when did this posture last change" becomes unanswerable because every row is a change. Evidence: 12 posture-store tests against live Postgres with the migration chain applied, 65 across the posture and effective-permission suites, 1,145 connector tests, 4,774 API tests. Eleven API failures are pre-existing on `main` and unrelated — recorded as D12. |
+| 2026-10-11 | 7.3 | Reproduced: `OktaConnector.normalize()` returned `None` for `session_id`, `src_asn`, `user_agent`, `client_browser` and `mfa_satisfied` on a System Log row carrying all five, so the family had nothing to group by and could not have been written. Same shape as the `outcome` hoist in #1279 -- the engine flattens `raw_event` one level and `authenticationContext` arrives as a dict. Hoisted the session, network and client fields on Okta and Entra, then wrote four rules grouping by **session** rather than by user: three distinct-value rules at threshold 2 and one ordered sequence at critical. Fixtures hand-authored from an Okta System Log row and a Graph `signIn` resource; the negative twin inverts only the clause each rule is about. Windowed 72 -> 76; executable detections unchanged at 2,511, because a windowed rule is not in that corpus. Negative controls: removing the `session_id` hoist reds 4 connector tests; switching one rule's `group_by` to `actor_email` reds 2 engine tests. Two findings recorded as D-7.3a (the threshold engine windows by arrival and only sequences window by event time) and D-7.3b (the reported-message link is deferred with a reason). |
+
+### D-7.3a -- The threshold engine windows by arrival, not by event time
+
+Found by a test that failed. An earlier version of
+`test_a_replay_outside_the_sequence_window_does_not_fire` fed two events whose
+`event_time` fields were two hours apart and expected the threshold rules to
+stay quiet. They fired, because `_evaluate_thresholds` scores each Redis
+member with `time.time()` while `_evaluate_sequences` reads
+`parse_event_time`. Both events arrived in the same second, so the window
+never moved.
+
+This is recorded rather than patched. Arrival-time scoring is what makes a
+threshold cheap, and a connector polling a vendor every five minutes delivers
+a burst whose arrival order is the only clock fusion has for it. The
+consequence is specific and worth knowing: **the one-hour figure on the three
+`wd-aitm-*` threshold rules is a budget on ingestion, not on the vendor's
+timestamps.** A replay that happened an hour ago and is polled now lands in
+the same window as the sign-in. For this family that direction is the safe
+one -- it widens rather than narrows -- but a future rule whose correctness
+depends on the vendor's clock needs a sequence, not a threshold.
+
+### D-7.3b -- The reported-message half of 7.3 is deferred, with the reason
+
+The plan's 7.3 asks for the session-reuse family "plus the link from a
+reported message whose URL precedes that sign-in". The session half is
+implemented and gated. The link is not, and inventing it would have been
+worse than deferring it.
+
+The obstacle is not effort, it is that nothing can feed it today. The
+reported-message URLs live in `aisoc_phishing_submissions` in `services/api`
+(depth 7.1), and the windowed engine consumes Kafka events in
+`services/fusion`; fusion has no read of the API's tables and should not grow
+one for a detection. The alternative -- staging a *gateway's* phishing
+verdict instead of AiSOC's own reported-message corpus -- was examined and
+refused: the one secure-email-gateway connector in the tree, `proofpoint`,
+fetches `/v2/siem/messages/blocked` only, so it never sees a click, and its
+`normalize()` emits neither the recipient nor the URL. Hoisting fields for an
+event the connector does not fetch is a rule that cannot fire wearing a rule
+that can.
+
+What would close it, in the order it has to happen: `proofpoint` (or a
+`netskope` / `zscaler` web arm) fetching click events and emitting
+`recipient`, `url` and the gateway's classification; then a sequence rule
+staging that click and the MFA-satisfied sign-in by the same principal. The
+AiSOC-authored half -- joining a tenant's *own* reported-message URLs to a
+sign-in -- belongs in the API beside the campaign store rather than in
+fusion, as an enrichment on the alert the session rules raise.
