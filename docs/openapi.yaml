@@ -7372,6 +7372,220 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp/tool-calls/authorize:
+    post:
+      tags:
+      - mcp
+      summary: Authorize Tool Call
+      description: 'Decide one tool call and record the decision.
+
+
+        No ``require_permission`` dependency: the permission a call needs depends
+
+        on the tool, and :func:`app.services.mcp_access.authorize` resolves it
+
+        from the catalogue and checks it through the principal''s own path. A
+
+        blanket dependency here would be a second, coarser authority in front of
+
+        the specific one.'
+      operationId: authorize_tool_call_api_v1_mcp_tool_calls_authorize_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpAuthorizeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpAuthorizeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/mcp/tool-calls/{call_id}/complete:
+    post:
+      tags:
+      - mcp
+      summary: Complete Tool Call
+      description: 'Record how a call that was allowed turned out.
+
+
+        Authorized against the call being reported on, not by a blanket
+
+        permission. There is no single permission every MCP caller holds — a key
+
+        minted for ``alerts:read`` is a legitimate caller — so a blanket
+
+        dependency here would either be wider than the call it describes or
+
+        exclude the callers it exists for.
+
+
+        Instead this resolves the ``mcp:tool_call`` row the authorize step wrote
+
+        for this id in this tenant, and requires the principal to still hold the
+
+        permission *that call* needed. Two consequences, both wanted: a caller
+
+        cannot write an outcome for a call nobody authorized here, and a key
+
+        whose scopes were narrowed between the call and the report is refused
+
+        rather than quietly accepted.'
+      operationId: complete_tool_call_api_v1_mcp_tool_calls__call_id__complete_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: call_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Call Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpCompleteRequest'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp/tools:
+    get:
+      tags:
+      - mcp
+      summary: List Tools
+      operationId: list_tools_api_v1_mcp_tools_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/McpToolStateModel'
+                type: array
+                title: Response List Tools Api V1 Mcp Tools Get
+      security:
+      - HTTPBearer: []
+  /api/v1/mcp/tools/{tool_name}:
+    put:
+      tags:
+      - mcp
+      summary: Set Tool Grant
+      operationId: set_tool_grant_api_v1_mcp_tools__tool_name__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: tool_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tool Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpToolGrantRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpToolStateModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp/approvals:
+    get:
+      tags:
+      - mcp
+      summary: List Approvals
+      operationId: list_approvals_api_v1_mcp_approvals_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          default: pending
+          title: State
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/McpApprovalModel'
+                title: Response List Approvals Api V1 Mcp Approvals Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp/approvals/{approval_id}/decide:
+    post:
+      tags:
+      - mcp
+      summary: Decide Approval
+      operationId: decide_approval_api_v1_mcp_approvals__approval_id__decide_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: approval_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Approval Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpApprovalDecisionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpApprovalModel'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/memory/items:
     post:
       tags:
@@ -30513,6 +30727,137 @@ components:
       - changed_at
       - created_at
       title: MaturityOut
+    McpApprovalDecisionRequest:
+      properties:
+        approve:
+          type: boolean
+          title: Approve
+        note:
+          type: string
+          maxLength: 500
+          title: Note
+          default: ''
+      type: object
+      required:
+      - approve
+      title: McpApprovalDecisionRequest
+    McpApprovalModel:
+      properties:
+        id:
+          type: string
+          title: Id
+        tool_name:
+          type: string
+          title: Tool Name
+        argument_fingerprint:
+          type: string
+          title: Argument Fingerprint
+        requested_by:
+          type: string
+          title: Requested By
+        state:
+          type: string
+          title: State
+        decided_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Decided By
+        decision_note:
+          type: string
+          title: Decision Note
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - tool_name
+      - argument_fingerprint
+      - requested_by
+      - state
+      - decided_by
+      - decision_note
+      - expires_at
+      - created_at
+      title: McpApprovalModel
+    McpAuthorizeRequest:
+      properties:
+        tool_name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Tool Name
+        arguments:
+          additionalProperties: true
+          type: object
+          title: Arguments
+      type: object
+      required:
+      - tool_name
+      title: McpAuthorizeRequest
+      description: 'What ``services/mcp`` asks before dispatching.
+
+
+        ``arguments`` is sent in full rather than as key names because the
+
+        approval fingerprint has to bind to the specific call. It is hashed on
+
+        arrival and never stored, and the audit row records the argument *names*
+
+        only — the values routinely carry hostnames and lake queries.'
+    McpAuthorizeResponse:
+      properties:
+        call_id:
+          type: string
+          title: Call Id
+        outcome:
+          type: string
+          title: Outcome
+        reason:
+          type: string
+          title: Reason
+        approval_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approval Id
+        required_permission:
+          type: string
+          title: Required Permission
+          default: ''
+      type: object
+      required:
+      - call_id
+      - outcome
+      - reason
+      title: McpAuthorizeResponse
+    McpCompleteRequest:
+      properties:
+        outcome:
+          type: string
+          title: Outcome
+        latency_ms:
+          type: integer
+          maximum: 86400000.0
+          minimum: 0.0
+          title: Latency Ms
+        error_kind:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: Error Kind
+      type: object
+      required:
+      - outcome
+      - latency_ms
+      title: McpCompleteRequest
     McpServerCreate:
       properties:
         name:
@@ -30722,6 +31067,48 @@ components:
           title: Enabled
       type: object
       title: McpServerUpdate
+    McpToolGrantRequest:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+      type: object
+      required:
+      - enabled
+      title: McpToolGrantRequest
+    McpToolStateModel:
+      properties:
+        name:
+          type: string
+          title: Name
+        read_only:
+          type: boolean
+          title: Read Only
+        enabled:
+          type: boolean
+          title: Enabled
+        source:
+          type: string
+          title: Source
+        required_permission:
+          type: string
+          title: Required Permission
+        requires_approval:
+          type: boolean
+          title: Requires Approval
+        decided_by:
+          type: string
+          title: Decided By
+      type: object
+      required:
+      - name
+      - read_only
+      - enabled
+      - source
+      - required_permission
+      - requires_approval
+      - decided_by
+      title: McpToolStateModel
     MemberOut:
       properties:
         user_id:

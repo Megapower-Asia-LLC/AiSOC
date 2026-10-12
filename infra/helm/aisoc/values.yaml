@@ -327,6 +327,33 @@ honeytokens:
       cpu: 500m
       memory: 1Gi
 
+# Depth 9.1 (parity 6.6): AiSOC's own MCP server over streamable HTTP.
+#
+# Off by default, and `image.repository` is deliberately empty rather than
+# carrying a plausible-looking default. No `ghcr.io/beenuar/aisoc-mcp` package
+# has been published, and a chart that names an image which has never existed
+# is how `helm install` produced ImagePullBackOff on every pod of an earlier
+# release. The template `required`s it, so enabling the component without
+# supplying a repository fails at render time with that sentence rather than
+# at pull time with a backoff.
+mcp:
+  enabled: false
+  replicaCount: 1
+  # Defaults to this release's own core-api Service when left empty.
+  aisocUrl: ""
+  timeoutMs: 20000
+  image:
+    repository: ""
+    tag: ""              # defaults to Chart.AppVersion
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 purpleTeam:
   enabled: false
   replicaCount: 1
