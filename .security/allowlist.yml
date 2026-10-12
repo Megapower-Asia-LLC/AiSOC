@@ -222,7 +222,16 @@ ceilings:
     #
     # If the store is ever rewritten against the ORM rather than `text()`,
     # all four go away and this ceiling should come back down.
-    total: 109
+    #
+    # 109 -> 110 (error unchanged at 44; the 2026-10-12 merge train). The
+    # added finding is `avoid-sqlalchemy-text` on the new
+    # services/api/app/services/posture_store.py (depth 2.5), attributed by
+    # scanning the train and `main` with the pinned 1.86.0 and diffing the
+    # finding sets. It is the same accepted family as the rest of this
+    # ceiling: `text()` with every value bound, which three gates hold
+    # (check_text_bind_casts, check_raw_sql_columns,
+    # check_tenant_query_predicates). Counting it beats suppressing it.
+    total: 110
     error: 44
     measured_with: "1.86.0"
   checkov:
