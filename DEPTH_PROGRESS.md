@@ -1024,6 +1024,47 @@ endpoint produces once triage falls through to its deterministic scorer.
   stand-in, and the middle one would have cited an empty set on every
   report.
 - [ ] **9.6** Native responder
+- [~] **9.6** Native responder. **Two of three bullets closed; the third is
+  maintainer-blocked and the block is in the product, not in this note.**
+  *Device build:* `mobile.yml` gains an Android job that runs
+  `expo prebuild` and Gradle `assembleDebug`, asserts the APK really
+  contains `classes.dex` (a green build that produced nothing is a shape
+  this repository has shipped) and uploads it — an APK that installs and
+  runs on a handset. Not store-signable (a Google Play account) and not a
+  *release* build: `:app:createBundleReleaseJsAndAssets` dies inside
+  Metro's asset hashing on the runner, Node 20 fixes it, and
+  `scripts/check_toolchain_pins.py` correctly refuses a second Node version
+  because 20 left security support in April 2026 and no image ships it.
+  Lowering that gate to make this job pass would have been the wrong trade,
+  so the limit is stated instead. iOS
+  compiles **and links** for the simulator on a macOS runner — the Expo
+  config generates a valid Xcode project, the pods resolve and every native
+  module builds. It deliberately does not run Metro's bundle phase, which
+  dies on that runner inside one of expo-router's PNGs for a Metro/Node
+  reason unrelated to this app; the Android job bundles, so that half is
+  still graded. A device build needs an Apple developer account. *Voice:* `apps/mobile/src/lib/voice.ts` takes a recogniser that
+  returns a **string**, so no audio type appears anywhere in the module and
+  there is nothing for a later edit to upload; a device with no offline
+  model is **refused** rather than silently using the platform's cloud
+  recogniser; the transcript is shown before it is sent, because on-device
+  recognition is worse and a security question misheard is a question
+  answered about the wrong host. Gated by `scripts/check_no_audio_egress.py`
+  (self-test: six checks, including that a *comment* saying the app does not
+  record is not mistaken for the app recording), wired into both `ci.yml`
+  unconditionally and `mobile.yml`. *Push:* `services/realtime` sent every
+  subscription through `web-push`, which signs a VAPID JWT and POSTs to the
+  endpoint **URL** — a bare APNs device token is not a URL, so a
+  subscription saved by the mobile app was accepted, counted and failed on
+  every send, which is the worst of the three states because the count
+  looked healthy. `native-push.ts` speaks APNs and FCM HTTP v1 and
+  distinguishes delivered, device-gone and **not-configured**, the last
+  naming each missing variable and never reporting a delivery. 19 new tests
+  (11 realtime, 8 mobile); mobile suite 34 → 42. **Open and stated:** no
+  APNs `.p8` and no FCM service account exist here, so nothing has been
+  delivered to a real handset, and no microphone has exercised the voice
+  path. The README's claim table was inverted rather than deleted — it now
+  has to keep saying that an iPhone *device* build and a real-handset push
+  have **not** happened, and `mobile.yml` fails if it stops.
 
 ## Phase 10: Close the books
 
@@ -1039,6 +1080,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-11 | 9.1 | Reproduced: on `origin/main` the greps for `StreamableHTTP` in `services/mcp/src/`, for `aisoc-mcp` in `docker-compose.yml` and `infra/helm/`, for a per-tenant tool grant in `services/api/app/`, and for an `mcp:` audit action all counted **zero**, and `check_mcp_over_http.py` reported seven problems. Built the HTTP transport, the authorize/complete pair, the tenant grant table, the approval queue bound to a call's arguments, and the generated tool catalogue held in parity with the TypeScript registry. Four negative controls recorded in the PR; one of them found a hole in the new gate itself, which reported `http.ts` for reading the process-wide API key when the only mention was a comment saying it deliberately does not — the detector now strips comments before matching, and refuses a `{...cfg}` spread as well, because a spread is correct today and a credential fallback the day somebody reorders the literal. |
 | 2026-10-11 | 9.4 | Reproduced: `grep -rn 'conversations.create|channels.create|war_room'` across every service and the console returned four hits, all prose — a playbook template describing a "Notify war-room" step and an eval fixture quoting the phrase. Both bots could only answer: slack-bot had one outbound route (an approval card) and teams-bot posts to a hand-configured webhook. Built the channel creation, the keyed sweep, the decision route and the console panel. Teams is 501 with its four missing settings named, which is the honest state and the one a stock install is in. |
 | 2026-10-11 | 9.5 | Reproduced: `grep -n hunt` across `app/services/report_builder.py` and `app/api/v1/endpoints/reports.py` returned nothing — the report surface and the hunt surface did not know about each other, so a hunt produced rows and a retro-hunt produced a sightings row and neither produced anything a person could read or forward. Built the four-section report, the citation rule, the two builders and the JSON/HTML/PDF export. Three negative controls in the live workflow: allowing an uncited report, filling an empty section with a sentence, and reporting a hunt that never ran each have to turn the suite red. The live run found three schema facts a stand-in would have hidden, recorded in the item above. |
+| 2026-10-11 | 9.6 | Reproduced: `grep -c 'eas build|gradlew|xcodebuild|expo prebuild' .github/workflows/mobile.yml` returned **0** and the workflow actively *required* the README to say no device build had happened; `grep -rni 'speech|voice' apps/mobile/src apps/mobile/app` returned **0**; and `services/realtime/src/push.ts` sent every record through `webpush.sendNotification`, so a native token was accepted and could never be delivered to. Built the Android APK job, the simulator job, the on-device voice module and the APNs/FCM sender. Negative control: removing the on-device refusal so the cloud recogniser could be used fails two of the eight voice tests. The README guard was inverted rather than deleted — "we added a build so the honesty check is no longer needed" is how an ungated claim comes back. |
 | 2026-10-11 | 9.2 | Reproduced: `knowledge_base.py` searched with `to_tsvector`/`plainto_tsquery` and nothing else; `grep -rn qdrant services/api/app/` found only the migration runner and the tenant-deletion sweep, no recall path; and no memory row anywhere carried an author, a source, a scope, an expiry or a state. Built the store of record, the Qdrant index over it, the conflict state machine, the case-closure writer and the recall scorer. Two negative controls recorded in the PR: restoring last-write-wins on a contradiction fails three tests, and restoring vector truncation fails one. The measurement is negative and is published as such — see D11, which also records that it caught the truncation defect. |
 | 2026-10-07 | 0.1 | This file created at base commit `1b8bc2d4`. |
 | 2026-10-07 | 0.2 | Every figure re-derived. Two matched exactly (detections, unreachable families); executor arms measured 74 against a captured 73; the cloud/identity/SaaS/code figure measured 395 against a captured 461 on a grouping the plan does not pin, recorded above. Two measurement caveats found: executable and quarantined overlap by 1,724 rules, and the "69% Windows" figure does not reproduce from the index. |

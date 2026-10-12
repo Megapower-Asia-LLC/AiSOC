@@ -12,7 +12,10 @@ import re
 import sys
 import pathlib
 
-CONFLICT = re.compile(r"<<<<<<< [^\n]*\n(.*?)(?:\|\|\|\|\|\|\| [^\n]*\n.*?)?=======\n(.*?)>>>>>>> [^\n]*\n", re.DOTALL)
+CONFLICT = re.compile(
+    r"^<<<<<<< [^\n]*\n(.*?)(?:^\|\|\|\|\|\|\| [^\n]*\n.*?)?^=======\n(.*?)^>>>>>>> [^\n]*\n",
+    re.DOTALL | re.MULTILINE,
+)
 
 
 def merge_checkboxes(ours: str, theirs: str) -> str:

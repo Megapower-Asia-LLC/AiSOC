@@ -729,6 +729,16 @@ jobs:
         run: python3 scripts/check_mcp_over_http.py --self-test
       - name: MCP over HTTP gate
         run: python3 scripts/check_mcp_over_http.py
+      # Depth 9.6. Voice input transcribes on the device and sends text, and
+      # "no audio leaves the device" is a claim a comment cannot carry. This
+      # refuses any capture API or binary request body under
+      # apps/mobile/src. Also wired into mobile.yml, which only runs when
+      # that app changes — here it is unconditional, because a claim this
+      # strong should not be graded by a path filter.
+      - name: No audio egress gate — self-test
+        run: python3 scripts/check_no_audio_egress.py --self-test
+      - name: No audio egress gate
+        run: python3 scripts/check_no_audio_egress.py
       # Depth 9.2. The probe set behind the recall measurement has to stay
       # usable: every probe must name an item that is in the corpus, the
       # probes must stay low-overlap with their answers (a probe written in
