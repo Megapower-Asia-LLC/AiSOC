@@ -27,6 +27,7 @@ ADRs are immutable once accepted. If a decision changes, write a new ADR that su
 | [ADR-0011](./0011-behavioural-baselines-in-core.md) | Behavioural baselines in CORE are a fusion module; the UEBA service stays in `full` | accepted | 2026-10-11 |
 | [ADR-0012](./0012-how-fusion-scales.md) | How fusion scales — required-field indexing, entity partitioning, and a scale hint the cluster acts on | accepted | 2026-10-11 |
 | [ADR-0013](./0013-truncating-a-hash-chained-audit-log.md) | Truncating a hash-chained audit log without making an intact chain look tampered with | accepted | 2026-10-11 |
+| [ADR-0014](./0014-tenant-erasure-crosses-the-audit-trigger.md) | Tenant erasure crosses the audit-log immutability trigger; nothing smaller does | accepted | 2026-10-12 |
 
 ## Authoring conventions
 

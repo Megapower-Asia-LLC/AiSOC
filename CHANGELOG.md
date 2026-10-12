@@ -31,6 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tenant deletion was impossible on any database holding audit rows**
+  (#1330). `audit_log.tenant_id` has declared `ON DELETE CASCADE` since
+  migration 004, and the same migration's immutability trigger refused every
+  DELETE — a cascade is an ordinary DELETE on the child, so
+  `DELETE FROM tenants` raised for any tenant that had ever written an audit
+  row, and `tenant_deletion.py` (the GDPR erasure path) could never complete.
+  The offboarding gate stayed green throughout because its test database held
+  no audit rows. Migration `119` teaches the trigger the distinction
+  migration `117` already used on its checkpoint table: the cascade runs
+  after the parent is gone, a direct DELETE still finds its tenant and is
+  refused (ADR-0014 records the trade — erasure costs the whole tenant,
+  loudly, and selective tampering stays impossible at both the privilege and
+  trigger layers). Proven by the acceptance tests the issue named, in
+  `test_audit_immutability_live.py` — a suite that had been wired into **no
+  workflow at all** since #1231 and now runs in `audit-forgery-live.yml`
+  against real Postgres as the runtime role, with its teardown corrected to
+  go through the two legal paths rather than around them.
+
 - **A fix pass closed the gap between what the enterprise-identity surfaces
   claimed and what they did.** Six items, each reproduced before it was
   fixed. **White-label** reached the surfaces the docs listed: both report

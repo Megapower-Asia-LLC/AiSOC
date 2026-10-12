@@ -6,8 +6,20 @@ user. Review on #1231 showed a value->NULL exemption that does not name the
 column lets one UPDATE strip every forensic column at once (actor_email,
 actor_ip, resource, changes, metadata) while the trigger stays silent.
 
-Every case runs inside a transaction that ROLLBACKs: no live audit row is
-ever durably mutated, not even in the legal case.
+Migration 119 (issue #1330, ADR-0014) added the second exemption: the
+cascade from ``DELETE FROM tenants``, without which tenant offboarding — the
+path a GDPR erasure request takes — could never complete. The erasure cases
+here are the acceptance tests that issue named, and they commit real rows in
+a tenant of their own; every other case runs inside a transaction that
+ROLLBACKs, so no shared audit row is ever durably mutated, not even in the
+legal case.
+
+The suite drives two connections, because the two refusal layers bind
+different roles: ``ISOLATION_AUDIT_DSN`` is the DML-only runtime role
+(``aisoc_app``), refused by privilege since migration 117 revoked its
+DELETE; ``ISOLATION_AUDIT_OWNER_DSN`` is the table owner, for whom only the
+trigger stands. Proving both keeps the control two-layered rather than
+quietly privilege-only.
 """
 
 from __future__ import annotations
@@ -33,11 +45,40 @@ def _dsn() -> str:
     return value.replace("postgresql://", "postgresql+asyncpg://", 1) if value.startswith("postgresql://") else value
 
 
+def _owner_dsn() -> str:
+    """The table owner's DSN — required, not optional, once the suite runs.
+
+    The trigger-layer cases can only be proven by a role that holds the
+    DELETE privilege, and a live suite that silently skips them would read
+    as the control passing. So an unset owner DSN is a failure with the
+    remedy in the message, never a skip.
+    """
+    value = os.environ.get("ISOLATION_AUDIT_OWNER_DSN", "").strip()
+    if not value:
+        pytest.fail(
+            "ISOLATION_AUDIT_DSN is set but ISOLATION_AUDIT_OWNER_DSN is not: the trigger-layer "
+            "cases need the audit_log table owner (the role that applies migrations), and "
+            "skipping them would prove the privilege layer only"
+        )
+    return value.replace("postgresql://", "postgresql+asyncpg://", 1) if value.startswith("postgresql://") else value
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def engine():
     from sqlalchemy.ext.asyncio import create_async_engine
 
     eng = create_async_engine(_dsn())
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def owner_engine():
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    eng = create_async_engine(_owner_dsn())
     try:
         yield eng
     finally:
@@ -91,9 +132,13 @@ async def row(engine):
         )
     yield {"id": aid, "user_id": user_id, "tenant_id": tenant_id}
     async with engine.begin() as conn:
-        await conn.execute(text("DELETE FROM audit_log WHERE id = :id"), {"id": aid})
-        # delete the actor user: FK ON DELETE SET NULL must fire through the
-        # trigger, exactly the path migration 101 exists for.
+        # Teardown goes through the two legal paths rather than around them.
+        # Deleting the user first fires ON DELETE SET NULL on actor_id through
+        # the trigger — exactly the path migration 101 exists for — and
+        # deleting the tenant then erases the audit row by cascade, the path
+        # migration 119 exists for. The previous teardown deleted the audit
+        # row directly, which 117's trigger refuses; it only looked fine while
+        # this suite ran in no workflow at all.
         await conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
         await conn.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": tenant_id})
 
@@ -173,7 +218,7 @@ class TestAuditImmutabilityExemption:
         )
         assert outcome.startswith("REFUSED"), outcome
 
-    async def test_delete_is_still_refused_loudly(self, engine, row) -> None:
+    async def test_delete_is_still_refused_loudly(self, owner_engine, row) -> None:
         """The trigger is BEFORE UPDATE **OR DELETE** and both arms run this
         one function, so rewriting it for the UPDATE shape has to keep the
         DELETE arm working.
@@ -186,16 +231,46 @@ class TestAuditImmutabilityExemption:
         `DELETE 0` as success. Refusing loudly is the behaviour migration
         004 shipped and the one an operator can act on.
 
+        Runs as the **owner**, deliberately: the runtime role is stopped one
+        layer earlier by 117's privilege revoke (the case below), so only a
+        role holding DELETE can prove the trigger arm still works — and the
+        tenant is alive here, so 119's cascade arm must not open the door.
+
         Asserted both ways round: the statement raises, and the row is
         still there afterwards.
         """
-        outcome = await _attempt(engine, "DELETE FROM audit_log WHERE id = :id", {"id": row["id"]})
+        outcome = await _attempt(owner_engine, "DELETE FROM audit_log WHERE id = :id", {"id": row["id"]})
         assert outcome.startswith("REFUSED"), outcome
         assert "DELETE" in outcome, outcome
 
         # Imported in the function, as every other case here does: a
         # module-scope import of a service dependency has taken 241
         # unrelated tests down in the offline collection job.
+        from sqlalchemy import text
+
+        async with owner_engine.connect() as conn:
+            remaining = (
+                await conn.execute(
+                    text("SELECT count(*) FROM audit_log WHERE id = :id"),
+                    {"id": row["id"]},
+                )
+            ).scalar()
+        assert remaining == 1, "the row was removed even though the statement was refused"
+
+    async def test_delete_as_the_runtime_role_is_refused_by_privilege(self, engine, row) -> None:
+        """The privilege layer, proven on the role the product actually runs as.
+
+        Migration 117 revoked DELETE on `audit_log` from `aisoc_app`, so the
+        runtime role is refused before the trigger is ever consulted. Either
+        message proves the row cannot be removed; which one arrives says
+        which layer answered, and on this connection it must be the
+        privilege layer unless a deployment re-granted DELETE — in which
+        case the trigger still stands, so `immutable` is accepted too.
+        """
+        outcome = await _attempt(engine, "DELETE FROM audit_log WHERE id = :id", {"id": row["id"]})
+        assert outcome.startswith("REFUSED"), outcome
+        assert "permission denied" in outcome or "immutable" in outcome, outcome
+
         from sqlalchemy import text
 
         async with engine.connect() as conn:
@@ -206,3 +281,66 @@ class TestAuditImmutabilityExemption:
                 )
             ).scalar()
         assert remaining == 1, "the row was removed even though the statement was refused"
+
+
+class TestTenantErasureIsTheOnePathThrough:
+    """Issue #1330's acceptance tests, verbatim: deleting a tenant that holds
+    audit rows must succeed and take the rows with it, while a direct DELETE
+    on those same rows stays refused for as long as the tenant exists."""
+
+    async def test_deleting_the_tenant_erases_its_audit_rows(self, engine) -> None:
+        """`DELETE FROM tenants` completes as the runtime role, and the
+        cascade crosses both refusal layers.
+
+        This is the exact statement `tenant_deletion.py` ends with, run as
+        the role the product runs as. It proves two things no unit test can:
+        that 119's trigger arm recognises the cascade (the parent is already
+        gone when the child's BEFORE trigger runs), and that the referential
+        action carries the table owner's privilege — `aisoc_app` holds no
+        DELETE on `audit_log`, yet its DELETE on `tenants` must still erase
+        the audit rows. Before 119 this statement raised `immutable` for any
+        tenant that had ever written an audit row, which is every tenant.
+
+        Committed rather than rolled back, in a tenant of its own: erasure
+        that only happens inside an aborted transaction proves nothing.
+        """
+        import uuid
+
+        from sqlalchemy import text
+
+        tenant_id = str(uuid.uuid4())
+        marker = f"erasure-{tenant_id[:8]}"
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("INSERT INTO tenants (id, name, slug) VALUES (:id, :n, :s)"),
+                {"id": tenant_id, "n": marker, "s": marker},
+            )
+            for action in ("case:create", "case:close"):
+                await conn.execute(
+                    text("INSERT INTO audit_log (id, tenant_id, action, resource) VALUES (:id, :t, :a, 'case/1')"),
+                    {"id": str(uuid.uuid4()), "t": tenant_id, "a": action},
+                )
+
+        # The negative control first, while the tenant is alive: the same
+        # rows the cascade is about to erase cannot be deleted directly.
+        outcome = await _attempt(engine, "DELETE FROM audit_log WHERE tenant_id = :t", {"t": tenant_id})
+        assert outcome.startswith("REFUSED"), outcome
+
+        async with engine.begin() as conn:
+            await conn.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": tenant_id})
+
+        async with engine.connect() as conn:
+            survivors = (
+                await conn.execute(
+                    text("SELECT count(*) FROM audit_log WHERE tenant_id = :t"),
+                    {"t": tenant_id},
+                )
+            ).scalar()
+            tenant_rows = (
+                await conn.execute(
+                    text("SELECT count(*) FROM tenants WHERE id = :t"),
+                    {"t": tenant_id},
+                )
+            ).scalar()
+        assert tenant_rows == 0, "the tenant row survived its own deletion"
+        assert survivors == 0, "the tenant is gone but its audit rows survived — the cascade was refused or skipped"
