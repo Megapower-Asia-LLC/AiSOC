@@ -1,6 +1,6 @@
 """ORM models for the inbound MCP surface — tool grants and call approvals.
 
-Depth plan 9.1 (parity 6.6); migration ``104_mcp_access.sql`` carries the
+Depth plan 9.1 (parity 6.6); migration ``109_mcp_access.sql`` carries the
 reasoning for each column.
 
 Not to be confused with :mod:`app.models.mcp_server`, which is the *outbound*

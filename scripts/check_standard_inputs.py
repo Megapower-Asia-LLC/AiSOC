@@ -60,7 +60,7 @@ INBOX_ENDPOINT = Path("services/api/app/api/v1/endpoints/inbox.py")
 
 TAXII_SERVICE = Path("services/api/app/services/taxii.py")
 TAXII_ENDPOINT = Path("services/api/app/api/v1/endpoints/taxii.py")
-TAXII_MIGRATION = Path("services/api/migrations/110_taxii_collections.sql")
+TAXII_MIGRATION = Path("services/api/migrations/113_taxii_collections.sql")
 API_ROUTER = Path("services/api/app/api/v1/router.py")
 
 #: The template the OTLP receiver projects through. Named here rather than

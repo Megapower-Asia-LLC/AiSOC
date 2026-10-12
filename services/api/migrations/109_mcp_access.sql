@@ -1,4 +1,4 @@
--- 104_mcp_access.sql — who may call which MCP tool, and the queue that holds
+-- 109_mcp_access.sql — who may call which MCP tool, and the queue that holds
 -- the ones a key alone is not enough for.
 --
 -- Depth plan 9.1 (parity 6.6). `services/mcp` was stdio-only: an MCP host

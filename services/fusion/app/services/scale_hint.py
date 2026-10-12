@@ -2,7 +2,7 @@
 
 AiSOC publishes a signal. It does not scale itself.
 
-That is a decision rather than an omission, and ADR-0011 records it: an
+That is a decision rather than an omission, and ADR-0012 records it: an
 autoscaler belongs to the cluster, not to the application. A platform
 that scaled its own deployments would need write access to the
 orchestrator, would fight whatever HPA or KEDA scaler the operator

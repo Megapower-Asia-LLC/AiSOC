@@ -57,7 +57,7 @@ BACKUP_SH = Path("scripts/backup.sh")
 RESTORE_SH = Path("scripts/restore.sh")
 LEASE_PY = Path("services/connectors/app/leader_lease.py")
 SCHEDULER_PY = Path("services/connectors/app/scheduler.py")
-LEASE_MIGRATION = Path("services/api/migrations/112_scheduler_leases.sql")
+LEASE_MIGRATION = Path("services/api/migrations/115_scheduler_leases.sql")
 
 #: Compose services the chart is not expected to render, with the reason.
 #:

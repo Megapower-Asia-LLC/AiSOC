@@ -71,7 +71,7 @@ LAKE_MIGRATIONS = Path("services/api/app/db/lake_migrations.py")
 COLD_QUERY_PY = Path("services/api/app/services/lake_cold_query.py")
 JOB_RUNNER_PY = Path("services/api/app/services/lake_query_runner.py")
 LAKE_ENDPOINT = Path("services/api/app/api/v1/endpoints/lake.py")
-JOB_MIGRATION = Path("services/api/migrations/111_lake_query_jobs.sql")
+JOB_MIGRATION = Path("services/api/migrations/114_lake_query_jobs.sql")
 
 #: The floor the plan names. A deployment that cannot keep a year and a bit
 #: cannot answer "show me this account's activity over the last audit

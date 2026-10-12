@@ -32,7 +32,7 @@ table would leave every new connector one missing entry away from a
 detection that stops firing. The index is on required fields instead,
 which is strictly more selective *and* provably lossless: ``match_when``
 is an AND at the top level, so a rule that requires a field an event does
-not carry cannot match it, whatever the product names say. ADR-0011
+not carry cannot match it, whatever the product names say. ADR-0012
 records the decision.
 
 The engine is pure and synchronous; the consumer calls it inline.

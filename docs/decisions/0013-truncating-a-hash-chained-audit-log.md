@@ -1,4 +1,4 @@
-# ADR-0011: truncating a hash-chained audit log, without making an intact chain look tampered with
+# ADR-0013: truncating a hash-chained audit log, without making an intact chain look tampered with
 
 - **Status:** accepted
 - **Date:** 2026-10-11

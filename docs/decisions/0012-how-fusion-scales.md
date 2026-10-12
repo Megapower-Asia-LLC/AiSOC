@@ -1,4 +1,4 @@
-# ADR-0011: How fusion scales — required-field indexing and entity partitioning
+# ADR-0012: How fusion scales — required-field indexing and entity partitioning
 
 - **Status:** accepted
 - **Date:** 2026-10-11

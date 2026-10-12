@@ -48,7 +48,7 @@ async def scale_hint():
     """Lag-based autoscaling signal (parity 6.9 / depth 4.4).
 
     AiSOC publishes this and does not act on it. An autoscaler belongs to
-    the cluster, not to the application; ADR-0011 records why, and
+    the cluster, not to the application; ADR-0012 records why, and
     `apps/docs/docs/operations/performance.md` shows the KEDA
     `ScaledObject` that consumes it.
 

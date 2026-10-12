@@ -541,7 +541,7 @@ class FusionWorker:
     async def scale_hint(self) -> dict:
         """The autoscaling signal, for an operator's HPA or KEDA scaler.
 
-        AiSOC publishes this and does not act on it; ADR-0011 records
+        AiSOC publishes this and does not act on it; ADR-0012 records
         why. The per-replica budget is derived from the published
         realistic-mix run rather than chosen, so the number relates to a
         measurement someone can go and check.

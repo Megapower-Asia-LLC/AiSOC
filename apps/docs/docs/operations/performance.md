@@ -256,7 +256,7 @@ is not evidence that any number on this page still holds on your hardware.**
 `GET /scale-hint` on the fusion service publishes the consumer backlog
 and a suggested replica count. AiSOC does not scale itself — an
 autoscaler belongs to the cluster, would need write access to the
-orchestrator, and would fight whatever scaler you already run. ADR-0011
+orchestrator, and would fight whatever scaler you already run. ADR-0012
 records that decision.
 
 ```json

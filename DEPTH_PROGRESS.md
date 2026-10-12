@@ -60,21 +60,33 @@ is written. Next free at capture: migration `095`, ADR `0010`
 (`docs/decisions/`, not `docs/adr/` -- the plan's wording; the directory is
 `decisions/` and the highest is `0009-auto-close-without-an-earned-grant.md`).
 
+> **Renumbered at the 2026-10-12 merge train.** Nineteen lanes merged at once and
+> several had claimed the same free numbers before any of them landed — four lanes
+> on migration `110`, three on `111`, three on ADR `0011`. First lane merged kept
+> its number; the rest were renumbered in one commit, with every in-tree reference
+> updated. The **file name in the Status column is authoritative**; the Number
+> column records what the lane claimed at the time. Final ladder: migrations
+> `102`–`118` contiguous, ADRs `0011`–`0013`. The `109` claimed by 9.6 for
+> `109_push_devices.sql` was never written (9.6 shipped no migration), so `109`
+> went to `109_mcp_access.sql`; a future 9.6 follow-up re-derives against `main`
+> as the rule below already requires. The `111` claimed by 6.4 is likewise
+> re-derived when that lane lands.
+
 | Number | Claimed by | Status |
 |---|---|---|
 | ADR `0010` | 2.7 — entity and session context in CORE | **landed**, `docs/decisions/0010-entity-and-session-context-in-core.md`, accepted |
 | migration `102` | 2.4 — `102_sessions.sql` | **landed**, `sessions` table plus three `alerts` columns |
 | migration `103` | 2.5 — `103_posture_snapshots.sql` | claimed |
-| migration `104` | 9.1 — `104_mcp_access.sql` | claimed |
+| migration `104` | 9.1 — `109_mcp_access.sql` | claimed |
 | migration `105` | 9.2 — `105_semantic_memory.sql` | claimed |
 | migration `106` | 9.3 — `106_case_depth.sql` | claimed |
 | migration `107` | 9.4 — `107_case_war_rooms.sql` | claimed |
 | migration `108` | 9.5 — `108_hunt_reports.sql` | claimed |
 | migration `109` | 9.6 — `109_push_devices.sql` | claimed |
-| migration `110` | 8.1 — `110_console_webauthn.sql` | claimed |
-| migration `111` | 8.1 — `111_audit_retention.sql` | claimed |
+| migration `110` | 8.1 — `116_console_webauthn.sql` | claimed |
+| migration `111` | 8.1 — `117_audit_retention.sql` | claimed |
 | migration `112` | 8.1 — released, taken by another lane (D12) | **struck** |
-| migration `113` | 8.1 — `113_entitlement_enforcement.sql` | claimed |
+| migration `113` | 8.1 — `118_entitlement_enforcement.sql` | claimed |
 | ADR `0011` | 8.1 — truncating a hash-chained audit log | claimed |
 
 | migration `104` | 5.4 stateful user/manager verification (verification requests, answers, tenant opt-in) | claimed |
@@ -90,14 +102,14 @@ picking one.
 | migration `111` | 6.4 — `111_ai_agent_identities.sql` | claimed |
 | ADR `0011` | 6.6 — AI containment arms off by default, and the rollback a kill-switch needs | claimed |
 | — | 5.4 — `104_playbook_verification.sql` on `depth/5.4-5.6-lane-c`, and 7.1 — `104_phishing_campaigns.sql` on `depth/7.1-7.3-phishing` | **collision, unresolved here.** Both lanes wrote a `104` on a branch without a row in this table. Phase 9's `104` is the one with a claim, so these two need renumbering by their own lanes; recorded rather than renamed from outside, because renaming another lane's migration from here is how a branch comes back to a file that no longer exists |
-| migration `110` | 7.1 — `110_phishing_campaigns.sql` | claimed |
-| migration `111` | 7.2 — `111_phishing_message_analysis.sql` | claimed |
+| migration `110` | 7.1 — `111_phishing_campaigns.sql` | claimed |
+| migration `111` | 7.2 — `112_phishing_message_analysis.sql` | claimed |
 | ~~migration `110`~~ | ~~3.4 — `110_entity_baselines.sql`~~ | **released**, ADR-0011 put the baselines in the Redis fusion already runs, so there is no table |
 | migration `111` | 3.7 — `111_detection_coverage.sql` | claimed |
 | ADR `0011` | 3.4 — behavioural baselines in CORE | **landed**, `docs/decisions/0011-behavioural-baselines-in-core.md`, accepted |
 | migration `110` | 4.2 — `110_stream_inputs.sql` (Kafka customer topics, TAXII collections) | claimed |
-| migration `111` | 4.3 — `111_lake_query_jobs.sql` (cold-query cost estimate and progress state) | claimed |
-| migration `112` | 4.5 — `112_scheduler_leases.sql` (connector-scheduler leader election) | claimed |
+| migration `111` | 4.3 — `114_lake_query_jobs.sql` (cold-query cost estimate and progress state) | claimed |
+| migration `112` | 4.5 — `115_scheduler_leases.sql` (connector-scheduler leader election) | claimed |
 | ADR `0011` | 4.4 — partitioning fusion by entity rather than by alert | claimed |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
@@ -396,7 +408,7 @@ The claim table above reserved `110`--`112` for 8.1 after re-reading
 `services/api/migrations/` against `main`, which is the documented procedure
 and was not enough. Sequentially-numbered migrations are a **first-come
 namespace across branches, not across `main`**: by the time 8.1 came to write
-its third file, `112_scheduler_leases.sql` existed on another lane's pushed
+its third file, `115_scheduler_leases.sql` existed on another lane's pushed
 branch. `110` and `111` had three and three other claimants respectively and
 survived only because this item pushed first.
 
@@ -1092,7 +1104,7 @@ endpoint produces once triage falls through to its deterministic scorer.
   window drains, with a time bound as well as a count.
 
   **Lag hints.** `GET /scale-hint` publishes the backlog and a suggested
-  replica count. AiSOC does not act on it — ADR-0011 records why — and
+  replica count. AiSOC does not act on it — ADR-0012 records why — and
   the per-replica budget is derived from the published realistic-mix run
   rather than chosen, with a test that reads the committed result file
   and fails if the two drift.
@@ -1544,7 +1556,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-09 | 3.3 | Identity privilege (18 rules) and a per-tenant first-seen store (2) built; 5 rules were never unreachable (gate operator drift, D9); 18 retired with a reason (D10). `MAX_UNREACHABLE` 45 → 2, the two remaining both needing the 3.4 baseline. Two matcher operators three shipped rules already used were implemented. |
 | 2026-10-09 | 3.2 | Ordered and unordered sequences in the windowed engine; all four translatable Sigma correlation types compile, seven refusal reasons recorded. No upstream correlation rule exists in this tree to import (D8), so the corpus is first-party and labelled as such. |
 | 2026-10-11 | 4.5 | Three of four bullets closed. Reproduced: `check_deployment_completeness.py` on the pre-fix tree reported six CORE services the chart renders no workload for. Added them (three in `.Values.services`, three as their own templates because a third-party image must not inherit `.Chart.AppVersion` and two need volumes), compared restore against backup in both directions, and built Postgres leader election for the connector scheduler (migration `112`). Negative control: removing the lease's expiry predicate makes both interleaved transactions lead and three live cases go red. **Not verified here:** no managed-cluster run, no `helm install` on a cluster, and `check_published_images.py` could not reach GHCR and refused to pass vacuously. |
-| 2026-10-11 | 4.4 | Every parity 6.9 bullet closed; the cloud-hardware run is not possible from here and is recorded as unmeasured rather than implied. Rule index on required fields (lossless, proven by replaying every fixture both ways; 68.3% fewer candidates, 2.6x on evaluation), entity partition key held equal to the correlation key, per-entity concurrent triage, lag-based scale hint derived from the published run. The realistic mix found that eight of twelve connector profiles are category 2 and are promoted unconditionally, so on those connectors no event can be routine — the first run measured a routine alert rate of 1.00. ADR-0011; matrix 309 rows, 306 GATED. |
+| 2026-10-11 | 4.4 | Every parity 6.9 bullet closed; the cloud-hardware run is not possible from here and is recorded as unmeasured rather than implied. Rule index on required fields (lossless, proven by replaying every fixture both ways; 68.3% fewer candidates, 2.6x on evaluation), entity partition key held equal to the correlation key, per-entity concurrent triage, lag-based scale hint derived from the published run. The realistic mix found that eight of twelve connector profiles are category 2 and are promoted unconditionally, so on those connectors no event can be routine — the first run measured a routine alert rate of 1.00. ADR-0012; matrix 309 rows, 306 GATED. |
 | 2026-10-11 | 4.3 | Third bullet closed. Reproduced: `check_retention_window.py` with the new rules reported no cold-query estimator, no job surface and no job table on the pre-fix tree. Built `lake_cold_query.py` (EXPLAIN ESTIMATE + system.parts + system.processes, no invented throughput or price), `lake_query_runner.py` and migration `111`. Negative control: removing the `status = 'queued'` predicate makes both interleaved transactions claim one job and the live suite goes red. The first version of that test — five gathered claims — passed under the broken implementation and was replaced. 26 pure + 12 live tests; matrix 306 rows, 303 GATED. |
 | 2026-10-11 | 4.2 | Reproduced: `check_standard_inputs.py` against the pre-fix tree reported no OTLP package, no Kafka input and no TAXII server — the only TAXII-shaped route being a demo-gated sample list. Built all three, after moving the consumer-health classifier out of `graph_ws` into `streamhealth` so the new Kafka consumer shares the table rather than copying it. Negative controls recorded in the PR: a timestamp-only TAXII cursor loses an indicator in the single-row pagination walk (measured — 3 of 4), and nineteen gate injections each go red. Writing it found four defects, including an OTLP template nobody could mint a token for and a gate rule that read an error message instead of the behaviour. Ingest Go suite green; api projection suite 37; live TAXII suite 15. |
 | 2026-10-09 | 4.1 | Reproduced: `check_cloud_native_collection.py` on the unmodified tree reported all three collection paths absent. Implemented `aws_cloudtrail_s3` (SQS-notified S3 objects; management events, data events and VPC flow logs; delete-after-emit), `gcp_pubsub` (REST pull on a log-sink subscription; ack-after-read) and `azure_event_hubs` (Capture blobs over the Data Lake Gen2 JSON API, with a focused Avro OCF reader). Negative controls recorded in the PR: deleting the SQS message before the object is read, acknowledging the Pub/Sub batch before it is built, ignoring the Avro union branch index, and ignoring the flow-log header line each fail a named test, and all were restored. Connectors suite 1014 -> 1098 passed. |
@@ -1554,7 +1566,7 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-09 | 3.1 | All 74 decided. 50 translated into `wd-*` rules derived from each original's own clauses and replayed through the real engine (162 assertions); 24 refused with a reason across five kinds. `MAX_UNREACHABLE` 119 → 45, published executable 2,603 → 2,529, windowed 18 → 68. Three findings recorded as D4–D6 below. |
 | 2026-10-11 | 8.1 | parity 4.1's containerised-IdP leg **observed to pass**, both halves: `keycloak-oidc` verifies a real `id_token` against Keycloak's published JWKS with an audience-mismatch negative control, and `keycloak-saml` walks the whole SP-initiated flow to the real ACS and signs `alice@example.com` in as `infosec`, with an untrusted-key control answering 400. Run `38124780886`, as `ENVIRONMENT=test` against the DML-only `aisoc_app` role. The SSO claim row moves PARTIAL → GATED on that evidence. Building it found two shipped defects no self-authored provider could expose: `resolve_saml_connection` bound `:i` untyped so `:i IS NULL` raised on asyncpg, and Keycloak's default role-list mapper emits one `<Attribute Name="Role">` per role, which python3-saml refuses. |
 | 2026-10-11 | 8.1 | WebAuthn as a console second factor and MFA enforced per role. Fixing the branch's own gates found three `passkey_credentials` reads scoped by user id alone on a tenant-scoped table, and a permission-model violation where the MFA policy route imported `ROLE_PERMISSIONS` directly; the role *vocabulary* now has one owner in `role_grants.known_roles()`. 23 of 23 live cases pass against real Postgres, and deleting the login integration fails 14 of them — measured, where the workflow had said eight. |
-| 2026-10-11 | 8.1 | An enforced audit retention window with a re-anchored checkpoint, ADR-0011, and 12 live cases. Writing them found that migration `111` declared `ON DELETE CASCADE` on the checkpoint table and then made the cascade impossible; and, separately, that `audit_log`'s own trigger from migration `101` blocks `DELETE FROM tenants` for every tenant that has written a row, so tenant deletion is impossible on `main`. Reproduced and filed as #1330 rather than fixed here. |
+| 2026-10-11 | 8.1 | An enforced audit retention window with a re-anchored checkpoint, ADR-0013, and 12 live cases. Writing them found that migration `111` declared `ON DELETE CASCADE` on the checkpoint table and then made the cascade impossible; and, separately, that `audit_log`'s own trigger from migration `101` blocks `DELETE FROM tenants` for every tenant that has written a row, so tenant deletion is impossible on `main`. Reproduced and filed as #1330 rather than fixed here. |
 | 2026-10-11 | 8.1 | Opt-in per-tenant limit enforcement (migration `113`, D12), wired to `POST /connectors` and `POST /tenants/me/users` through one helper, with `GET`/`PUT /usage/enforcement` as the operator surface. Nine live cases, half of them positive controls: a guard that never refuses fails 1, a guard stuck closed fails 4. |
 | 2026-10-11 | 8.1 | axe extended to the case list and case workspace, the two of parity 4.7's five views that were left out. Four real defects found and fixed: two `<select>` controls with no accessible name (one of them the control that writes a case's status), two indistinguishable `<aside>` landmarks, and panel headings at `h3` directly under the page's `h1`. |
 
