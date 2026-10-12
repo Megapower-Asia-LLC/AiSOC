@@ -179,6 +179,29 @@ class Capability(str, Enum):
     # action is not finished until they answer.
     CHATOPS_VERIFY = "chatops_verify"
 
+    # MAILBOX — reported-phish remediation across the recipients of one
+    # message. The subject is a message in a mailbox, which is neither a
+    # host nor a principal, so none of the containment verbs above fit.
+    #
+    # SEARCH_MAILBOXES is the read every one of the others depends on: a
+    # purge takes a per-mailbox message id, and only a search maps one
+    # internet message id onto the mailboxes that hold a copy.
+    SEARCH_MAILBOXES = "search_mailboxes"
+    # Soft delete, never a hard one. On Microsoft Graph that is a move to
+    # the `recoverableitemsdeletions` well-known folder; on Gmail it is
+    # `users.messages.trash`. Both are documented and both are undone by
+    # RESTORE_EMAIL, which is why the verb is PURGE and not DELETE: a
+    # verb whose rollback resolves to nothing has no business being
+    # dispatched across a thousand mailboxes.
+    PURGE_EMAIL = "purge_email"
+    RESTORE_EMAIL = "restore_email"
+    # Per-mailbox sender block. Graph documents it as an inbox message
+    # rule and Gmail as a filter; neither vendor exposes its tenant-wide
+    # block list through the API this platform speaks, so this verb is
+    # scoped to the mailboxes it is dispatched against and says so.
+    BLOCK_SENDER = "block_sender"
+    UNBLOCK_SENDER = "unblock_sender"
+
     # TICKET — bidirectional ITSM (Jira / ServiceNow / etc.).
     PUSH_CASE = "push_case"
     PUSH_STATUS = "push_status"

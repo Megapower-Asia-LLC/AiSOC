@@ -41,6 +41,7 @@ from app.workers.autonomy_drift import run_forever as run_autonomy_drift
 from app.workers.hunt_scheduler import run_forever as run_hunt_scheduler
 from app.workers.oauth_refresh import run_forever as run_oauth_refresh
 from app.workers.outbound_webhook_delivery import run_forever as run_outbound_webhook_delivery
+from app.workers.phishing_report_intake import run_forever as run_phishing_report_intake
 from app.workers.report_scheduler import run_forever as run_report_scheduler
 from app.workers.retention_purge import run_forever as run_retention_purge
 from app.workers.retro_hunt_consumer import run_forever as run_retro_hunt_consumer
@@ -66,6 +67,10 @@ _HUNT_SCHEDULER_LOCK_TTL_SECONDS = 300
 # ClickHouse mutation with mutations_sync=1 blocks until it lands. 30m keeps
 # a second replica from starting a concurrent sweep mid-delete.
 _RETENTION_PURGE_LOCK_TTL_SECONDS = 1800
+# A report-mailbox poll is one vendor read plus a bounded number of
+# inserts, so a lock held long after a crashed replica would stall intake
+# for much longer than the work takes. Sized to the poll interval.
+_PHISHING_INTAKE_LOCK_TTL_SECONDS = 300
 # Shorter than the others: the sweep is a single bounded UPDATE, so a lock
 # held for half an hour after a crashed replica would leave approvals
 # un-expired for far longer than the work takes.
@@ -448,6 +453,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as exc:
             logger.warning("retention_purge worker failed to start", error=str(exc))
 
+    # Depth 7.1. Pulls reported phish out of the tenant's nominated report
+    # mailbox. Default off: reading a mailbox on a schedule is a capability
+    # an operator opts into. Enabling it alone still polls nothing until a
+    # connector nominates a mailbox, and the sweep says which half is
+    # missing rather than going quiet.
+    phishing_intake_task: asyncio.Task | None = None
+    if settings.PHISHING_INTAKE_WORKER_ENABLED:
+        try:
+            phishing_intake_task = asyncio.create_task(
+                _run_guarded_scheduler_worker(
+                    job_name="phishing_report_intake",
+                    ttl_seconds=_PHISHING_INTAKE_LOCK_TTL_SECONDS,
+                    worker=run_phishing_report_intake,
+                ),
+                name="phishing_report_intake_worker",
+            )
+            logger.info("phishing_report_intake worker started")
+        except Exception as exc:
+            logger.warning("phishing_report_intake worker failed to start", error=str(exc))
+
     hunt_scheduler_task: asyncio.Task | None = None
     if settings.HUNT_SCHEDULER_ENABLED:
         try:
@@ -678,6 +703,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.debug("retention_purge worker cancelled during shutdown")
         except Exception as exc:
             logger.warning("retention_purge worker shutdown error", error=type(exc).__name__)
+
+    if phishing_intake_task is not None and not phishing_intake_task.done():
+        phishing_intake_task.cancel()
+        try:
+            await phishing_intake_task
+        except asyncio.CancelledError:
+            logger.debug("phishing_report_intake worker cancelled during shutdown")
+        except Exception as exc:
+            logger.warning("phishing_report_intake worker shutdown error", error=type(exc).__name__)
 
     if shadow_reconcile_task is not None and not shadow_reconcile_task.done():
         shadow_reconcile_task.cancel()

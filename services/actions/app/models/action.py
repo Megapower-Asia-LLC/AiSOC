@@ -84,6 +84,23 @@ class ActionType(str, Enum):
     # raised the alert. Distinct from ack/suppress because the disposition —
     # not the caller — decides whether the finding is closed or escalated.
     UPDATE_ALERT_DISPOSITION = "update_alert_disposition"
+    # Depth 7.1 — mailbox remediation for reported phish. Present here, and
+    # not only in the capability vocabulary, because the post-action verifier
+    # is keyed by ActionType: a verb absent from this enum can declare a
+    # probe and never have it reached, which the contract gate now refuses.
+    # `purge_email` is the one verb in the product whose blast radius is a
+    # property of the dispatch rather than of the verb, so the entry in
+    # ACTION_BLAST_RADIUS below is its single-mailbox floor and
+    # `capability_contracts.scaled_impact` raises it per campaign.
+    #
+    # `search_mailboxes` is deliberately absent: it is read-only, declares no
+    # verification probe, and so needs nothing this enum provides. Adding it
+    # anyway would put a read on the ungoverned `POST /actions` surface for
+    # no gain. Its arms are native read executors in `investigation_reads`.
+    PURGE_EMAIL = "purge_email"
+    RESTORE_EMAIL = "restore_email"
+    BLOCK_SENDER = "block_sender"
+    UNBLOCK_SENDER = "unblock_sender"
 
 
 class ActionStatus(str, Enum):
@@ -144,6 +161,16 @@ ACTION_BLAST_RADIUS: dict[ActionType, BlastRadius] = {
     # for: "classified the same as create_notable_event ... it changes a
     # queue item, not an estate", and create_notable_event is LOW.
     ActionType.UPDATE_ALERT_DISPOSITION: BlastRadius.LOW,
+    # Depth 7.1 — mailbox remediation. The purge entry is the floor for one
+    # mailbox; `BlastRadiusGate` reads this table and cannot see a recipient
+    # count, so the campaign-scaled grading happens in the capability
+    # contract where the parameters are in scope. MEDIUM is already above
+    # `_AUTO_EXECUTE_LIMIT`'s sibling tiers for the legacy door's purposes
+    # and `APPROVAL_REQUIRED_ACTIONS` below makes the point unconditional.
+    ActionType.PURGE_EMAIL: BlastRadius.MEDIUM,
+    ActionType.RESTORE_EMAIL: BlastRadius.LOW,
+    ActionType.BLOCK_SENDER: BlastRadius.LOW,
+    ActionType.UNBLOCK_SENDER: BlastRadius.LOW,
 }
 
 # Actions that require explicit human approval
@@ -156,6 +183,13 @@ APPROVAL_REQUIRED_ACTIONS = {
     ActionType.SUSPEND_SESSION,
     ActionType.BLOCK_IOC,
     ActionType.SYNC_DETECTION_RULE,
+    # Removing somebody's mail is never automatic, whatever the autonomy
+    # tier. The capability contract says the same thing through the matrix;
+    # this is the legacy door saying it too, because the two doors
+    # disagreeing about one verb is the defect `test_approval_doors_agree`
+    # exists to catch.
+    ActionType.PURGE_EMAIL,
+    ActionType.BLOCK_SENDER,
 }
 
 

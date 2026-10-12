@@ -90,6 +90,8 @@ picking one.
 | migration `111` | 6.4 — `111_ai_agent_identities.sql` | claimed |
 | ADR `0011` | 6.6 — AI containment arms off by default, and the rollback a kill-switch needs | claimed |
 | — | 5.4 — `104_playbook_verification.sql` on `depth/5.4-5.6-lane-c`, and 7.1 — `104_phishing_campaigns.sql` on `depth/7.1-7.3-phishing` | **collision, unresolved here.** Both lanes wrote a `104` on a branch without a row in this table. Phase 9's `104` is the one with a claim, so these two need renumbering by their own lanes; recorded rather than renamed from outside, because renaming another lane's migration from here is how a branch comes back to a file that no longer exists |
+| migration `110` | 7.1 — `110_phishing_campaigns.sql` | claimed |
+| migration `111` | 7.2 — `111_phishing_message_analysis.sql` | claimed |
 
 Highest migration on `main` at claim time was `101_audit_immutable_nullify.sql`,
 so `095`--`101` were taken by sibling lanes between the capture above and this
@@ -121,6 +123,15 @@ authoritative only for lanes that write to it **before** the file, and four
 branches now carry a `104` or a `105` that was never claimed here. Reading
 `main` is not enough; read `git ls-tree` over every `origin/*` branch as
 well, which is what found this.
+Phase 7 claimed `104` and `105` on the same day and **lost the race**: Phase 9
+merged to `main` first, so Phase 7 renumbered to `110` and `111` rather than
+leaving two files with one number each. Both lanes re-read the directory
+before claiming and both read `101`, which is the shape a claim table cannot
+prevent on its own — the table is the tiebreak, and whoever lands second
+moves. Recorded because the next lane will hit it too: re-read
+`DEPTH_PROGRESS.md` on `origin/main`, not only the migrations directory, and
+expect to renumber if a sibling merged between the claim and the pull
+request.
 
 ## Phase 0: Kickoff
 
@@ -813,8 +824,8 @@ endpoint produces once triage falls through to its deterministic scorer.
 
 ## Phase 7: Phishing operations
 
-- [ ] **7.1** Intake to purge (gap-closure Phase 10 / parity 6.4)
-- [ ] **7.2** Header, URL and attachment analysis
+- [x] **7.1** Intake to purge (gap-closure Phase 10 / parity 6.4)
+- [x] **7.2** Header, URL and attachment analysis
 - [ ] **7.3** Adversary-in-the-middle session reuse
 
 ## Phase 8: Enterprise gates
@@ -956,3 +967,29 @@ endpoint produces once triage falls through to its deterministic scorer.
 | 2026-10-11 | 8.1 | Opt-in per-tenant limit enforcement (migration `113`, D12), wired to `POST /connectors` and `POST /tenants/me/users` through one helper, with `GET`/`PUT /usage/enforcement` as the operator surface. Nine live cases, half of them positive controls: a guard that never refuses fails 1, a guard stuck closed fails 4. |
 | 2026-10-11 | 8.1 | axe extended to the case list and case workspace, the two of parity 4.7's five views that were left out. Four real defects found and fixed: two `<select>` controls with no accessible name (one of them the control that writes a case's status), two indistinguishable `<aside>` landmarks, and panel headings at `h3` directly under the page's `h1`. |
 
+
+| 2026-10-11 | 7.1 | Reproduced: against the unmodified tree, `registry.list_vendors_for_capability` returned `[]` for all five mailbox verbs and `dispatcher.dispatch` answered `executor_not_found` for `purge_email` over 79 registered builtin arms -- a phishing response that could block the sender's domain at the firewall and could not remove the message it arrived in. Added the five verbs to both halves of the vocabulary, two mail clients (Graph, Gmail with per-mailbox domain-wide delegation), ten vendor arms, migration `104`, three intake adapters, campaign grouping, the governed fan-out and a report-mailbox worker. Only documented vendor APIs: purge is a soft delete on both and `restore_email` is a real reverse; there is no tenant-wide sender block because neither vendor exposes one through these APIs, and the per-mailbox scope is in the summary an analyst reads rather than only in a docstring. Everything ships off. Negative controls recorded in the PR: defaulting the feature flag on reds four tests, inverting the verification probe's polarity reds two, reading the envelope sender instead of the preserved headers reds four adapter tests including the one asserting the report mailbox is not proposed for purge, incrementing `recipient_count` instead of recomputing it reds the grouping test, and dropping `recipient_count` from the per-mailbox dispatch reds the fan-out test -- which is the quiet way a SEVERE action becomes a MODERATE one. Gates: `check_action_contract` 86 -> 97 executors, `check_module_reachability` 981 -> 986 of 1014, `check_route_authz` 262 -> 265 authorizing with both ceilings unmoved, matrix 302 -> 303 rows. Actions suite 1158 -> 1228; api 44 new cases, 17 of them against a real Postgres with the full chain. Recorded as **PARTIAL**, not GATED: no Microsoft 365 or Google Workspace tenant was exercised (D-7.1). |
+| 2026-10-11 | 7.2 | Reproduced: `grep -rl "authentication-results" services/` returned no match on the unmodified tree, so nothing in the product read a sender-authentication header and a message whose SPF and DMARC had both failed produced a verdict that had never looked. Built header analysis with a three-valued result, URL submission through the existing sandbox contract, the attachment hash lookup the submit path already had, and `evidence_cited` citations into the investigation ledger. Migration `111` stores the headers on the submission so a retriage replays them rather than re-fetching a message the purge has usually removed. `analysed` and `unanalysed` are counted separately in three places and summed in none. Negative controls: treating `none`/`neutral` as passes reds two tests; silently skipping an unanalysable URL reds three. **That second control is the finding worth keeping** -- it failed to fail on the first attempt, because every test built its own `ArtefactResult` list and never ran the producer, so five cases were added that drive `analyse_message` with the registry patched empty. A second finding came from the ledger suite's teardown: deleting a run cascades to its events and migration 008's trigger refuses, so the fixture was dropped rather than the append-only control defeated. Gates: matrix 303 -> 304 rows (300 GATED), `check_text_bind_casts` and `check_raw_sql_columns` clean over 6 new columns, `check_route_authz` unmoved. 45 new api cases, 6 of them against a real Postgres with the full chain. |
+
+### D-7.1 -- No Microsoft 365 or Google Workspace tenant was exercised
+
+Every mailbox verb in 7.1 is built against the vendors' documented request
+shapes and asserted with a recorded `respx` mock: the Graph `$filter` on a
+bracketed `internetMessageId`, the `move` to `recoverableitemsdeletions`, the
+inbox `messageRules` body, Gmail's `rfc822msgid:` operator, `trash`/`untrash`
+and the settings filter. **Nobody has watched either vendor accept any of
+them.** The maintainer-only list already carries "provide cloud and SaaS test
+tenants"; this is the same block, named here so the claim row's PARTIAL has a
+reason a reader can find.
+
+Two specific consequences, stated rather than implied. A decoder and a fixture
+that share an author share a misreading, so a field Graph spells differently
+from the reference would pass every test here. And the Gmail filter body and
+the Graph inbox-rule body were written from the API reference rather than
+taken from a working call, which is the half of `block_sender` least likely
+to be right first time.
+
+The claim row returns to GATED when a live tenant is available. Nothing was
+weakened to accommodate this: the row says PARTIAL, the operations page says
+"treat the first run against your own tenant as the first run", and the
+CHANGELOG entry says it too.
