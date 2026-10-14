@@ -263,9 +263,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if opencti_client and _airgap_check_feed_url("opencti", settings.OPENCTI_URL):
         scheduler.register(
             feed_name="opencti",
-            handler=partial(
-                handle_opencti_feed, client=opencti_client, pipeline=pipeline
-            ),
+            handler=partial(handle_opencti_feed, client=opencti_client, pipeline=pipeline),
             interval_seconds=settings.OPENCTI_POLL_INTERVAL,
         )
 
