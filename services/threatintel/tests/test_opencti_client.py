@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import json
 import pathlib
+from datetime import UTC, datetime
 
 import pytest
 from app.clients.opencti import (
+    STIX_CORE_INDICATORS_QUERY,
     OpenCtiClient,
     _label_values,
     parse_pattern,
@@ -152,3 +154,25 @@ class TestGraphqlDocument:
         f = live_request["variables"]["filters"]["filters"][0]
         assert f["key"] == ["updated_at"]
         assert f["operator"] == "gt"
+
+    def test_shipped_query_is_byte_identical_to_the_validated_one(self, live_request: dict) -> None:
+        """The constant the client sends equals the document the platform accepted.
+
+        The substring checks above read the *fixture*; they cannot notice an
+        edit to the shipped constant, and a query that drifts from the
+        validated capture fails in the worst way a TI source can — a
+        silently empty feed. Byte equality runs in the direction that
+        drifts: change either side and this names the divergence.
+        """
+        assert STIX_CORE_INDICATORS_QUERY == live_request["query"]
+
+    def test_client_builds_the_validated_filter_group(self, live_request: dict, client: OpenCtiClient) -> None:
+        """`_filters()` reproduces the captured request's variables exactly.
+
+        The fixture's watermark is 2026-09-01T00:00:00Z, so building the
+        filter for that instant must equal the captured FilterGroup — key
+        spelling, list-valued `key`, operator and the empty `filterGroups`
+        arm included.
+        """
+        built = client._filters(datetime(2026, 9, 1, tzinfo=UTC))
+        assert built == live_request["variables"]["filters"]
