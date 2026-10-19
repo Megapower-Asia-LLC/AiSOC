@@ -238,7 +238,7 @@ class DatadogConnector(BaseConnector):
     _LOG_LEVEL_SEVERITY = {
         "emergency": "high",
         "alert": "high",
-        "critical": "high",
+        "critical": "critical",
         "error": "medium",
         "warn": "low",
         "warning": "low",

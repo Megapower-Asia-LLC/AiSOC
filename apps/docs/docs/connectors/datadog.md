@@ -59,15 +59,15 @@ For `mode: logs` (the `status` / `level` attribute):
 
 | AiSOC severity | Datadog log status |
 |---|---|
-| `high`   | `emergency`, `alert`, `critical` |
-| `medium` | `error` |
-| `low`    | `warn`, `warning` |
-| `info`   | `notice`, `info`, `debug`, missing |
+| `critical` | `critical` |
+| `high`     | `emergency`, `alert` |
+| `medium`   | `error` |
+| `low`      | `warn`, `warning` |
+| `info`     | `notice`, `info`, `debug`, missing |
 
-The split between `critical` (→ high) and `error` (→ medium) is
-deliberate: keeping `critical`/`alert`/`emergency` on its own tier
-means a paging event stays distinguishable from a routine 5xx in the
-alert queue.
+Datadog's native `critical` status is preserved on AiSOC's five-tier
+severity ladder. The `emergency` and `alert` statuses remain `high`,
+above routine `error` logs in the alert queue.
 
 For `mode: events` (the monitor `alert_type` attribute):
 

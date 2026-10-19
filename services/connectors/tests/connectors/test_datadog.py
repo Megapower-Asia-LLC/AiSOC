@@ -56,9 +56,10 @@ def test_invalid_mode_rejected():
         DatadogConnector(site="us1", mode="bogus", api_key="k", application_key="a")
 
 
-def test_normalize_log_critical_to_high(fixture):
+def test_normalize_log_critical_preserves_critical(fixture):
     out = _logs_connector().normalize(fixture["logs"][0])
-    assert out["severity"] == "high"
+    assert out["severity"] == "critical"
+    assert out["raw_event"]["attributes"]["status"] == "critical"
     assert out["stream"] == "logs"
     assert out["host"] == "web-1"
     assert out["service"] == "api"
