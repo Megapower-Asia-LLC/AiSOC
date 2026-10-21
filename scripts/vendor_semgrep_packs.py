@@ -64,6 +64,7 @@ def pack_dir() -> Path:
     """
     return repo_root() / ".security" / "semgrep"
 
+
 #: The registry packs the scan ran before vendoring, in the order the
 #: workflow listed them. The registry serves each pack's rules YAML at
 #: https://semgrep.dev/c/p/<name>.
