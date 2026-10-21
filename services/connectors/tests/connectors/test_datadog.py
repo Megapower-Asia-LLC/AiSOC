@@ -65,6 +65,16 @@ def test_normalize_log_critical_preserves_critical(fixture):
     assert out["service"] == "api"
 
 
+def test_normalize_log_emergency_and_alert_outrank_critical():
+    # Syslog ordering: emergency (0) and alert (1) are MORE severe than
+    # critical (2). They must never map below critical's tier, or a paging
+    # emergency would rank under a critical log in the alert queue.
+    for status in ("emergency", "alert"):
+        out = _logs_connector().normalize({"attributes": {"status": status, "message": "m"}})
+        assert out["severity"] == "critical", status
+        assert out["raw_event"]["attributes"]["status"] == status
+
+
 def test_normalize_log_error_to_medium(fixture):
     assert _logs_connector().normalize(fixture["logs"][1])["severity"] == "medium"
 
