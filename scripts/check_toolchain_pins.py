@@ -220,13 +220,11 @@ EXPECTED_ESBUILD: dict[str, str] = {
 # ten justifications in this repository's history were found to be untrue when
 # checked that way.
 CROSS_ROOT_OVERRIDE_EXEMPT: dict[tuple[str, str], tuple[tuple[str, ...], str]] = {
-    ("body-parser", "services/realtime"): (
-        ("1.20.8",),
-        "the root override `>=2.3.0 <3` is a major-line floor for the "
-        "workspace's Express 5 tree; realtime is on Express 4, whose 1.x line "
-        "is separately patched. OSV version query for body-parser 1.20.8 on "
-        "2026-09-24 returns no advisories",
-    ),
+    # body-parser in services/realtime was exempted here while realtime sat on
+    # Express 4 (body-parser 1.20.8, the separately-patched 1.x line). The
+    # Express 5 bump moved realtime onto body-parser 2.3.0, which satisfies
+    # the root override `>=2.3.0 <3` directly, so the exemption is gone —
+    # exactly the re-opening this table's exact-version records exist for.
     ("ws", "apps/mobile"): (
         ("6.2.6", "7.5.13"),
         "React Native's development server pins its own websocket majors: 6.2.6 "
