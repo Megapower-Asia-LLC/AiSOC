@@ -234,10 +234,17 @@ jobs:
       # one would teach people to bypass the gate rather than fix anything.
       # A newly published CVE against a pinned dependency will red pull
       # requests until it is upgraded. That is the intended cost.
+      # `--ignorefile` is explicit because Trivy only auto-discovers the plain
+      # `.trivyignore` format; the YAML variant (which carries per-entry path
+      # scoping and `expired_at`, matching the expiry contract of
+      # scripts/security_audit_ignores.txt) is read only when named. Verified
+      # both ways locally: without the flag the suppressed findings still
+      # fail the scan, with it they are honoured and anything out of scope
+      # still reds.
       - name: Scan filesystem for fixable HIGH/CRITICAL
         run: |
           set -euo pipefail
-          /tmp/trivy fs --severity HIGH,CRITICAL --ignore-unfixed --skip-dirs plans --exit-code 1 .
+          /tmp/trivy fs --severity HIGH,CRITICAL --ignore-unfixed --skip-dirs plans --ignorefile .trivyignore.yaml --exit-code 1 .
 
   # ── RATCHETED: IaC misconfig scan ─────────────────────────────────────────
   #
