@@ -119,6 +119,104 @@ async def test_poll_one_happy_path(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Checkpoints advance only after full-batch ingest acceptance
+# ---------------------------------------------------------------------------
+
+
+def _checkpointing_connector(events: list[dict[str, Any]]) -> MagicMock:
+    connector = MagicMock()
+    connector.fetch_alerts = AsyncMock(return_value=events)
+    connector.normalize = MagicMock(side_effect=lambda event: event)
+    connector.get_checkpoint.return_value = {"time": "2026-01-01T00:00:02Z", "id": "event-2"}
+    return connector
+
+
+@pytest.mark.asyncio
+async def test_full_ingest_acceptance_persists_the_staged_checkpoint(monkeypatch):
+    inst = _make_instance(connector_type="fake_connector")
+    events = [{"id": "event-1"}, {"id": "event-2"}]
+    connector = _checkpointing_connector(events)
+    monkeypatch.setattr("app.scheduler.CONNECTOR_REGISTRY", {"fake_connector": MagicMock(return_value=connector)})
+    engine = _FakeEngine([inst])
+    scheduler = ConnectorScheduler(
+        engine=engine,
+        ingest_client=_FakeIngestClient(accepted=2, rejected=0),
+        vault=_FakeVault(),
+    )
+
+    await scheduler._poll_one(connector_id=inst.id)
+
+    assert engine.checkpoint_calls == [
+        {
+            "connector_id": inst.id,
+            "checkpoint": {"time": "2026-01-01T00:00:02Z", "id": "event-2"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param({"accepted": 1, "rejected": 1}, id="partial-rejection"),
+        pytest.param({"accepted": 1, "rejected": 0}, id="accepted-count-too-small"),
+        pytest.param({"accepted": 3, "rejected": 0}, id="accepted-count-too-large"),
+        pytest.param({"accepted": 2}, id="missing-rejected-count"),
+        pytest.param({"rejected": 0}, id="missing-accepted-count"),
+    ],
+)
+async def test_incomplete_ingest_response_withholds_the_checkpoint(monkeypatch, caplog, response):
+    inst = _make_instance(connector_type="fake_connector")
+    connector = _checkpointing_connector([{"id": "event-1"}, {"id": "event-2"}])
+    monkeypatch.setattr("app.scheduler.CONNECTOR_REGISTRY", {"fake_connector": MagicMock(return_value=connector)})
+    engine = _FakeEngine([inst])
+    scheduler = ConnectorScheduler(
+        engine=engine,
+        ingest_client=_FakeIngestClient(response=response),
+        vault=_FakeVault(),
+    )
+
+    with caplog.at_level("WARNING", logger="aisoc.connectors.scheduler"):
+        await scheduler._poll_one(connector_id=inst.id)
+
+    assert engine.checkpoint_calls == []
+    assert "connector.scheduler.checkpoint_withheld" in caplog.text
+    assert "submitted=2" in caplog.text
+    assert f"accepted={int(response.get('accepted', 0) or 0)}" in caplog.text
+    assert f"rejected={int(response.get('rejected', 0) or 0)}" in caplog.text
+    assert f"counts_present={str('accepted' in response and 'rejected' in response)}" in caplog.text
+    assert "event-1" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_empty_fully_processed_batch_may_persist_a_staged_checkpoint(monkeypatch):
+    """Source rows intentionally removed by filters must not replay forever."""
+    inst = _make_instance(
+        connector_type="fake_connector",
+        connector_config={
+            "filter_rules": [{"field": "severity", "op": "eq", "value": "info", "action": "drop"}],
+        },
+    )
+    connector = _checkpointing_connector([{"id": "event-2", "severity": "info"}])
+    monkeypatch.setattr("app.scheduler.CONNECTOR_REGISTRY", {"fake_connector": MagicMock(return_value=connector)})
+    engine = _FakeEngine([inst])
+    scheduler = ConnectorScheduler(
+        engine=engine,
+        ingest_client=_FakeIngestClient(accepted=0, rejected=0),
+        vault=_FakeVault(),
+    )
+
+    await scheduler._poll_one(connector_id=inst.id)
+
+    assert engine.checkpoint_calls == [
+        {
+            "connector_id": inst.id,
+            "checkpoint": {"time": "2026-01-01T00:00:02Z", "id": "event-2"},
+        }
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Schema-Drift Sentinel + filter-rules pipeline integration
 # ---------------------------------------------------------------------------
 
@@ -426,6 +524,7 @@ async def test_poll_one_ingest_raises(monkeypatch):
     fake_connector = MagicMock()
     fake_connector.fetch_alerts = AsyncMock(return_value=[{"x": 1}])
     fake_connector.normalize = MagicMock(side_effect=lambda e: e)
+    fake_connector.get_checkpoint.return_value = {"time": "2026-01-01T00:00:01Z", "id": "event-1"}
     monkeypatch.setattr(
         "app.scheduler.CONNECTOR_REGISTRY",
         {"fake_connector": MagicMock(return_value=fake_connector)},
@@ -439,6 +538,7 @@ async def test_poll_one_ingest_raises(monkeypatch):
 
     engine: _FakeEngine = scheduler._engine  # type: ignore[assignment]
     assert engine.failure_calls == [inst.id]
+    assert engine.checkpoint_calls == []
 
 
 @pytest.mark.asyncio
@@ -831,13 +931,14 @@ class _FakeAsyncContextManager:
 
 
 class _FakeEngine:
-    """Async engine fake that records record_poll_success/failure calls."""
+    """Async engine fake that records scheduler persistence calls."""
 
     def __init__(self, instances: list[ConnectorInstance]) -> None:
         self.instances = list(instances)
         self.success_calls: list[uuid.UUID] = []
         self.failure_calls: list[uuid.UUID] = []
         self.drift_calls: list[dict[str, Any]] = []
+        self.checkpoint_calls: list[dict[str, Any]] = []
         # Workstream 5: track every record_backfill_run() call so backfill
         # tests can assert when the flap-suppress timestamp was stamped.
         self.backfill_calls: list[uuid.UUID] = []
@@ -864,9 +965,17 @@ class _FakeVault:
 
 
 class _FakeIngestClient:
-    def __init__(self, accepted: int = 0) -> None:
+    def __init__(
+        self,
+        accepted: int = 0,
+        rejected: int = 0,
+        *,
+        response: dict[str, Any] | None = None,
+    ) -> None:
         self.calls = 0
         self.accepted = accepted
+        self.rejected = rejected
+        self.response = response
         self.last_payload: dict[str, Any] | None = None
         self.exc: BaseException | None = None
 
@@ -875,7 +984,9 @@ class _FakeIngestClient:
         self.last_payload = kwargs
         if self.exc is not None:
             raise self.exc
-        return {"accepted": self.accepted, "rejected": 0}
+        if self.response is not None:
+            return dict(self.response)
+        return {"accepted": self.accepted, "rejected": self.rejected}
 
     async def aclose(self) -> None:
         return None
@@ -916,6 +1027,13 @@ def _patch_repo_calls(monkeypatch):
     ) -> None:
         getattr(conn.engine, "drift_calls", []).append({"connector_id": connector_id, "fingerprint": fingerprint, "details": details})
 
+    async def fake_record_checkpoint(
+        conn: Any,
+        connector_id: uuid.UUID,
+        checkpoint: dict[str, Any],
+    ) -> None:
+        conn.engine.checkpoint_calls.append({"connector_id": connector_id, "checkpoint": checkpoint})
+
     async def fake_record_backfill_run(
         conn: Any,
         connector_id: uuid.UUID,
@@ -926,6 +1044,7 @@ def _patch_repo_calls(monkeypatch):
     monkeypatch.setattr("app.scheduler.record_poll_success", fake_record_poll_success)
     monkeypatch.setattr("app.scheduler.record_poll_failure", fake_record_poll_failure)
     monkeypatch.setattr("app.scheduler.record_schema_drift", fake_record_schema_drift)
+    monkeypatch.setattr("app.scheduler.record_checkpoint", fake_record_checkpoint)
     monkeypatch.setattr("app.scheduler.record_backfill_run", fake_record_backfill_run)
 
 

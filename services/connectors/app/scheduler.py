@@ -732,17 +732,34 @@ class ConnectorScheduler:
             return
 
         accepted = int(result.get("accepted", 0) or 0)
+        rejected = int(result.get("rejected", 0) or 0)
         elapsed_ms = int((datetime.now(UTC) - started).total_seconds() * 1000)
 
-        # Advance the persisted checkpoint only now that ingest has accepted the
-        # batch (#529). A failed push returned earlier, so reaching here means
-        # the page was accepted — this is the "advance only after accept" rule.
+        # Persist the staged cursor only after *every submitted event* was
+        # accepted. Ingest deliberately reports per-event normalization
+        # failures as HTTP 200 with accepted/rejected counts, so HTTP success
+        # alone does not prove that advancing is safe. Replaying an accepted
+        # event on the next overlapping poll is preferable to moving past a
+        # rejected event and losing it permanently.
+        counts_present = "accepted" in result and "rejected" in result
+        batch_fully_accepted = counts_present and rejected == 0 and accepted == len(kept)
         try:
             new_checkpoint = connector.get_checkpoint()
         except Exception:  # never let checkpoint bookkeeping break a poll
             new_checkpoint = None
         if isinstance(new_checkpoint, dict) and new_checkpoint:
-            await self._record_checkpoint(target.id, new_checkpoint)
+            if batch_fully_accepted:
+                await self._record_checkpoint(target.id, new_checkpoint)
+            else:
+                logger.warning(
+                    "connector.scheduler.checkpoint_withheld id=%s type=%s submitted=%d accepted=%d rejected=%d counts_present=%s",
+                    connector_id,
+                    target.connector_type,
+                    len(kept),
+                    accepted,
+                    rejected,
+                    counts_present,
+                )
 
         # If drift was detected, persist that fact *before* marking the
         # poll successful so the UI reflects "drifted" status alongside
@@ -815,7 +832,7 @@ class ConnectorScheduler:
             connector_id,
             target.connector_type,
             accepted,
-            int(result.get("rejected", 0) or 0),
+            rejected,
             dropped_count,
             "yes" if drift_detected else "no",
             elapsed_ms,
