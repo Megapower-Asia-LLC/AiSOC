@@ -236,8 +236,11 @@ class DatadogConnector(BaseConnector):
             return [self.normalize({"_kind": "event", **ev}) for ev in events]
 
     _LOG_LEVEL_SEVERITY = {
-        "emergency": "high",
-        "alert": "high",
+        # Datadog log statuses follow syslog ordering: emergency (0) and
+        # alert (1) outrank critical (2). Mapping them below `critical` would
+        # invert the vendor's own ladder, so all three share AiSOC's top tier.
+        "emergency": "critical",
+        "alert": "critical",
         "critical": "critical",
         "error": "medium",
         "warn": "low",
