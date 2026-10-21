@@ -46,9 +46,23 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PACK_DIR = REPO_ROOT / ".security" / "semgrep"
+# `scripts/` is on sys.path when this file is run as a program, but not when a
+# test loads it by path with importlib. gate_toolkit sits beside it either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from gate_toolkit import repo_root
+
 MANIFEST = "MANIFEST.sha256"
+
+
+def pack_dir() -> Path:
+    """Resolved at use time, per git — not per this file's location.
+
+    ``repo_root()`` honours ``AISOC_REPO_ROOT`` and asks git, so the harness
+    that runs every gate against a bare tree reads *that* tree rather than
+    whatever sits two levels above a copied script.
+    """
+    return repo_root() / ".security" / "semgrep"
 
 #: The registry packs the scan ran before vendoring, in the order the
 #: workflow listed them. The registry serves each pack's rules YAML at
@@ -204,11 +218,11 @@ def main() -> int:
     if args.self_test:
         return self_test()
     if args.check:
-        return check(PACK_DIR)
+        return check(pack_dir())
     if args.digest:
-        print(combined_digest(PACK_DIR))
+        print(combined_digest(pack_dir()))
         return 0
-    return fetch(PACK_DIR)
+    return fetch(pack_dir())
 
 
 if __name__ == "__main__":
