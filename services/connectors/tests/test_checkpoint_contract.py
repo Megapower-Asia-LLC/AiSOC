@@ -1,8 +1,8 @@
 """Ingest checkpoints are a declared contract, not a duck type (10b).
 
 The durable half shipped already: `record_checkpoint` persists a cursor, and
-the scheduler advances it only after ingest accepted the batch. What was
-missing was adoption — `splunk` was the only one of 84 connectors
+the scheduler advances it only after ingest accepted every submitted event.
+What was missing was adoption — `splunk` was the only one of 84 connectors
 implementing it, and the scheduler reached it through
 `getattr(connector, "set_checkpoint", None)`, which on the other 83 was
 simply absent.
@@ -196,9 +196,9 @@ class TestTheSchedulerNoLongerDuckTypes:
         assert "connector.set_checkpoint(" in code
         assert "connector.get_checkpoint()" in code
 
-    def test_the_advance_still_happens_only_after_ingest_accepts(self) -> None:
-        """The whole safety property of the persisted cursor: a batch ingest
-        rejected must be re-read, not skipped."""
+    def test_the_advance_still_requires_full_batch_acceptance(self) -> None:
+        """The whole safety property of the persisted cursor: a fully or
+        partially rejected batch must be re-read, not skipped."""
         from pathlib import Path
 
         source = (Path(__file__).resolve().parents[1] / "app" / "scheduler.py").read_text(encoding="utf-8")
@@ -206,3 +206,7 @@ class TestTheSchedulerNoLongerDuckTypes:
         advance_index = source.index("new_checkpoint = connector.get_checkpoint()")
 
         assert accept_index < advance_index
+        assert '"accepted" in result and "rejected" in result' in source
+        assert "rejected == 0" in source
+        assert "accepted == len(kept)" in source
+        assert "if batch_fully_accepted:" in source

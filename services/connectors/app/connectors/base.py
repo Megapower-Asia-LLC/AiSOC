@@ -514,7 +514,8 @@ class BaseConnector(ABC):
     # The durable half of this shipped already: ``connector_repo.record_checkpoint``
     # persists a cursor into ``connector_config.checkpoint``, and the scheduler
     # seeds it before each poll and advances it only after ingest accepted the
-    # batch, so a failed push never moves it forward.
+    # entire submitted batch, so a failed or partially rejected push never
+    # moves it forward.
     #
     # What was missing was adoption, and the reason it stayed missing is worth
     # keeping. The scheduler reached the connector through
@@ -581,8 +582,9 @@ class BaseConnector(ABC):
     def get_checkpoint(self) -> dict[str, str] | None:
         """The advanced cursor after a fetch, or ``None`` if nothing moved.
 
-        The scheduler persists this only once ingest has accepted the batch,
-        so a failed ingest never advances it.
+        The scheduler persists this only once ingest has accepted every
+        submitted event, so a failed or partially rejected ingest never
+        advances it.
         """
         return self._next_checkpoint
 
