@@ -225,6 +225,31 @@ CROSS_ROOT_OVERRIDE_EXEMPT: dict[tuple[str, str], tuple[tuple[str, ...], str]] =
     # Express 5 bump moved realtime onto body-parser 2.3.0, which satisfies
     # the root override `>=2.3.0 <3` directly, so the exemption is gone —
     # exactly the re-opening this table's exact-version records exist for.
+    # undici in apps/mobile is Expo's, not ours: @expo/cli 54.0.27 depends on
+    # the 6.x line, and the web workspace's own tree is on 8.x. The root
+    # override `>=8.12.2 <9` exists because undici 8.11.0 carries
+    # GHSA-xjj6-f33q-929c; the 6.x line was patched separately in 6.29.1,
+    # which is what apps/mobile now resolves through its own
+    # `>=6.29.1 <7`. OSV version queries on 2026-10-25 return **no
+    # advisories** for either 6.29.1 or 8.12.3, so this is two patched major
+    # lines rather than one root accepting a vulnerable release. Forcing 8.x
+    # here would replace the HTTP client Expo's dev tooling speaks to satisfy
+    # a range written for the web workspace, and apps/mobile is excluded from
+    # pnpm-workspace.yaml and built by no Dockerfile, so none of it reaches a
+    # shipped image.
+    ("undici", "apps/mobile"): (
+        ("6.29.1",),
+        "Expo's dev tooling (@expo/cli 54.0.27) depends on the undici 6.x "
+        "line; the root's 8.x override exists for GHSA-xjj6-f33q-929c, which "
+        "6.x received separately in 6.29.1 — the version apps/mobile resolves "
+        "on its own, with no override of its own to declare. OSV returns no "
+        "advisories for 6.29.1 (checked 2026-10-25), so this is a patched "
+        "line rather than a root accepting a vulnerable release. Forcing 8.x "
+        "would replace the HTTP client Expo's CLI speaks to satisfy a range "
+        "written for the web workspace, and apps/mobile is excluded from "
+        "pnpm-workspace.yaml and built by no Dockerfile, so none of it "
+        "reaches a shipped image",
+    ),
     ("ws", "apps/mobile"): (
         ("6.2.6", "7.5.13"),
         "React Native's development server pins its own websocket majors: 6.2.6 "
