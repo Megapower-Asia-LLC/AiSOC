@@ -92,7 +92,7 @@ async def test_the_eligibility_verdict_is_recorded_on_every_closure(pin_model) -
     assert "not measured" in basis[0]
 
 
-async def test_unmeasured_does_not_block_by_default(pin_model) -> None:
+async def test_unmeasured_does_not_block_by_default(pin_model, authorized_closure_tenant) -> None:
     """Additive: a deployment that has measured nothing behaves as it did."""
     pin_model(_closeable())
 
@@ -101,7 +101,9 @@ async def test_unmeasured_does_not_block_by_default(pin_model) -> None:
     assert state.status is AgentStatus.COMPLETED
 
 
-async def test_the_strict_posture_withholds_a_closure_the_threshold_allowed(pin_model, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_the_strict_posture_withholds_a_closure_the_threshold_allowed(
+    pin_model, authorized_closure_tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("AISOC_AUTONOMY_REQUIRE_MEASURED", "1")
     pin_model(_closeable())
 
@@ -112,7 +114,9 @@ async def test_the_strict_posture_withholds_a_closure_the_threshold_allowed(pin_
     assert any("Auto-close withheld" in f and "not measured" in f for f in state.findings)
 
 
-async def test_a_measurement_below_the_floor_withholds_the_closure(pin_model, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_a_measurement_below_the_floor_withholds_the_closure(
+    pin_model, authorized_closure_tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A graded configuration that fell short blocks regardless of posture."""
     prompt = auto_triage_agent._triage_prompt()
     state = _state()
@@ -141,7 +145,9 @@ async def test_a_measurement_below_the_floor_withholds_the_closure(pin_model, mo
     assert any("0.62" in f for f in out.findings)
 
 
-async def test_a_clearing_measurement_closes_and_says_what_it_rested_on(pin_model, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_a_clearing_measurement_closes_and_says_what_it_rested_on(
+    pin_model, authorized_closure_tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The positive control. A gate stuck closed reads exactly like working caution."""
     prompt = auto_triage_agent._triage_prompt()
     state = _state()

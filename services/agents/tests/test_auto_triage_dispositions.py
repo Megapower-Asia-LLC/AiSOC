@@ -94,7 +94,7 @@ def test_btp_is_a_valid_detection_not_a_false_positive():
 
 
 @pytest.mark.asyncio
-async def test_approved_penetration_test_is_benign_true_positive(monkeypatch):
+async def test_approved_penetration_test_is_benign_true_positive(monkeypatch, authorized_closure_tenant):
     _patch_llm(monkeypatch, BENIGN_TRUE_POSITIVE, 0.95, "approved red-team engagement, matches change ticket CHG0049112")
     # The evidence now carries the approval the rationale cites. It did not,
     # and this test asserted the closure anyway — so it was pinning "an
@@ -140,7 +140,7 @@ async def test_scheduled_scanner_is_benign_true_positive(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_genuine_false_positive(monkeypatch):
+async def test_genuine_false_positive(monkeypatch, authorized_closure_tenant):
     _patch_llm(monkeypatch, FALSE_POSITIVE, 0.92, "rule misfired on a mis-parsed command-line field")
     out = await ata.run_auto_triage(_state("Suspicious PowerShell", {"severity": "low", "risk_score": 0.1}))
     assert out.verdict == FALSE_POSITIVE

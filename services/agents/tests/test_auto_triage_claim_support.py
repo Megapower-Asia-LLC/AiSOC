@@ -95,7 +95,7 @@ async def test_unsupported_authorization_claim_blocks_the_closure(pin_model) -> 
     assert any(b.startswith("claim_support=") for b in state.confidence_basis)
 
 
-async def test_an_evidenced_authorization_claim_still_closes(pin_model) -> None:
+async def test_an_evidenced_authorization_claim_still_closes(pin_model, authorized_closure_tenant) -> None:
     """The legitimate case. A check that refuses this is one somebody disables."""
     alert = {**SCAN_ALERT, "change_ticket": "CHG0049112", "approved_by": "security-engineering"}
     pin_model(
@@ -112,7 +112,7 @@ async def test_an_evidenced_authorization_claim_still_closes(pin_model) -> None:
     assert not any("Auto-close blocked" in f for f in state.findings)
 
 
-async def test_a_rationale_making_no_decisive_claim_still_closes(pin_model) -> None:
+async def test_a_rationale_making_no_decisive_claim_still_closes(pin_model, authorized_closure_tenant) -> None:
     """Not scored must not behave like a score of zero."""
     pin_model(
         {
