@@ -330,7 +330,18 @@ async def test_connector_connection(connector_id: str, payload: TestConnectionRe
     # validates both blobs against the schema before we ever see them, so
     # this ordering is defensive belt-and-braces rather than a real
     # boundary.
-    kwargs = {**payload.auth_config, **payload.connector_config}
+    #
+    # Exception: the scheduler-owned runtime state keys must not reach the
+    # constructor. ``record_checkpoint`` persists the ingest cursor into
+    # ``connector_config.checkpoint``, and the scheduler strips it (plus the
+    # other scheduler-only keys) before construction — while this route
+    # merged the blob verbatim, so once any poll had recorded a checkpoint,
+    # EVERY saved-connector test raised TypeError -> 422 ("unexpected
+    # keyword argument 'checkpoint'") on every connector whose __init__
+    # does not take it. One exclusion set, owned by ``_connector_kwargs``
+    # above: a second hand-written list here is how ``filter_rules`` would
+    # have been missed, and how the next scheduler-only key drifts.
+    kwargs = {**payload.auth_config, **_connector_kwargs(payload.connector_config)}
 
     # Before the constructor, and before any socket could open: a tenant-set
     # base_url pointing at cloud metadata, loopback or an internal service is
